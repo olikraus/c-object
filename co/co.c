@@ -22,11 +22,6 @@ cco coGetByIdx(co o, size_t idx)
   return o->fn->getByIdx(o, idx);
 }
 
-int coForEach(cco o, coForCB cb, void *data)
-{
-  return o->fn->forEach(o, cb, data);
-}
-
 void coDelete(co o)
 {
   o->fn->destroy(o);
@@ -73,7 +68,6 @@ int cobAdd(co o, co p);
 size_t cobCnt(co o);
 cco cobGetByIdx(co o, size_t idx);
 const char *cobToString(co o);
-int cobForEach(cco o, coForCB cb, void *data);
 void cobPrint(cco o);
 void cobDestroy(co o);
 co cobMap(cco o, coMapCB cb, void *data);
@@ -87,7 +81,6 @@ struct coFnStruct cobStruct =
   cobCnt,
   cobGetByIdx,
   cobToString,
-  cobForEach,
   cobPrint,
   cobDestroy,
   cobMap,
@@ -126,11 +119,6 @@ const char *cobToString(co o)
   return "";
 }
 
-int cobForEach(cco o, coForCB cb, void *data)
-{
-  return 1;     // always succeed
-}
-
 void cobPrint(cco o)
 {
 }
@@ -157,7 +145,7 @@ int covAdd(co o, co p);
 size_t covCnt(co o);
 cco covGetByIdx(co o, size_t idx);
 const char *covToString(co o);
-int covForEach(cco o, coForCB cb, void *data);
+int covForEach(cco o, covForEachCB cb, void *data);
 void covPrint(cco o);
 void covDestroy(co o);
 co covMap(cco o, coMapCB cb, void *data);
@@ -170,7 +158,6 @@ struct coFnStruct covStruct =
   covCnt,
   covGetByIdx,
   covToString,
-  covForEach,
   covPrint,
   covDestroy,
   covMap,
@@ -234,7 +221,7 @@ const char *covToString(co o)           // todo
 }
 
 /* returns 1 (success) or 0 (no success) */
-int covForEach(cco o, coForCB cb, void *data)
+int covForEach(cco o, covForEachCB cb, void *data)
 {
   size_t i;
   size_t cnt = o->v.cnt;        // not sure what todo if v.cnt is modified...
@@ -346,18 +333,21 @@ int covAppendVector(co v, cco src)
   {
     size_t oldCnt = v->v.cnt;
     
-    if ( coForEach(src, covAppendVectorCB, v) == 0 )
+    if ( src->fn == coVectorType )
     {
-      size_t i = v->v.cnt;
-      while( i > oldCnt )
+      if ( covForEach(src, covAppendVectorCB, v) == 0 )
       {
-        i--;
-        covDeleteElement(v, i);
+        size_t i = v->v.cnt;
+        while( i > oldCnt )
+        {
+          i--;
+          covDeleteElement(v, i);
+        }
       }
+      return 1;
     }
-    return 1;
   }
-  return 0;     // first arg is NOT a vector
+  return 0;     // first / seconad arg is NOT a vector
 }
 
 /*=== String ===*/
@@ -367,7 +357,6 @@ int cosAdd(co o, co p);
 size_t cosCnt(co o);
 cco cosGetByIdx(co o, size_t idx);
 const char *cosToString(co o);
-int cosForEach(cco o, coForCB cb, void *data);
 void cosPrint(cco o);
 void cosDestroy(co o);
 co cosMap(cco o, coMapCB cb, void *data);
@@ -380,7 +369,6 @@ struct coFnStruct cosStruct =
   cosCnt,
   cosGetByIdx,
   cosToString,
-  cosForEach,
   cosPrint,
   cosDestroy,
   cosMap,
@@ -425,11 +413,6 @@ cco cosGetByIdx(co o, size_t idx)
 const char *cosToString(co o)
 {
   return o->s.str;
-}
-
-int cosForEach(cco o, coForCB cb, void *data)
-{  
-  return 1;
 }
 
 void cosPrint(cco o)

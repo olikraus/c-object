@@ -91,13 +91,14 @@ typedef int (*coAddFn)(co o, co p);
 typedef size_t (*coCntFn)(co o);
 typedef cco (*coGetByIdxFn)(co o, size_t idx);
 typedef const char *(*coToStringFn)(co o);
-typedef int (*coForCB)(cco o, size_t idx, cco element, void *data);
-typedef int (*coForEachFn)(cco o, coForCB cb, void *data);
 typedef void (*coPrintFn)(const cco o);
 typedef void (*coDestroyFn)(co o);
 typedef co (*coMapCB)(cco o, size_t idx, cco element, void *data);
 typedef co (*coMapFn)(cco o, coMapCB cb, void *data); // data is just passed to the map function
 typedef co (*coCloneFn)(cco o);
+
+
+typedef int (*covForEachCB)(cco o, size_t idx, cco element, void *data);
 
 typedef long int coInt;
 
@@ -132,7 +133,6 @@ struct coFnStruct
   coCntFn cnt;        
   coGetByIdxFn getByIdx;
   coToStringFn toString;
-  coForEachFn forEach;  // int (*coForEachFn)(cco o, coForCB cb, void *data)
   coPrintFn print;
   coDestroyFn destroy;  // counterpart to init
   coMapFn map;                  // create a new vector, all elements must be cloned!
@@ -152,7 +152,6 @@ co coNewStr(unsigned flags, const char *s);
 void coPrint(const cco o);
 int coAdd(co o, co p);
 cco coGetByIdx(co o, size_t idx);
-int coForEach(cco o, coForCB cb, void *data); // loops over elements in o
 void coDelete(co o);
 co coClone(cco o);
 
