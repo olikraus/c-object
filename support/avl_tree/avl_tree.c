@@ -1,0 +1,303 @@
+/*
+
+  avl_tree.c
+  
+  CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
+
+  Based on https://rosettacode.org/wiki/AVL_tree/C  
+    with the license: https://www.gnu.org/licenses/fdl-1.3.en.html
+
+  According to FDL 1.3 (https://www.gnu.org/licenses/fdl-1.3-faq.html.en), 
+  this code is relicensed and provided under
+    CC BY-SA 3.0 https://creativecommons.org/licenses/by-sa/3.0/
+    
+*/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+struct avl_node 
+{
+  char *key;
+  void *value;
+  struct avl_node * kid[2];
+  int height;
+};
+
+struct avl_node avl_dummy = { NULL, NULL, {&avl_dummy, &avl_dummy}, 0 };
+struct avl_node *avl_nnil = &avl_dummy; // internally, avl_nnil is the new nul
+
+
+void *avl_clone_value(void *value)
+{
+  return malloc(4);
+  //return value;
+}
+
+void avl_free_value(void *value)
+{
+  free(value);
+}
+
+void avl_free_key(char *key)
+{
+  free(key);
+}
+
+struct avl_node *avl_new_node(char *key, void *value)
+{
+  struct avl_node *n = malloc(sizeof(struct avl_node));
+  n->key = key;
+  n->value = avl_clone_value(value);
+  n->height = 1;
+  n->kid[0] = avl_nnil;
+  n->kid[1] = avl_nnil;
+  return n;
+}
+
+static void avl_delete_node(struct avl_node *n)
+{
+  avl_free_key(n->key);
+  if ( n->value != NULL )
+    avl_free_value(n->value);
+  n->value = NULL;
+  n->kid[0] = NULL;
+  n->kid[1] = NULL;
+  free(n);
+}
+
+static int avl_max(int a, int b) 
+{ 
+  return a > b ? a : b; 
+}
+
+static void avl_set_height(struct avl_node *n) 
+{
+  n->height = 1 + avl_max(n->kid[0]->height, n->kid[1]->height);
+}
+
+static int avl_get_ballance_diff(struct avl_node *n) 
+{
+  return n->kid[0]->height - n->kid[1]->height;
+}
+
+// rotate a subtree according to dir; if new root is nil, old root is freed
+static struct avl_node * avl_rotate(struct avl_node **rootp, int dir)
+{
+  struct avl_node *old_r = *rootp;
+  struct avl_node *new_r = old_r->kid[dir];
+
+  *rootp = new_r;               // replace root with the selected child
+  
+  if (avl_nnil == *rootp)
+  {
+    avl_delete_node(old_r);
+  }
+  else 
+  {
+    old_r->kid[dir] = new_r->kid[!dir];
+    avl_set_height(old_r);
+    new_r->kid[!dir] = old_r;
+  }
+  return new_r;
+}
+
+static void avl_adjust_balance(struct avl_node **rootp)
+{
+  struct avl_node *root = *rootp;
+  int b = avl_get_ballance_diff(root)/2;
+  if (b != 0) 
+  {
+    int dir = (1 - b)/2;
+    if (avl_get_ballance_diff(root->kid[dir]) == -b)
+    {
+      avl_rotate(&root->kid[dir], !dir);
+    }
+    root = avl_rotate(rootp, dir);
+  }
+  if (root != avl_nnil)
+    avl_set_height(root);
+}
+
+// find the node that contains the given key; or returns 0
+struct avl_node *avl_query(struct avl_node *root, const char *key)
+{
+  int c;
+  if ( key == NULL )
+    return NULL;
+  
+  if ( root == avl_nnil )
+    return NULL;
+  
+  c = strcmp(key, root->key);
+  if ( c == 0 )
+    return root;
+  return avl_query(root->kid[c > 0], key);
+}
+
+void avl_insert(struct avl_node **rootp, char *key, void *value)
+{
+  struct avl_node *root = *rootp;
+  int c;
+
+  if ( key == NULL )
+    return; // illegal key
+
+  if (root == avl_nnil)
+  {
+    *rootp = avl_new_node(key, value);  // value is cloned within avl_new_node()
+    return;
+  }
+  
+  c = strcmp(key, root->key);
+  if ( c == 0 )
+  {
+    // key already exists: replace value
+    avl_free_key(key);
+    if ( root->value != NULL )
+      avl_free_value(root->value);
+    root->value = avl_clone_value(value);
+  }
+  else
+  {
+    avl_insert(&root->kid[c > 0], key, value);
+    avl_adjust_balance(rootp);
+  }
+}
+
+void avl_delete(struct avl_node **rootp, const char *key)
+{
+  struct avl_node *root = *rootp;
+  if ( key == NULL )
+    return; // illegal key
+  if (root == avl_nnil) 
+    return; // not found
+
+  // if this is the node we want, rotate until off the tree
+  if ( strcmp(key, root->key) == 0 )
+  {
+    root = avl_rotate(rootp, avl_get_ballance_diff(root) < 0);
+    if (avl_nnil == root)
+    {
+      return;
+    }
+  }
+  avl_delete(&root->kid[strcmp(key, root->key) > 0], key);
+  avl_adjust_balance(rootp);
+}
+
+
+
+
+
+
+// aux display and verification routines, helpful but not essential
+struct trunk {
+	struct trunk *prev;
+	char * str;
+};
+
+void show_trunks(struct trunk *p)
+{
+	if (!p) return;
+	show_trunks(p->prev);
+	printf("%s", p->str);
+}
+
+// this is very haphazzard
+void show_tree(struct avl_node *root, struct trunk *prev, int is_left)
+{
+	if (root == avl_nnil) return;
+
+	struct trunk this_disp = { prev, "    " };
+	char *prev_str = this_disp.str;
+	show_tree(root->kid[0], &this_disp, 1);
+
+	if (!prev)
+		this_disp.str = "---";
+	else if (is_left) {
+		this_disp.str = ".--";
+		prev_str = "   |";
+	} else {
+		this_disp.str = "`--";
+		prev->str = prev_str;
+	}
+
+	show_trunks(&this_disp);
+	printf("%s\n", root->key);
+
+	if (prev) prev->str = prev_str;
+	this_disp.str = "   |";
+
+	show_tree(root->kid[1], &this_disp, 0);
+	if (!prev) puts("");
+}
+
+int verify(struct avl_node *p)
+{
+	if (p == avl_nnil) return 1;
+
+	int h0 = p->kid[0]->height, h1 = p->kid[1]->height;
+	int b = h0 - h1;
+
+	if (p->height != 1 + avl_max(h0, h1) || b < -1 || b > 1) {
+		printf("node %s bad, balance %d\n", p->key, b);
+		show_tree(p, 0, 0);
+		abort();
+	}
+	return verify(p->kid[0]) && verify(p->kid[1]);
+}
+
+#define MAX_VAL 25
+
+const char *get_str(int x)
+{
+  static char buf[20];
+  sprintf(buf, "%d", x);
+  return buf;
+}
+
+int main(void)
+{
+	int x;
+	struct avl_node *root = avl_nnil;
+
+	srand(time(0));
+
+	for (x = 0; x < 10 * MAX_VAL; x++) 
+        {
+		// random insertion and deletion
+		if (rand()&1)
+                {
+                    avl_insert(&root, strdup(get_str(rand()%MAX_VAL)), NULL);
+                }
+		else
+                {
+                    avl_delete(&root, get_str(rand()%MAX_VAL));
+                }
+
+		verify(root);
+	}
+
+	puts("Tree is:");
+	show_tree(root, 0, 0);
+
+	puts("\nQuerying values:");
+	for (x = 0; x < MAX_VAL; x++) {
+		struct avl_node *p = avl_query(root, get_str(x));
+		if (p)	printf("%2d found: %p %s\n", x, p, p->key);
+	}
+
+	for (x = 0; x < MAX_VAL; x++) {
+		avl_delete(&root, get_str(x));
+		verify(root);
+	}
+
+	puts("\nAfter deleting all values, tree is:");
+	show_tree(root, 0, 0);
+
+	return 0;
+}
+
