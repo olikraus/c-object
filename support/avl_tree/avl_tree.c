@@ -29,35 +29,34 @@ struct avl_node
 struct avl_node avl_dummy = { NULL, NULL, {&avl_dummy, &avl_dummy}, 0 };
 struct avl_node *avl_nnil = &avl_dummy; // internally, avl_nnil is the new nul
 
-
-void *avl_clone_value(void *value)
-{
-  return malloc(4);
-  //return value;
-}
+typedef void (*avl_free_fn)(void *p);
 
 void avl_free_value(void *value)
 {
   free(value);
 }
 
-void avl_free_key(char *key)
+void avl_free_key(void *key)
 {
   free(key);
+}
+
+void avl_keep_key(void *key)
+{
 }
 
 struct avl_node *avl_new_node(char *key, void *value)
 {
   struct avl_node *n = malloc(sizeof(struct avl_node));
   n->key = key;
-  n->value = avl_clone_value(value);
+  n->value = value;
   n->height = 1;
   n->kid[0] = avl_nnil;
   n->kid[1] = avl_nnil;
   return n;
 }
 
-static void avl_delete_node(struct avl_node *n)
+static void avl_delete_node(struct avl_node *n, avl_free_fn free_key, avl_free_fn free_value)
 {
   avl_free_key(n->key);
   if ( n->value != NULL )
@@ -84,7 +83,7 @@ static int avl_get_ballance_diff(struct avl_node *n)
 }
 
 // rotate a subtree according to dir; if new root is nil, old root is freed
-static struct avl_node * avl_rotate(struct avl_node **rootp, int dir)
+static struct avl_node * avl_rotate(struct avl_node **rootp, int dir, avl_free_fn free_key, avl_free_fn free_value)
 {
   struct avl_node *old_r = *rootp;
   struct avl_node *new_r = old_r->kid[dir];
@@ -93,7 +92,7 @@ static struct avl_node * avl_rotate(struct avl_node **rootp, int dir)
   
   if (avl_nnil == *rootp)
   {
-    avl_delete_node(old_r);
+    avl_delete_node(old_r, free_key, free_value);
   }
   else 
   {
@@ -104,7 +103,7 @@ static struct avl_node * avl_rotate(struct avl_node **rootp, int dir)
   return new_r;
 }
 
-static void avl_adjust_balance(struct avl_node **rootp)
+static void avl_adjust_balance(struct avl_node **rootp, avl_free_fn free_key, avl_free_fn free_value)
 {
   struct avl_node *root = *rootp;
   int b = avl_get_ballance_diff(root)/2;
@@ -113,9 +112,9 @@ static void avl_adjust_balance(struct avl_node **rootp)
     int dir = (1 - b)/2;
     if (avl_get_ballance_diff(root->kid[dir]) == -b)
     {
-      avl_rotate(&root->kid[dir], !dir);
+      avl_rotate(&root->kid[dir], !dir, free_key, free_value);
     }
-    root = avl_rotate(rootp, dir);
+    root = avl_rotate(rootp, dir, free_key, free_value);
   }
   if (root != avl_nnil)
     avl_set_height(root);
@@ -137,7 +136,7 @@ struct avl_node *avl_query(struct avl_node *root, const char *key)
   return avl_query(root->kid[c > 0], key);
 }
 
-void avl_insert(struct avl_node **rootp, char *key, void *value)
+void avl_insert(struct avl_node **rootp, char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
 {
   struct avl_node *root = *rootp;
   int c;
@@ -155,19 +154,19 @@ void avl_insert(struct avl_node **rootp, char *key, void *value)
   if ( c == 0 )
   {
     // key already exists: replace value
-    avl_free_key(key);
+    free_key(key);
     if ( root->value != NULL )
-      avl_free_value(root->value);
-    root->value = avl_clone_value(value);
+      free_value(root->value);
+    root->value = value;
   }
   else
   {
-    avl_insert(&root->kid[c > 0], key, value);
-    avl_adjust_balance(rootp);
+    avl_insert(&root->kid[c > 0], key, value, free_key, free_value);
+    avl_adjust_balance(rootp, free_key, free_value);
   }
 }
 
-void avl_delete(struct avl_node **rootp, const char *key)
+void avl_delete(struct avl_node **rootp, const char *key, avl_free_fn free_key, avl_free_fn free_value)
 {
   struct avl_node *root = *rootp;
   if ( key == NULL )
@@ -178,14 +177,14 @@ void avl_delete(struct avl_node **rootp, const char *key)
   // if this is the node we want, rotate until off the tree
   if ( strcmp(key, root->key) == 0 )
   {
-    root = avl_rotate(rootp, avl_get_ballance_diff(root) < 0);
+    root = avl_rotate(rootp, avl_get_ballance_diff(root) < 0, free_key, free_value);
     if (avl_nnil == root)
     {
       return;
     }
   }
-  avl_delete(&root->kid[strcmp(key, root->key) > 0], key);
-  avl_adjust_balance(rootp);
+  avl_delete(&root->kid[strcmp(key, root->key) > 0], key, free_key, free_value);
+  avl_adjust_balance(rootp, free_key, free_value);
 }
 
 
@@ -271,11 +270,11 @@ int main(void)
 		// random insertion and deletion
 		if (rand()&1)
                 {
-                    avl_insert(&root, strdup(get_str(rand()%MAX_VAL)), NULL);
+                    avl_insert(&root, strdup(get_str(rand()%MAX_VAL)), NULL, avl_free_key, avl_free_value);
                 }
 		else
                 {
-                    avl_delete(&root, get_str(rand()%MAX_VAL));
+                    avl_delete(&root, get_str(rand()%MAX_VAL), avl_free_key, avl_free_value);
                 }
 
 		verify(root);
@@ -291,7 +290,7 @@ int main(void)
 	}
 
 	for (x = 0; x < MAX_VAL; x++) {
-		avl_delete(&root, get_str(x));
+		avl_delete(&root, get_str(x), avl_free_key, avl_free_value);
 		verify(root);
 	}
 
