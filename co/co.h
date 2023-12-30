@@ -2,9 +2,9 @@
 
   co.h
   
-  C Object Library https://github.com/olikraus/c-object
+  C Object Library https://github.coMap/olikraus/c-object
 
-  CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
+  CC BY-SA 3.0  https://creativecoMapmons.org/licenses/by-sa/3.0/
 
   co    read/and writeable c-object
   cco   read only c-object
@@ -54,12 +54,12 @@
   gcc -Wall -fsanitize=address -I./co ./co/co.c ./test/co_test.c && ./a.out
 
   Copy operation from somewhere into a container
-    1) Move: The remote element becomes obsolete and becomes part of the container
+    1) Move: The remote element becoMapes obsolete and becoMapes part of the container
       The moved element will be deleted together with the container
       The moved element must not be referenced any more somewhere else
     2) Reference: The element in the container is just a reference to the remote element.
       The element of the container is not deleted.
-      Risk: If the remote element becomes deleted, then the element in the 
+      Risk: If the remote element becoMapes deleted, then the element in the 
       container is also invalid
     3) Clone: Usually a manual operation, where the element is cloned and
       then stored in the container. Makes only sense with option 1
@@ -84,23 +84,21 @@
 */
 
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct coStruct *co;
 typedef struct coStruct const * const cco;
 typedef struct coFnStruct *coFn;
 
 typedef int (*coInitFn)(co o, void *data);
-typedef size_t (*coSizeFn)(co o);
-typedef cco (*coGetByIdxFn)(co o, size_t idx);
+typedef long (*coSizeFn)(co o);
+typedef cco (*coGetByIdxFn)(co o, long idx);
 typedef const char *(*coToStringFn)(co o);
 typedef void (*coPrintFn)(const cco o);
 typedef void (*coDestroyFn)(co o);
 typedef int (*coEmptyFn)(cco o);
 typedef co (*coCloneFn)(cco o);
 
-
-typedef co (*covMapCB)(cco o, size_t idx, cco element, void *data);
-typedef int (*covForEachCB)(cco o, size_t idx, cco element, void *data);
 
 typedef long int coInt;
 
@@ -128,8 +126,8 @@ struct coStruct
     struct // vector 
     {
       co *list;
-      size_t cnt;
-      size_t max;
+      long cnt;
+      long max;
     } v;
     struct // map 
     {
@@ -163,23 +161,32 @@ co coNewBlank();
 co coNewStr(unsigned flags, const char *s);
 
 void coPrint(const cco o);
-int coAdd(co o, co p);
-cco coGetByIdx(co o, size_t idx);
+cco coGetByIdx(co o, long idx);
 void coDelete(co o);
 co coClone(cco o);
 
 /* vector functions */
 co coNewVector(unsigned flags);
-ssize_t covAdd(co o, co p);         // add object at the end of the list, returns -1 for error
-int covAppendVector(co v, cco src);  // append elements from src to vector v
-cco covGet(co o, size_t idx);           // return object at specific position from the vector
-void covErase(co v, size_t i);  // delete and remove element at the specified position
-void covClear(co o);    // delete all elements and clear the array
+long coVectorAdd(co o, co p);         // add object at the end of the list, returns -1 for error
+int coVectorAppendVector(co v, cco src);  // append elements from src to vector v
+cco coVectorGet(co o, long idx);           // return object at specific position from the vector
+void coVectorErase(co v, long i);  // delete and remove element at the specified position
+void coVectorClear(co o);    // delete all elements and clear the array
+
+typedef int (*coVectorForEachCB)(cco o, long idx, cco element, void *data);
+int coVectorForEach(cco o, coVectorForEachCB cb, void *data);
+
+typedef co (*coVectorMapCB)(cco o, long idx, cco element, void *data);
+co coVectorMap(cco o, coVectorMapCB cb, void *data);
+
 
 /* map functions */
 co coNewMap(unsigned flags);
-int comAdd(co o, const char *key, co value);    // insert object into the map
-cco comGet(cco o, const char *key);     // get object from map by key, returns NULL if key doesn't exist in the map 
-void comErase(co o, const char *key);   // removes object from the map
-void comClear(co o);   // delete all elements and clear the array         
+int coMapAdd(co o, const char *key, co value);    // insert object into the map, returns 0 for memory error
+cco coMapGet(cco o, const char *key);     // get object from map by key, returns NULL if key doesn't exist in the map 
+void coMapErase(co o, const char *key);   // removes object from the map
+void coMapClear(co o);   // delete all elements and clear the array         
+
+typedef int (*coMapForEachCB)(cco o, long idx, const char *key, cco value, void *data);
+void coMapForEach(cco o, coMapForEachCB cb, void *data);
 
