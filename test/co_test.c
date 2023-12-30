@@ -5,12 +5,13 @@
 
 int main()
 {
-  co v = coNewVector(CO_FREE);
+  co v = coNewVector(CO_FREE_VALS);
   co vv;
-  co m = coNewMap(CO_FREE);
-  coVectorAdd(v, coNewStr(CO_FREE, strdup("abc")));
-  coVectorAdd(v, coNewStr(CO_FREE, strdup("def")));
-  coVectorAdd(v, coNewStr(CO_FREE, strdup("ghi")));
+  co s;
+  co m = coNewMap(CO_STRDUP | CO_FREE_VALS);
+  coVectorAdd(v, coNewStr(CO_STRDUP, "abc"));
+  coVectorAdd(v, coNewStr(CO_STRDUP, "def"));
+  coVectorAdd(v, coNewStr(CO_STRDUP, "ghi"));
 
   coPrint(v);
   puts("");
@@ -24,9 +25,11 @@ int main()
   coVectorAppendVector(vv, v);
   coPrint(vv); puts("");
   
-  coMapAdd(m, strdup("abc"), coNewStr(CO_FREE, strdup("v_abc")));
-  coMapAdd(m, strdup("def"), coNewStr(CO_FREE, strdup("v_def")));
-  coMapAdd(m, strdup("ghi"), coNewStr(CO_FREE, strdup("v_ghi")));
+  s = coNewStr(CO_STRDUP, "v_abc");
+  coStrAdd(s, "_xyz");
+  coMapAdd(m, "abc", s);
+  coMapAdd(m, "def", coNewStr(CO_STRDUP, "v_def"));
+  coMapAdd(m, "ghi", coNewStr(CO_STRDUP, "v_ghi"));
   
   
   coPrint(m); puts("");

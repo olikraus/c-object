@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
+#include <assert.h>
 
 /*=== Generic Functions ===*/
 
@@ -90,7 +90,7 @@ coFn coBlankType = &cobStruct;
 
 co coNewBlank()
 {
-  return coNew(coBlankType, CO_FREE);
+  return coNew(coBlankType, 0);
 }
 
 int cobInit(co o, void *data)
@@ -348,26 +348,25 @@ int coVectorAppendVector(co v, cco src)
 
 /*=== String ===*/
 
-int cosInit(co o, void *data);  // optional data: const char *
-int cosAdd(co o, co p);
-long cosSize(co o);
-cco cosGetByIdx(co o, long idx);
-const char *cosToString(co o);
-void cosPrint(cco o);
-void cosDestroy(co o);
-co cosClone(cco o);
+int coStrInit(co o, void *data);  // optional data: const char *
+long coStrSize(co o);
+cco coStrGetByIdx(co o, long idx);
+const char *coStrToString(co o);
+void coStrPrint(cco o);
+void coStrDestroy(co o);
+co coStrClone(cco o);
 
-struct coFnStruct cosStruct = 
+struct coFnStruct coStrStruct = 
 {
-  cosInit,
-  cosSize,
-  cosGetByIdx,
-  cosToString,
-  cosPrint,
-  cosDestroy,
-  cosClone
+  coStrInit,
+  coStrSize,
+  coStrGetByIdx,
+  coStrToString,
+  coStrPrint,
+  coStrDestroy,
+  coStrClone
 };
-coFn coStrType = &cosStruct;
+coFn coStrType = &coStrStruct;
 
 co coNewStr(unsigned flags, const char *s)
 {
@@ -377,52 +376,141 @@ co coNewStr(unsigned flags, const char *s)
   return o;
 }
 
-int cosInit(co o, void *data)
+int coStrInit(co o, void *data)
 {
   static char empty_string[2] = "";
+  char *s = (char *)data;
   o->fn = coStrType;
-  if ( data == NULL )
-    o->s.str = empty_string;
+  if ( s == NULL )
+    s = empty_string;
+  if ( o->flags & CO_STRDUP )
+    o->s.str = strdup(s);
   else
-    o->s.str = (char *)data;
+    o->s.str = s;
+  o->s.len = strlen(o->s.str);
   return 1;
 }
 
-int cosAdd(co o, co p)
+int coStrAdd(co o, const char *s)
 {
-  return 0;     // not allowed
+  assert(coIsStr(o));
+  assert(o->s.str != NULL);
+  if ( o->flags & CO_STRDUP )
+  {
+    size_t len = strlen(s);
+    char *p = (char *)realloc(o->s.str, o->s.len + len +1);
+    if ( p == NULL )
+      return 0;
+    o->s.str = p;
+    strcpy(o->s.str + o->s.len, s);
+    o->s.len += len;
+    return 1;
+  }
+  return 0;     // static string, can not add another string
 }
 
-long cosSize(co o)
+
+long coStrSize(co o)
 {
-  return strlen(o->s.str);
+  return (long)o->s.len;
 }
 
-cco cosGetByIdx(co o, long idx)
+cco coStrGetByIdx(co o, long idx)
 {
   return NULL;
 }
 
-const char *cosToString(co o)
+const char *coStrToString(co o)
 {
   return o->s.str;
 }
 
-void cosPrint(cco o)
+void coStrPrint(cco o)
 {
   printf("%s", o->s.str);
 }
 
-void cosDestroy(co o)
+void coStrDestroy(co o)
 {
-  if ( o->flags & CO_FREE_VALS )
+  if ( o->flags & CO_STRDUP )
     free(o->s.str);
   o->s.str = NULL;
 }
 
-co cosClone(cco o)
+co coStrClone(cco o)
 {
-  return coNewStr(o->flags | CO_FREE_VALS, strdup(o->s.str)); 
+  return coNewStr(o->flags | CO_STRDUP, o->s.str); 
+}
+
+/*=== Double ===*/
+
+int coDblInit(co o, void *data);  // optional data: const double *
+long coDblSize(co o);
+cco coDblGetByIdx(co o, long idx);
+const char *coDblToString(co o);
+void coDblPrint(cco o);
+void coDblDestroy(co o);
+co coDblClone(cco o);
+
+struct coFnStruct coDblStruct = 
+{
+  coDblInit,
+  coDblSize,
+  coDblGetByIdx,
+  coDblToString,
+  coDblPrint,
+  coDblDestroy,
+  coDblClone
+};
+coFn coDblType = &coDblStruct;
+
+co coNewDbl(double n)
+{
+  co o = coNewWithData(coDblType, CO_NONE, (void *)&n);
+  if ( o == NULL )
+    return NULL;
+  return o;
+}
+
+int coDblInit(co o, void *data)
+{
+  o->fn = coDblType;
+  if ( data == NULL )
+    o->d.n = 0.0;
+  else
+    o->d.n = *(double *)data;
+  return 1;
+}
+
+
+long coDblSize(co o)
+{
+  return 1;
+}
+
+cco coDblGetByIdx(co o, long idx)
+{
+  return NULL;
+}
+
+const char *coDblToString(co o)
+{
+  return "";
+}
+
+void coDblPrint(cco o)
+{
+  printf("%lf", o->d.n);
+}
+
+void coDblDestroy(co o)
+{
+  o->d.n = 0.0;
+}
+
+co coDblClone(cco o)
+{
+  return coNewDbl(o->d.n); 
 }
 
 /*=== Map ===*/
@@ -669,25 +757,35 @@ co coNewMap(unsigned flags)
 
 int coMapInit(co o, void *data)
 {
-    o->m.root = avl_nnil;
-    return 1;
+  assert(coIsMap(o));
+  o->m.root = avl_nnil;
+  return 1;
 }
 
 int coMapAdd(co o, const char *key, co value)
 {
-  avl_insert(
+  const char *k;
+  assert(coIsMap(o));
+  assert(key != NULL);
+  if ( o->flags & CO_STRDUP )
+    k = strdup(key);
+  else
+    k = key;
+  if ( k == NULL )
+    return 0;
+  
+  return avl_insert(
     &(o->m.root), 
-    key,
+    k,
     (void *)value,
-    (o->flags & CO_FREE_KEYS)?avl_free_key:avl_keep_key, 
+    (o->flags & CO_STRDUP)?avl_free_key:avl_keep_key, 
     (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
   );  
-  
-  return 0;     
 }
 
 long coMapSize(co o)
 {
+  assert(coIsMap(o));
   return avl_get_size(o->m.root);              // O(n) !
 }
 
@@ -713,6 +811,7 @@ static int avl_co_map_print_cb(cco o, long idx, const char *key, cco value, void
 void coMapPrint(cco o)
 {
   long cnt = 0;
+  assert(coIsMap(o));
   printf("{");
   avl_for_each(o, o->m.root, avl_co_map_print_cb, &cnt, NULL);
   printf("}\n");  
@@ -720,9 +819,10 @@ void coMapPrint(cco o)
 
 void coMapClear(co o)
 {
+  assert(coIsMap(o));
   avl_delete_all(
     &(o->m.root), 
-    (o->flags & CO_FREE_KEYS)?avl_free_key:avl_keep_key, 
+    (o->flags & CO_STRDUP)?avl_free_key:avl_keep_key, 
     (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
   );  
 }
@@ -735,7 +835,8 @@ static int avl_co_map_clone_cb(cco o, long idx, const char *key, cco value, void
 co coMapClone(cco o)
 {
   long cnt = 0;
-  co new_obj = coNewMap(o->flags | CO_FREE_VALS | CO_FREE_KEYS);
+  co new_obj = coNewMap(o->flags | CO_FREE_VALS | CO_STRDUP);
+  assert(coIsMap(o));
   if ( avl_for_each(o, o->m.root, avl_co_map_clone_cb, &cnt, new_obj) == 0 )
   {
     coDelete(new_obj);
@@ -748,6 +849,7 @@ co coMapClone(cco o)
 cco coMapGet(cco o, const char *key)
 {
   struct co_avl_node_struct *n = avl_query(o->m.root, key);
+  assert(coIsMap(o));
   if ( n == NULL )
     return NULL;
   return (cco)(n->value);  
@@ -755,10 +857,11 @@ cco coMapGet(cco o, const char *key)
 
 void coMapErase(co o, const char *key)
 {
+  assert(coIsMap(o));
   avl_delete(
     &(o->m.root), 
     key,
-    (o->flags & CO_FREE_KEYS)?avl_free_key:avl_keep_key, 
+    (o->flags & CO_STRDUP)?avl_free_key:avl_keep_key, 
     (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
   );    
 }
@@ -766,6 +869,47 @@ void coMapErase(co o, const char *key)
 void coMapForEach(cco o, coMapForEachCB cb, void *data)
 {
   long cnt = 0;
+  assert(coIsMap(o));
   avl_for_each(o, o->m.root, cb, &cnt, data);
 }
 
+/*=== JSON Parser ===*/
+
+struct co_json_struct
+{
+  int curr;
+  char *json_string;
+};
+typedef struct co_json_struct *coj;
+
+int cojNext(coj j)
+{
+  if ( j->curr < 0 )
+    return j->curr;
+  (j->json_string)++;
+  j->curr = *(j->json_string);
+  
+  if ( j->curr == '\0' )
+  {
+    j->curr = -1;
+  }
+  return j->curr;
+}
+
+int cojCurr(coj j)
+{
+  return j->curr;
+}
+
+void cojSkipWhitespace(coj j)
+{
+  while(cojCurr(j) <= ' ')
+  {
+    cojNext(j);
+  }
+}
+
+co cojGetStr(coj j)
+{
+    return coNewStr(0, "");
+}

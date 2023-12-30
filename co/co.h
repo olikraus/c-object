@@ -112,9 +112,9 @@ struct co_avl_node_struct
 
 #define CO_NONE 0
 #define CO_FREE_VALS 1
-#define CO_FREE_KEYS 2
-#define CO_FREE (CO_FREE_VALS|CO_FREE_KEYS)
-
+//#define CO_FREE_KEYS 2
+//#define CO_FREE (CO_FREE_VALS|CO_FREE_KEYS)
+#define CO_STRDUP 4
 
 
 struct coStruct
@@ -126,8 +126,8 @@ struct coStruct
     struct // vector 
     {
       co *list;
-      long cnt;
-      long max;
+      size_t cnt;
+      size_t max;
     } v;
     struct // map 
     {
@@ -136,7 +136,13 @@ struct coStruct
     struct // string
     {
       char *str;
+      size_t len;       // current str length
+      size_t memlen;    // allocated memory
     } s;
+    struct // double
+    {
+      double n;
+    } d;
   };
 };
 
@@ -156,14 +162,31 @@ struct coFnStruct
 extern coFn coBlankType;
 extern coFn coVectorType;
 extern coFn coStrType;
+extern coFn coMapType;
+extern coFn coDblType;
 
 co coNewBlank();
 co coNewStr(unsigned flags, const char *s);
+co coNewDbl(double n);
+
+/* generic functions */
 
 void coPrint(const cco o);
 cco coGetByIdx(co o, long idx);
 void coDelete(co o);
 co coClone(cco o);
+
+#define coGetType(o) ((o)->fn)
+
+#define coIsVector(o) (coGetType(o)==coVectorType)
+#define coIsStr(o) (coGetType(o)==coStrType)
+#define coIsMap(o) (coGetType(o)==coMapType)
+#define coIsDbl(o) (coGetType(o)==coDblType)
+
+
+/* string functions */
+int coStrAdd(co o, const char *s);
+
 
 /* vector functions */
 co coNewVector(unsigned flags);
