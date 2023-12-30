@@ -2,6 +2,9 @@
 
   co.h
   
+  C Object Library https://github.com/olikraus/c-object
+
+  CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
 
   co    read/and writeable c-object
   cco   read only c-object
@@ -102,6 +105,14 @@ typedef int (*covForEachCB)(cco o, size_t idx, cco element, void *data);
 
 typedef long int coInt;
 
+struct co_avl_node_struct 
+{
+  char *key;
+  void *value;
+  struct co_avl_node_struct * kid[2];
+  int height;
+};
+
 #define CO_NONE 0
 #define CO_FREE_VALS 1
 #define CO_FREE_KEYS 2
@@ -119,6 +130,10 @@ struct coStruct
       size_t cnt;
       size_t max;
     } v;
+    struct // map 
+    {
+      struct co_avl_node_struct *root;
+    } m;
     struct // string
     {
       char *str;

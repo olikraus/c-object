@@ -30,6 +30,7 @@ struct avl_node avl_dummy = { NULL, NULL, {&avl_dummy, &avl_dummy}, 0 };
 struct avl_node *avl_nnil = &avl_dummy; // internally, avl_nnil is the new nul
 
 typedef void (*avl_free_fn)(void *p);
+typedef int (*avl_visit_fn)(size_t idx, struct avl_node *n, void *data);
 
 void avl_free_value(void *value)
 {
@@ -187,9 +188,43 @@ void avl_delete(struct avl_node **rootp, const char *key, avl_free_fn free_key, 
   avl_adjust_balance(rootp, free_key, free_value);
 }
 
+int avl_for_each(struct avl_node *n, avl_visit_fn visitCB, size_t *idx, void *data)
+{
+  if ( n == avl_nnil) 
+    return 1;
+  avl_for_each(n->kid[0], visitCB, idx, data);
+  if ( visitCB(*idx, n, data) == 0 )
+    return 0;
+  (*idx)++;
+  avl_for_each(n->kid[1], visitCB, idx, data);  
+  return 1;
+}
+
+/*
+  after calling avl_delete_all the "n" argument is illegal ans points to avl_nnil
+*/
+void avl_delete_all(struct avl_node **n, avl_free_fn free_key, avl_free_fn free_value)
+{
+  if ( *n == avl_nnil) 
+    return;
+  avl_delete_all(&((*n)->kid[0]), free_key, free_value);
+  avl_delete_all(&((*n)->kid[1]), free_key, free_value);
+  avl_delete_node(*n, free_key, free_value);
+  *n = avl_nnil;
+}
+
+static int avl_get_size_cb(size_t idx, struct avl_node *n, void *data)
+{
+  return 1;
+}
 
 
-
+size_t avl_get_size(struct avl_node *n)
+{
+  size_t cnt = 0;
+  avl_for_each(n, avl_get_size_cb, &cnt, NULL);
+  return cnt;
+}
 
 
 // aux display and verification routines, helpful but not essential
@@ -197,6 +232,19 @@ struct trunk {
 	struct trunk *prev;
 	char * str;
 };
+
+int show_node(size_t idx, struct avl_node *n, void *data)
+{
+  printf("%lu:%s ", idx, n->key);
+  return 1;
+}
+
+void show_all(struct avl_node *root)
+{
+  size_t idx = 0;
+  avl_for_each(root, show_node, &idx, NULL);
+}
+
 
 void show_trunks(struct trunk *p)
 {
@@ -254,7 +302,7 @@ int verify(struct avl_node *p)
 const char *get_str(int x)
 {
   static char buf[20];
-  sprintf(buf, "%d", x);
+  sprintf(buf, "%03d", x);
   return buf;
 }
 
@@ -282,13 +330,18 @@ int main(void)
 
 	puts("Tree is:");
 	show_tree(root, 0, 0);
+        show_all(root);
 
+        printf("\nSize: %lu", avl_get_size(root));
+        
 	puts("\nQuerying values:");
 	for (x = 0; x < MAX_VAL; x++) {
 		struct avl_node *p = avl_query(root, get_str(x));
 		if (p)	printf("%2d found: %p %s\n", x, p, p->key);
 	}
 
+        avl_delete_all(&root, avl_free_key, avl_free_value);
+        
 	for (x = 0; x < MAX_VAL; x++) {
 		avl_delete(&root, get_str(x), avl_free_key, avl_free_value);
 		verify(root);

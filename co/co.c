@@ -1,4 +1,12 @@
+/*
 
+  co.c
+
+  C Object Library https://github.com/olikraus/c-object
+
+  CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
+
+*/
 #include "co.h"
 #include <stdlib.h>
 #include <string.h>
@@ -439,3 +447,224 @@ co cosClone(cco o)
 
 /*=== Map ===*/
 /* based on https://rosettacode.org/wiki/AVL_tree/C */
+
+struct co_avl_node_struct avl_dummy = { NULL, NULL, {&avl_dummy, &avl_dummy}, 0 };
+struct co_avl_node_struct *avl_nnil = &avl_dummy; // internally, avl_nnil is the new nul
+
+typedef void (*avl_free_fn)(void *p);
+
+void avl_free_value(void *value)
+{
+  free(value);
+}
+
+void avl_free_key(void *key)
+{
+  free(key);
+}
+
+void avl_keep_key(void *key)
+{
+}
+
+struct co_avl_node_struct *avl_new_node(char *key, void *value)
+{
+  struct co_avl_node_struct *n = malloc(sizeof(struct co_avl_node_struct));
+  n->key = key;
+  n->value = value;
+  n->height = 1;
+  n->kid[0] = avl_nnil;
+  n->kid[1] = avl_nnil;
+  return n;
+}
+
+static void avl_delete_node(struct co_avl_node_struct *n, avl_free_fn free_key, avl_free_fn free_value)
+{
+  avl_free_key(n->key);
+  if ( n->value != NULL )
+    avl_free_value(n->value);
+  n->value = NULL;
+  n->kid[0] = NULL;
+  n->kid[1] = NULL;
+  free(n);
+}
+
+static int avl_max(int a, int b) 
+{ 
+  return a > b ? a : b; 
+}
+
+static void avl_set_height(struct co_avl_node_struct *n) 
+{
+  n->height = 1 + avl_max(n->kid[0]->height, n->kid[1]->height);
+}
+
+static int avl_get_ballance_diff(struct co_avl_node_struct *n) 
+{
+  return n->kid[0]->height - n->kid[1]->height;
+}
+
+// rotate a subtree according to dir; if new root is nil, old root is freed
+static struct co_avl_node_struct * avl_rotate(struct co_avl_node_struct **rootp, int dir, avl_free_fn free_key, avl_free_fn free_value)
+{
+  struct co_avl_node_struct *old_r = *rootp;
+  struct co_avl_node_struct *new_r = old_r->kid[dir];
+
+  *rootp = new_r;               // replace root with the selected child
+  
+  if (avl_nnil == *rootp)
+  {
+    avl_delete_node(old_r, free_key, free_value);
+  }
+  else 
+  {
+    old_r->kid[dir] = new_r->kid[!dir];
+    avl_set_height(old_r);
+    new_r->kid[!dir] = old_r;
+  }
+  return new_r;
+}
+
+static void avl_adjust_balance(struct co_avl_node_struct **rootp, avl_free_fn free_key, avl_free_fn free_value)
+{
+  struct co_avl_node_struct *root = *rootp;
+  int b = avl_get_ballance_diff(root)/2;
+  if (b != 0) 
+  {
+    int dir = (1 - b)/2;
+    if (avl_get_ballance_diff(root->kid[dir]) == -b)
+    {
+      avl_rotate(&root->kid[dir], !dir, free_key, free_value);
+    }
+    root = avl_rotate(rootp, dir, free_key, free_value);
+  }
+  if (root != avl_nnil)
+    avl_set_height(root);
+}
+
+// find the node that contains the given key; or returns 0
+struct co_avl_node_struct *avl_query(struct co_avl_node_struct *root, const char *key)
+{
+  int c;
+  if ( key == NULL )
+    return NULL;
+  
+  if ( root == avl_nnil )
+    return NULL;
+  
+  c = strcmp(key, root->key);
+  if ( c == 0 )
+    return root;
+  return avl_query(root->kid[c > 0], key);
+}
+
+void avl_insert(struct co_avl_node_struct **rootp, char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
+{
+  struct co_avl_node_struct *root = *rootp;
+  int c;
+
+  if ( key == NULL )
+    return; // illegal key
+
+  if (root == avl_nnil)
+  {
+    *rootp = avl_new_node(key, value);  // value is cloned within avl_new_node()
+    return;
+  }
+  
+  c = strcmp(key, root->key);
+  if ( c == 0 )
+  {
+    // key already exists: replace value
+    free_key(key);
+    if ( root->value != NULL )
+      free_value(root->value);
+    root->value = value;
+  }
+  else
+  {
+    avl_insert(&root->kid[c > 0], key, value, free_key, free_value);
+    avl_adjust_balance(rootp, free_key, free_value);
+  }
+}
+
+void avl_delete(struct co_avl_node_struct **rootp, const char *key, avl_free_fn free_key, avl_free_fn free_value)
+{
+  struct co_avl_node_struct *root = *rootp;
+  if ( key == NULL )
+    return; // illegal key
+  if (root == avl_nnil) 
+    return; // not found
+
+  // if this is the node we want, rotate until off the tree
+  if ( strcmp(key, root->key) == 0 )
+  {
+    root = avl_rotate(rootp, avl_get_ballance_diff(root) < 0, free_key, free_value);
+    if (avl_nnil == root)
+    {
+      return;
+    }
+  }
+  avl_delete(&root->kid[strcmp(key, root->key) > 0], key, free_key, free_value);
+  avl_adjust_balance(rootp, free_key, free_value);
+}
+
+
+int comInit(co o, void *data);
+int comAdd(co o, co p);
+size_t comCnt(co o);
+cco comGetByIdx(co o, size_t idx);
+const char *comToString(co o);
+void comPrint(cco o);
+
+struct coFnStruct comStruct = 
+{
+  comInit,
+  comAdd,
+  comCnt,
+  comGetByIdx,
+  comToString,
+  comPrint,
+  cosDestroy,
+  cosMap,
+  cosClone
+};
+coFn coMapType = &comStruct;
+
+
+int comInit(co o, void *data)
+{
+    o->m.root = avl_nnil;
+    return 1;
+}
+
+int comAdd(co o, co p)
+{
+  return 0;     // not allowed
+}
+
+size_t comCnt(co o)
+{
+  return 0;
+}
+
+cco comGetByIdx(co o, size_t idx)
+{
+  return NULL;
+}
+
+const char *comToString(co o)
+{
+  return "";
+}
+
+void comPrint(cco o)
+{
+  //printf("%s", o->s.str);
+}
+
+void comDestroy(co o)
+{
+  //avl_delete(&(o->m.root), const char *key, avl_free_fn free_key, avl_free_fn free_value)
+  
+}
