@@ -18,19 +18,19 @@
 #include <string.h>
 #include <time.h>
 
-struct avl_node 
+struct avl_node_struct 
 {
   char *key;
   void *value;
-  struct avl_node * kid[2];
+  struct avl_node_struct * kid[2];
   int height;
 };
 
-struct avl_node avl_dummy = { NULL, NULL, {&avl_dummy, &avl_dummy}, 0 };
-struct avl_node *avl_nnil = &avl_dummy; // internally, avl_nnil is the new nul
+struct avl_node_struct avl_dummy = { NULL, NULL, {&avl_dummy, &avl_dummy}, 0 };
+struct avl_node_struct *avl_nnil = &avl_dummy; // internally, avl_nnil is the new nul
 
 typedef void (*avl_free_fn)(void *p);
-typedef int (*avl_visit_fn)(size_t idx, struct avl_node *n, void *data);
+typedef int (*avl_visit_fn)(size_t idx, struct avl_node_struct *n, void *data);
 
 void avl_free_value(void *value)
 {
@@ -46,9 +46,9 @@ void avl_keep_key(void *key)
 {
 }
 
-struct avl_node *avl_new_node(char *key, void *value)
+struct avl_node_struct *avl_new_node(char *key, void *value)
 {
-  struct avl_node *n = malloc(sizeof(struct avl_node));
+  struct avl_node_struct *n = malloc(sizeof(struct avl_node_struct));
   n->key = key;
   n->value = value;
   n->height = 1;
@@ -57,7 +57,7 @@ struct avl_node *avl_new_node(char *key, void *value)
   return n;
 }
 
-static void avl_delete_node(struct avl_node *n, avl_free_fn free_key, avl_free_fn free_value)
+static void avl_delete_node(struct avl_node_struct *n, avl_free_fn free_key, avl_free_fn free_value)
 {
   avl_free_key(n->key);
   if ( n->value != NULL )
@@ -73,21 +73,21 @@ static int avl_max(int a, int b)
   return a > b ? a : b; 
 }
 
-static void avl_set_height(struct avl_node *n) 
+static void avl_set_height(struct avl_node_struct *n) 
 {
   n->height = 1 + avl_max(n->kid[0]->height, n->kid[1]->height);
 }
 
-static int avl_get_ballance_diff(struct avl_node *n) 
+static int avl_get_ballance_diff(struct avl_node_struct *n) 
 {
   return n->kid[0]->height - n->kid[1]->height;
 }
 
 // rotate a subtree according to dir; if new root is nil, old root is freed
-static struct avl_node * avl_rotate(struct avl_node **rootp, int dir, avl_free_fn free_key, avl_free_fn free_value)
+static struct avl_node_struct * avl_rotate(struct avl_node_struct **rootp, int dir, avl_free_fn free_key, avl_free_fn free_value)
 {
-  struct avl_node *old_r = *rootp;
-  struct avl_node *new_r = old_r->kid[dir];
+  struct avl_node_struct *old_r = *rootp;
+  struct avl_node_struct *new_r = old_r->kid[dir];
 
   *rootp = new_r;               // replace root with the selected child
   
@@ -104,9 +104,9 @@ static struct avl_node * avl_rotate(struct avl_node **rootp, int dir, avl_free_f
   return new_r;
 }
 
-static void avl_adjust_balance(struct avl_node **rootp, avl_free_fn free_key, avl_free_fn free_value)
+static void avl_adjust_balance(struct avl_node_struct **rootp, avl_free_fn free_key, avl_free_fn free_value)
 {
-  struct avl_node *root = *rootp;
+  struct avl_node_struct *root = *rootp;
   int b = avl_get_ballance_diff(root)/2;
   if (b != 0) 
   {
@@ -122,7 +122,7 @@ static void avl_adjust_balance(struct avl_node **rootp, avl_free_fn free_key, av
 }
 
 // find the node that contains the given key; or returns 0
-struct avl_node *avl_query(struct avl_node *root, const char *key)
+struct avl_node_struct *avl_query(struct avl_node_struct *root, const char *key)
 {
   int c;
   if ( key == NULL )
@@ -137,9 +137,9 @@ struct avl_node *avl_query(struct avl_node *root, const char *key)
   return avl_query(root->kid[c > 0], key);
 }
 
-void avl_insert(struct avl_node **rootp, char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
+void avl_insert(struct avl_node_struct **rootp, char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
 {
-  struct avl_node *root = *rootp;
+  struct avl_node_struct *root = *rootp;
   int c;
 
   if ( key == NULL )
@@ -167,9 +167,9 @@ void avl_insert(struct avl_node **rootp, char *key, void *value, avl_free_fn fre
   }
 }
 
-void avl_delete(struct avl_node **rootp, const char *key, avl_free_fn free_key, avl_free_fn free_value)
+void avl_delete(struct avl_node_struct **rootp, const char *key, avl_free_fn free_key, avl_free_fn free_value)
 {
-  struct avl_node *root = *rootp;
+  struct avl_node_struct *root = *rootp;
   if ( key == NULL )
     return; // illegal key
   if (root == avl_nnil) 
@@ -188,7 +188,7 @@ void avl_delete(struct avl_node **rootp, const char *key, avl_free_fn free_key, 
   avl_adjust_balance(rootp, free_key, free_value);
 }
 
-int avl_for_each(struct avl_node *n, avl_visit_fn visitCB, size_t *idx, void *data)
+int avl_for_each(struct avl_node_struct *n, avl_visit_fn visitCB, size_t *idx, void *data)
 {
   if ( n == avl_nnil) 
     return 1;
@@ -203,7 +203,7 @@ int avl_for_each(struct avl_node *n, avl_visit_fn visitCB, size_t *idx, void *da
 /*
   after calling avl_delete_all the "n" argument is illegal ans points to avl_nnil
 */
-void avl_delete_all(struct avl_node **n, avl_free_fn free_key, avl_free_fn free_value)
+void avl_delete_all(struct avl_node_struct **n, avl_free_fn free_key, avl_free_fn free_value)
 {
   if ( *n == avl_nnil) 
     return;
@@ -213,13 +213,13 @@ void avl_delete_all(struct avl_node **n, avl_free_fn free_key, avl_free_fn free_
   *n = avl_nnil;
 }
 
-static int avl_get_size_cb(size_t idx, struct avl_node *n, void *data)
+static int avl_get_size_cb(size_t idx, struct avl_node_struct *n, void *data)
 {
   return 1;
 }
 
 
-size_t avl_get_size(struct avl_node *n)
+size_t avl_get_size(struct avl_node_struct *n)
 {
   size_t cnt = 0;
   avl_for_each(n, avl_get_size_cb, &cnt, NULL);
@@ -233,13 +233,13 @@ struct trunk {
 	char * str;
 };
 
-int show_node(size_t idx, struct avl_node *n, void *data)
+int show_node(size_t idx, struct avl_node_struct *n, void *data)
 {
   printf("%lu:%s ", idx, n->key);
   return 1;
 }
 
-void show_all(struct avl_node *root)
+void show_all(struct avl_node_struct *root)
 {
   size_t idx = 0;
   avl_for_each(root, show_node, &idx, NULL);
@@ -254,7 +254,7 @@ void show_trunks(struct trunk *p)
 }
 
 // this is very haphazzard
-void show_tree(struct avl_node *root, struct trunk *prev, int is_left)
+void show_tree(struct avl_node_struct *root, struct trunk *prev, int is_left)
 {
 	if (root == avl_nnil) return;
 
@@ -282,7 +282,7 @@ void show_tree(struct avl_node *root, struct trunk *prev, int is_left)
 	if (!prev) puts("");
 }
 
-int verify(struct avl_node *p)
+int verify(struct avl_node_struct *p)
 {
 	if (p == avl_nnil) return 1;
 
@@ -309,7 +309,7 @@ const char *get_str(int x)
 int main(void)
 {
 	int x;
-	struct avl_node *root = avl_nnil;
+	struct avl_node_struct *root = avl_nnil;
 
 	srand(time(0));
 
@@ -336,7 +336,7 @@ int main(void)
         
 	puts("\nQuerying values:");
 	for (x = 0; x < MAX_VAL; x++) {
-		struct avl_node *p = avl_query(root, get_str(x));
+		struct avl_node_struct *p = avl_query(root, get_str(x));
 		if (p)	printf("%2d found: %p %s\n", x, p, p->key);
 	}
 
