@@ -106,7 +106,7 @@ typedef long int coInt;
 
 struct co_avl_node_struct 
 {
-  char *key;
+  const char *key;
   void *value;
   struct co_avl_node_struct * kid[2];
   int height;
@@ -161,7 +161,6 @@ extern coFn coVectorType;
 extern coFn coStrType;
 
 co coNewBlank();
-co coNewVector(unsigned flags);
 co coNewStr(unsigned flags, const char *s);
 
 void coPrint(const cco o);
@@ -171,7 +170,13 @@ void coDelete(co o);
 co coClone(cco o);
 
 /* vector functions */
+co coNewVector(unsigned flags);
 int covAdd(co o, co p);
 void covDeleteElement(co v, size_t i);
 int covAppendVector(co v, cco src);  // append elements from src to vector v
+
+/* map functions */
+co coNewMap(unsigned flags);
+int comAdd(co o, const char *key, co value);
+cco comGet(cco o, const char *key);
 

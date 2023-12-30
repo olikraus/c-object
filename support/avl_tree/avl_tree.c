@@ -49,6 +49,8 @@ void avl_keep_key(void *key)
 struct avl_node_struct *avl_new_node(char *key, void *value)
 {
   struct avl_node_struct *n = malloc(sizeof(struct avl_node_struct));
+  if ( n == NULL )
+    return avl_nnil;
   n->key = key;
   n->value = value;
   n->height = 1;
@@ -137,18 +139,21 @@ struct avl_node_struct *avl_query(struct avl_node_struct *root, const char *key)
   return avl_query(root->kid[c > 0], key);
 }
 
-void avl_insert(struct avl_node_struct **rootp, char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
+/* returns 0 for any allocation error */
+int avl_insert(struct avl_node_struct **rootp, char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
 {
   struct avl_node_struct *root = *rootp;
   int c;
 
   if ( key == NULL )
-    return; // illegal key
+    return 0; // illegal key
 
   if (root == avl_nnil)
   {
     *rootp = avl_new_node(key, value);  // value is cloned within avl_new_node()
-    return;
+    if ( *rootp == avl_nnil )
+      return 0;
+    return 1;
   }
   
   c = strcmp(key, root->key);
@@ -162,9 +167,11 @@ void avl_insert(struct avl_node_struct **rootp, char *key, void *value, avl_free
   }
   else
   {
-    avl_insert(&root->kid[c > 0], key, value, free_key, free_value);
+    if ( avl_insert(&root->kid[c > 0], key, value, free_key, free_value) == 0 )
+      return 0;
     avl_adjust_balance(rootp, free_key, free_value);
   }
+  return 1;
 }
 
 void avl_delete(struct avl_node_struct **rootp, const char *key, avl_free_fn free_key, avl_free_fn free_value)

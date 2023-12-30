@@ -17,7 +17,8 @@
 
 void coPrint(cco o)
 {
-  o->fn->print(o);
+  if ( o != NULL )
+    o->fn->print(o);
 }
 
 cco coGetByIdx(co o, size_t idx)
@@ -460,9 +461,11 @@ static void avl_keep_key(void *key)
 {
 }
 
-static struct co_avl_node_struct *avl_new_node(char *key, void *value)
+static struct co_avl_node_struct *avl_new_node(const char *key, void *value)
 {
   struct co_avl_node_struct *n = malloc(sizeof(struct co_avl_node_struct));
+  if ( n == NULL )
+    return avl_nnil;
   n->key = key;
   n->value = value;
   n->height = 1;
@@ -473,7 +476,7 @@ static struct co_avl_node_struct *avl_new_node(char *key, void *value)
 
 static void avl_delete_node(struct co_avl_node_struct *n, avl_free_fn free_key, avl_free_fn free_value)
 {
-  avl_free_key(n->key);
+  avl_free_key((void *)(n->key));
   if ( n->value != NULL )
     avl_free_value(n->value);
   n->value = NULL;
@@ -535,7 +538,7 @@ static void avl_adjust_balance(struct co_avl_node_struct **rootp, avl_free_fn fr
     avl_set_height(root);
 }
 
-// find the node that contains the given key; or returns 0
+// find the node that contains the given key; or returns NULL (which is a little bit inconsistent)
 struct co_avl_node_struct *avl_query(struct co_avl_node_struct *root, const char *key)
 {
   int c;
@@ -551,34 +554,39 @@ struct co_avl_node_struct *avl_query(struct co_avl_node_struct *root, const char
   return avl_query(root->kid[c > 0], key);
 }
 
-static void avl_insert(struct co_avl_node_struct **rootp, char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
+/* returns 0 for any allocation error */
+static int avl_insert(struct co_avl_node_struct **rootp, const char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
 {
   struct co_avl_node_struct *root = *rootp;
   int c;
 
   if ( key == NULL )
-    return; // illegal key
+    return 0; // illegal key
 
   if (root == avl_nnil)
   {
     *rootp = avl_new_node(key, value);  // value is cloned within avl_new_node()
-    return;
+    if ( *rootp == avl_nnil )
+      return 0;
+    return 1;
   }
   
   c = strcmp(key, root->key);
   if ( c == 0 )
   {
     // key already exists: replace value
-    free_key(key);
+    free_key((void *)key);
     if ( root->value != NULL )
       free_value(root->value);
     root->value = value;
   }
   else
   {
-    avl_insert(&root->kid[c > 0], key, value, free_key, free_value);
+    if ( avl_insert(&root->kid[c > 0], key, value, free_key, free_value) == 0 )
+      return 0;
     avl_adjust_balance(rootp, free_key, free_value);
   }
+  return 1;
 }
 
 static void avl_delete(struct co_avl_node_struct **rootp, const char *key, avl_free_fn free_key, avl_free_fn free_value)
@@ -670,7 +678,6 @@ co coNewMap(unsigned flags)
 }
 
 
-
 int comInit(co o, void *data)
 {
     o->m.root = avl_nnil;
@@ -679,6 +686,14 @@ int comInit(co o, void *data)
 
 int comAdd(co o, const char *key, co value)
 {
+  avl_insert(
+    &(o->m.root), 
+    key,
+    (void *)value,
+    (o->flags & CO_FREE_KEYS)?avl_free_key:avl_keep_key, 
+    (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
+  );  
+  
   return 0;     
 }
 
@@ -743,4 +758,13 @@ co comClone(cco o)
     return NULL;
   }
   return new_obj;
+}
+
+/* return the value for a given key */
+cco comGet(cco o, const char *key)
+{
+  struct co_avl_node_struct *n = avl_query(o->m.root, key);
+  if ( n == NULL )
+    return NULL;
+  return (cco)(n->value);  
 }
