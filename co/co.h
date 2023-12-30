@@ -90,16 +90,16 @@ typedef struct coStruct const * const cco;
 typedef struct coFnStruct *coFn;
 
 typedef int (*coInitFn)(co o, void *data);
-typedef size_t (*coCntFn)(co o);
+typedef size_t (*coSizeFn)(co o);
 typedef cco (*coGetByIdxFn)(co o, size_t idx);
 typedef const char *(*coToStringFn)(co o);
 typedef void (*coPrintFn)(const cco o);
 typedef void (*coDestroyFn)(co o);
-typedef co (*coMapCB)(cco o, size_t idx, cco element, void *data);
-typedef co (*coMapFn)(cco o, coMapCB cb, void *data); // data is just passed to the map function
+typedef int (*coEmptyFn)(cco o);
 typedef co (*coCloneFn)(cco o);
 
 
+typedef co (*covMapCB)(cco o, size_t idx, cco element, void *data);
 typedef int (*covForEachCB)(cco o, size_t idx, cco element, void *data);
 
 typedef long int coInt;
@@ -145,12 +145,11 @@ struct coStruct
 struct coFnStruct
 {
   coInitFn init;                      // (*coInitFn)(co o);
-  coCntFn cnt;        
+  coSizeFn size;        
   coGetByIdxFn getByIdx;
   coToStringFn toString;
   coPrintFn print;
   coDestroyFn destroy;  // counterpart to init
-  coMapFn map;                  // create a new vector, all elements must be cloned!
   coCloneFn clone;
 };
 
@@ -171,12 +170,16 @@ co coClone(cco o);
 
 /* vector functions */
 co coNewVector(unsigned flags);
-int covAdd(co o, co p);
-void covDeleteElement(co v, size_t i);
+ssize_t covAdd(co o, co p);         // add object at the end of the list, returns -1 for error
 int covAppendVector(co v, cco src);  // append elements from src to vector v
+cco covGet(co o, size_t idx);           // return object at specific position from the vector
+void covErase(co v, size_t i);  // delete and remove element at the specified position
+void covClear(co o);    // delete all elements and clear the array
 
 /* map functions */
 co coNewMap(unsigned flags);
-int comAdd(co o, const char *key, co value);
-cco comGet(cco o, const char *key);
+int comAdd(co o, const char *key, co value);    // insert object into the map
+cco comGet(cco o, const char *key);     // get object from map by key, returns NULL if key doesn't exist in the map 
+void comErase(co o, const char *key);   // removes object from the map
+void comClear(co o);   // delete all elements and clear the array         
 

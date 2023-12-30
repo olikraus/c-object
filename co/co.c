@@ -69,24 +69,22 @@ const char *coToString(co o)
 
 int cobInit(co o, void *data);  // data: ignored
 int cobAdd(co o, co p);
-size_t cobCnt(co o);
+size_t cobSize(co o);
 cco cobGetByIdx(co o, size_t idx);
 const char *cobToString(co o);
 void cobPrint(cco o);
 void cobDestroy(co o);
-co cobMap(cco o, coMapCB cb, void *data);
 co cobClone(cco o);
 
 
 struct coFnStruct cobStruct = 
 {
   cobInit,
-  cobCnt,
+  cobSize,
   cobGetByIdx,
   cobToString,
   cobPrint,
   cobDestroy,
-  cobMap,
   cobClone
 };
 coFn coBlankType = &cobStruct;
@@ -102,7 +100,7 @@ int cobInit(co o, void *data)
   return 1;
 }
 
-size_t cobCnt(co o)
+size_t cobSize(co o)
 {
   return 0;
 }
@@ -125,11 +123,6 @@ void cobDestroy(co o)
 {
 }
 
-co cobMap(cco o, coMapCB cb, void *data)
-{
-    return cobClone(o);
-}
-
 co cobClone(cco o)
 {
   return coNew(o->fn, o->flags);
@@ -139,25 +132,24 @@ co cobClone(cco o)
 /*=== Vector ===*/
 
 int covInit(co o, void *data);  // data: not used
-int covAdd(co o, co p);
-size_t covCnt(co o);
-cco covGetByIdx(co o, size_t idx);
+ssize_t covAdd(co o, co p);
+size_t covSize(co o);
+cco covGet(co o, size_t idx);
 const char *covToString(co o);
 int covForEach(cco o, covForEachCB cb, void *data);
 void covPrint(cco o);
-void covDestroy(co o);
-co covMap(cco o, coMapCB cb, void *data);
+static void covDestroy(co o);
+co covMap(cco o, covMapCB cb, void *data);
 co covClone(cco o);
 
 struct coFnStruct covStruct = 
 {
   covInit,
-  covCnt,
-  covGetByIdx,
+  covSize,
+  covGet,
   covToString,
   covPrint,
   covDestroy,
-  covMap,
   covClone
 };
 coFn coVectorType = &covStruct;
@@ -183,29 +175,31 @@ int covInit(co o, void *data)
 
 /*
   p will be moved, so maybe a clone is required 
+  returns -1 in case of memory error
+  otherwise it returns the position where the element was added
 */
-int covAdd(co o, co p)
+ssize_t covAdd(co o, co p)
 {
   void *ptr;
   while( o->v.max <= o->v.cnt )
   {
     ptr = realloc(o->v.list, (o->v.cnt+COV_EXTEND)*sizeof(co));
     if ( ptr == NULL )
-        return 0;
+        return -1;
     o->v.list = (co *)ptr;
     o->v.max += COV_EXTEND;
   }  
   o->v.list[o->v.cnt] = p;
   o->v.cnt++;
-  return 1;
+  return o->v.cnt-1;
 }
 
-size_t covCnt(co o)
+size_t covSize(co o)
 {
   return o->v.cnt;
 }
 
-cco covGetByIdx(co o, size_t idx)
+cco covGet(co o, size_t idx)
 {
     if ( idx >= o->v.cnt )
       return NULL;
@@ -248,7 +242,7 @@ static int covDestroyCB(cco o, size_t i, cco e, void *data)
   return 1;
 }
 
-void covDestroy(co o)
+static void covDestroy(co o)
 {
   covForEach(o, covDestroyCB, NULL);
   free(o->v.list);
@@ -257,7 +251,13 @@ void covDestroy(co o)
   o->v.cnt = 0;    
 }
 
-co covMap(cco o, coMapCB cb, void *data)
+void covClear(co o)
+{
+  covForEach(o, covDestroyCB, NULL);
+  o->v.cnt = 0;  
+}
+
+co covMap(cco o, covMapCB cb, void *data)
 {
   co v = coNewVector(CO_FREE_VALS);
   co e;
@@ -297,7 +297,7 @@ co covClone(cco o)
 /* special vector functions */
 
 /* delete an element in the vector. Size is reduced  by 1 */
-void covDeleteElement(co v, size_t i)
+void covErase(co v, size_t i)
 {
   if ( i >= v->v.cnt )
     return;             // do nothing, index is outside the vecor  
@@ -338,7 +338,7 @@ int covAppendVector(co v, cco src)
         while( i > oldCnt )
         {
           i--;
-          covDeleteElement(v, i);
+          covErase(v, i);
         }
       }
       return 1;
@@ -351,23 +351,21 @@ int covAppendVector(co v, cco src)
 
 int cosInit(co o, void *data);  // optional data: const char *
 int cosAdd(co o, co p);
-size_t cosCnt(co o);
+size_t cosSize(co o);
 cco cosGetByIdx(co o, size_t idx);
 const char *cosToString(co o);
 void cosPrint(cco o);
 void cosDestroy(co o);
-co cosMap(cco o, coMapCB cb, void *data);
 co cosClone(cco o);
 
 struct coFnStruct cosStruct = 
 {
   cosInit,
-  cosCnt,
+  cosSize,
   cosGetByIdx,
   cosToString,
   cosPrint,
   cosDestroy,
-  cosMap,
   cosClone
 };
 coFn coStrType = &cosStruct;
@@ -396,7 +394,7 @@ int cosAdd(co o, co p)
   return 0;     // not allowed
 }
 
-size_t cosCnt(co o)
+size_t cosSize(co o)
 {
   return strlen(o->s.str);
 }
@@ -421,11 +419,6 @@ void cosDestroy(co o)
   if ( o->flags & CO_FREE_VALS )
     free(o->s.str);
   o->s.str = NULL;
-}
-
-co cosMap(cco o, coMapCB cb, void *data)
-{
-    return cosClone(o);
 }
 
 co cosClone(cco o)
@@ -651,23 +644,21 @@ static size_t avl_get_size(struct co_avl_node_struct *n)
 
 
 int comInit(co o, void *data);
-size_t comCnt(co o);
+size_t comSize(co o);
 cco comGetByIdx(co o, size_t idx);
 const char *comToString(co o);
 void comPrint(cco o);
-void comDestroy(co o);
-co comMap(cco o, coMapCB cb, void *data);
+void comClear(co o);
 co comClone(cco o);
 
 struct coFnStruct comStruct = 
 {
   comInit,
-  comCnt,
+  comSize,
   comGetByIdx,
   comToString,
   comPrint,
-  comDestroy,
-  comMap,
+  comClear,             // destroy function is identical to clear function
   comClone
 };
 coFn coMapType = &comStruct;
@@ -697,7 +688,7 @@ int comAdd(co o, const char *key, co value)
   return 0;     
 }
 
-size_t comCnt(co o)
+size_t comSize(co o)
 {
   return avl_get_size(o->m.root);              // O(n) !
 }
@@ -729,18 +720,13 @@ void comPrint(cco o)
   printf("}\n");  
 }
 
-void comDestroy(co o)
+void comClear(co o)
 {
   avl_delete_all(
     &(o->m.root), 
     (o->flags & CO_FREE_KEYS)?avl_free_key:avl_keep_key, 
     (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
   );  
-}
-
-co comMap(cco o, coMapCB cb, void *data)
-{
-    return comClone(o);
 }
 
 static int avl_com_clone_cb(size_t idx, struct co_avl_node_struct *n, void *data)
@@ -768,3 +754,14 @@ cco comGet(cco o, const char *key)
     return NULL;
   return (cco)(n->value);  
 }
+
+void comErase(co o, const char *key)
+{
+  avl_delete(
+    &(o->m.root), 
+    key,
+    (o->flags & CO_FREE_KEYS)?avl_free_key:avl_keep_key, 
+    (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
+  );    
+}
+
