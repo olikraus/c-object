@@ -20,11 +20,6 @@ void coPrint(cco o)
   o->fn->print(o);
 }
 
-int coAdd(co o, co p)
-{
-    return o->fn->add(o, p);
-}
-
 cco coGetByIdx(co o, size_t idx)
 {
   return o->fn->getByIdx(o, idx);
@@ -85,7 +80,6 @@ co cobClone(cco o);
 struct coFnStruct cobStruct = 
 {
   cobInit,
-  cobAdd,
   cobCnt,
   cobGetByIdx,
   cobToString,
@@ -105,11 +99,6 @@ int cobInit(co o, void *data)
 {
   o->fn = coBlankType;
   return 1;
-}
-
-int cobAdd(co o, co p)
-{
-  return 0;
 }
 
 size_t cobCnt(co o)
@@ -162,7 +151,6 @@ co covClone(cco o);
 struct coFnStruct covStruct = 
 {
   covInit,
-  covAdd,
   covCnt,
   covGetByIdx,
   covToString,
@@ -373,7 +361,6 @@ co cosClone(cco o);
 struct coFnStruct cosStruct = 
 {
   cosInit,
-  cosAdd,
   cosCnt,
   cosGetByIdx,
   cosToString,
@@ -452,22 +439,28 @@ struct co_avl_node_struct avl_dummy = { NULL, NULL, {&avl_dummy, &avl_dummy}, 0 
 struct co_avl_node_struct *avl_nnil = &avl_dummy; // internally, avl_nnil is the new nul
 
 typedef void (*avl_free_fn)(void *p);
+typedef int (*avl_visit_fn)(size_t idx, struct co_avl_node_struct *n, void *data);
 
-void avl_free_value(void *value)
+static void avl_free_value(void *value)
 {
-  free(value);
+  coDelete((co)value);
 }
 
-void avl_free_key(void *key)
+static void avl_keep_value(void *value)
+{
+}
+
+
+static void avl_free_key(void *key)
 {
   free(key);
 }
 
-void avl_keep_key(void *key)
+static void avl_keep_key(void *key)
 {
 }
 
-struct co_avl_node_struct *avl_new_node(char *key, void *value)
+static struct co_avl_node_struct *avl_new_node(char *key, void *value)
 {
   struct co_avl_node_struct *n = malloc(sizeof(struct co_avl_node_struct));
   n->key = key;
@@ -558,7 +551,7 @@ struct co_avl_node_struct *avl_query(struct co_avl_node_struct *root, const char
   return avl_query(root->kid[c > 0], key);
 }
 
-void avl_insert(struct co_avl_node_struct **rootp, char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
+static void avl_insert(struct co_avl_node_struct **rootp, char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
 {
   struct co_avl_node_struct *root = *rootp;
   int c;
@@ -588,7 +581,7 @@ void avl_insert(struct co_avl_node_struct **rootp, char *key, void *value, avl_f
   }
 }
 
-void avl_delete(struct co_avl_node_struct **rootp, const char *key, avl_free_fn free_key, avl_free_fn free_value)
+static void avl_delete(struct co_avl_node_struct **rootp, const char *key, avl_free_fn free_key, avl_free_fn free_value)
 {
   struct co_avl_node_struct *root = *rootp;
   if ( key == NULL )
@@ -609,27 +602,73 @@ void avl_delete(struct co_avl_node_struct **rootp, const char *key, avl_free_fn 
   avl_adjust_balance(rootp, free_key, free_value);
 }
 
+static int avl_for_each(struct co_avl_node_struct *n, avl_visit_fn visitCB, size_t *idx, void *data)
+{
+  if ( n == avl_nnil) 
+    return 1;
+  avl_for_each(n->kid[0], visitCB, idx, data);
+  if ( visitCB(*idx, n, data) == 0 )
+    return 0;
+  (*idx)++;
+  avl_for_each(n->kid[1], visitCB, idx, data);  
+  return 1;
+}
+
+/*
+  after calling avl_delete_all the "n" argument is illegal and points to avl_nnil
+*/
+static void avl_delete_all(struct co_avl_node_struct **n, avl_free_fn free_key, avl_free_fn free_value)
+{
+  if ( *n == avl_nnil) 
+    return;
+  avl_delete_all(&((*n)->kid[0]), free_key, free_value);
+  avl_delete_all(&((*n)->kid[1]), free_key, free_value);
+  avl_delete_node(*n, free_key, free_value);
+  *n = avl_nnil;
+}
+
+static int avl_get_size_cb(size_t idx, struct co_avl_node_struct *n, void *data)
+{
+  return 1;
+}
+
+/* warning: this has O(n) runtime */
+static size_t avl_get_size(struct co_avl_node_struct *n)
+{
+  size_t cnt = 0;
+  avl_for_each(n, avl_get_size_cb, &cnt, NULL);
+  return cnt;
+}
+
+
 
 int comInit(co o, void *data);
-int comAdd(co o, co p);
 size_t comCnt(co o);
 cco comGetByIdx(co o, size_t idx);
 const char *comToString(co o);
 void comPrint(cco o);
+void comDestroy(co o);
+co comMap(cco o, coMapCB cb, void *data);
+co comClone(cco o);
 
 struct coFnStruct comStruct = 
 {
   comInit,
-  comAdd,
   comCnt,
   comGetByIdx,
   comToString,
   comPrint,
-  cosDestroy,
-  cosMap,
-  cosClone
+  comDestroy,
+  comMap,
+  comClone
 };
 coFn coMapType = &comStruct;
+
+co coNewMap(unsigned flags)
+{
+  return coNew(coMapType, flags);
+}
+
 
 
 int comInit(co o, void *data)
@@ -638,14 +677,14 @@ int comInit(co o, void *data)
     return 1;
 }
 
-int comAdd(co o, co p)
+int comAdd(co o, const char *key, co value)
 {
-  return 0;     // not allowed
+  return 0;     
 }
 
 size_t comCnt(co o)
 {
-  return 0;
+  return avl_get_size(o->m.root);              // O(n) !
 }
 
 cco comGetByIdx(co o, size_t idx)
@@ -658,13 +697,50 @@ const char *comToString(co o)
   return "";
 }
 
+static int avl_com_print_cb(size_t idx, struct co_avl_node_struct *n, void *data)
+{
+  if ( idx > 0 )
+    printf(", ");
+  printf("%s:", n->key);
+  coPrint((cco)(n->value));
+  return 1;
+}
+
 void comPrint(cco o)
 {
-  //printf("%s", o->s.str);
+  size_t cnt = 0;
+  printf("{");
+  avl_for_each(o->m.root, avl_com_print_cb, &cnt, NULL);
+  printf("}\n");  
 }
 
 void comDestroy(co o)
 {
-  //avl_delete(&(o->m.root), const char *key, avl_free_fn free_key, avl_free_fn free_value)
-  
+  avl_delete_all(
+    &(o->m.root), 
+    (o->flags & CO_FREE_KEYS)?avl_free_key:avl_keep_key, 
+    (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
+  );  
+}
+
+co comMap(cco o, coMapCB cb, void *data)
+{
+    return comClone(o);
+}
+
+static int avl_com_clone_cb(size_t idx, struct co_avl_node_struct *n, void *data)
+{
+  return comAdd((co)data, strdup(n->key), coClone((co)(n->value)));
+}
+
+co comClone(cco o)
+{
+  size_t cnt = 0;
+  co new_obj = coNewMap(o->flags | CO_FREE_VALS | CO_FREE_KEYS);
+  if ( avl_for_each(o->m.root, avl_com_clone_cb, &cnt, new_obj) == 0 )
+  {
+    coDelete(new_obj);
+    return NULL;
+  }
+  return new_obj;
 }

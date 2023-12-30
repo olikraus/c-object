@@ -7,9 +7,9 @@ int main()
 {
   co v = coNewVector(CO_FREE);
   co vv;
-  coAdd(v, coNewStr(CO_FREE, strdup("abc")));
-  coAdd(v, coNewStr(CO_FREE, strdup("def")));
-  coAdd(v, coNewStr(CO_FREE, strdup("ghi")));
+  covAdd(v, coNewStr(CO_FREE, strdup("abc")));
+  covAdd(v, coNewStr(CO_FREE, strdup("def")));
+  covAdd(v, coNewStr(CO_FREE, strdup("ghi")));
   
   coPrint(v);
   puts("");

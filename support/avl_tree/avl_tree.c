@@ -201,7 +201,7 @@ int avl_for_each(struct avl_node_struct *n, avl_visit_fn visitCB, size_t *idx, v
 }
 
 /*
-  after calling avl_delete_all the "n" argument is illegal ans points to avl_nnil
+  after calling avl_delete_all the "n" argument is illegal and points to avl_nnil
 */
 void avl_delete_all(struct avl_node_struct **n, avl_free_fn free_key, avl_free_fn free_value)
 {
@@ -218,13 +218,13 @@ static int avl_get_size_cb(size_t idx, struct avl_node_struct *n, void *data)
   return 1;
 }
 
-
 size_t avl_get_size(struct avl_node_struct *n)
 {
   size_t cnt = 0;
   avl_for_each(n, avl_get_size_cb, &cnt, NULL);
   return cnt;
 }
+
 
 
 // aux display and verification routines, helpful but not essential

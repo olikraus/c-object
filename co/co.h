@@ -90,7 +90,6 @@ typedef struct coStruct const * const cco;
 typedef struct coFnStruct *coFn;
 
 typedef int (*coInitFn)(co o, void *data);
-typedef int (*coAddFn)(co o, co p);
 typedef size_t (*coCntFn)(co o);
 typedef cco (*coGetByIdxFn)(co o, size_t idx);
 typedef const char *(*coToStringFn)(co o);
@@ -118,6 +117,8 @@ struct co_avl_node_struct
 #define CO_FREE_KEYS 2
 #define CO_FREE (CO_FREE_VALS|CO_FREE_KEYS)
 
+
+
 struct coStruct
 {
   coFn fn;
@@ -144,7 +145,6 @@ struct coStruct
 struct coFnStruct
 {
   coInitFn init;                      // (*coInitFn)(co o);
-  coAddFn add;                // int (*coAddFn)(co o, co p), p will be deleted (invalid)
   coCntFn cnt;        
   coGetByIdxFn getByIdx;
   coToStringFn toString;
@@ -171,6 +171,7 @@ void coDelete(co o);
 co coClone(cco o);
 
 /* vector functions */
+int covAdd(co o, co p);
 void covDeleteElement(co v, size_t i);
 int covAppendVector(co v, cco src);  // append elements from src to vector v
 
