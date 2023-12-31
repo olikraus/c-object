@@ -114,8 +114,14 @@ struct co_avl_node_struct
 #define CO_FREE_VALS 1
 //#define CO_FREE_KEYS 2
 //#define CO_FREE (CO_FREE_VALS|CO_FREE_KEYS)
-#define CO_STRDUP 4
 
+/* used by str and map objects 
+  CO_STRDUP: execute a strdup on the string or key
+    If CO_STRDUP is used, then  also CO_STRFREE will be enabled
+  CO_STRFREE: execute free on the string or key
+*/
+#define CO_STRDUP 4
+#define CO_STRFREE 8 
 
 struct coStruct
 {
@@ -137,7 +143,7 @@ struct coStruct
     {
       char *str;
       size_t len;       // current str length
-      size_t memlen;    // allocated memory
+      //size_t memlen;    // allocated memory
     } s;
     struct // double
     {
@@ -183,9 +189,12 @@ co coClone(cco o);
 #define coIsMap(o) (coGetType(o)==coMapType)
 #define coIsDbl(o) (coGetType(o)==coDblType)
 
+co coReadJSONByString(const char *json);
+
 
 /* string functions */
-int coStrAdd(co o, const char *s);
+int coStrAdd(co o, const char *s);      // concats the given string to the string object, requires the CO_STRDUP flag
+char *coStrDeleteAndGetAllocatedStringContent(co o);  // convert a str obj to a string, return value must be free'd
 
 
 /* vector functions */
@@ -195,6 +204,8 @@ int coVectorAppendVector(co v, cco src);  // append elements from src to vector 
 cco coVectorGet(co o, long idx);           // return object at specific position from the vector
 void coVectorErase(co v, long i);  // delete and remove element at the specified position
 void coVectorClear(co o);    // delete all elements and clear the array
+int coVectorEmpty(cco o);               // return 1 if the vector is empty, return 0 otherwise
+long coVectorSize(co o);                // return the number of elements in the vector
 
 typedef int (*coVectorForEachCB)(cco o, long idx, cco element, void *data);
 int coVectorForEach(cco o, coVectorForEachCB cb, void *data);
@@ -209,6 +220,7 @@ int coMapAdd(co o, const char *key, co value);    // insert object into the map,
 cco coMapGet(cco o, const char *key);     // get object from map by key, returns NULL if key doesn't exist in the map 
 void coMapErase(co o, const char *key);   // removes object from the map
 void coMapClear(co o);   // delete all elements and clear the array         
+int coMapEmpty(cco o); // return 1 if the map is empty, return 0 otherwise
 
 typedef int (*coMapForEachCB)(cco o, long idx, const char *key, cco value, void *data);
 void coMapForEach(cco o, coMapForEachCB cb, void *data);

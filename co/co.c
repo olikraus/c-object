@@ -26,10 +26,14 @@ cco coGetByIdx(co o, long idx)
   return o->fn->getByIdx(o, idx);
 }
 
+/* delete the object, this will also handle o==NULL */
 void coDelete(co o)
 {
-  o->fn->destroy(o);
-  free(o);
+  if ( o != NULL )
+  {
+    o->fn->destroy(o);
+    free(o);
+  }
 }
 
 co coClone(cco o)
@@ -131,7 +135,7 @@ co cobClone(cco o)
 /*=== Vector ===*/
 
 int coVectorInit(co o, void *data);  // data: not used
-long coVectorAdd(co o, co p);
+long coVectorAdd(co o, co p);   // returns the index of the added element or -1
 long coVectorSize(co o);
 cco coVectorGet(co o, long idx);
 const char *coVectorToString(co o);
@@ -254,6 +258,13 @@ void coVectorClear(co o)
 {
   coVectorForEach(o, coVectorDestroyCB, NULL);
   o->v.cnt = 0;  
+}
+
+int coVectorEmpty(cco o)
+{
+  if ( o->v.cnt == 0 )
+    return 1;
+  return 0;
 }
 
 co coVectorMap(cco o, coVectorMapCB cb, void *data)
@@ -384,7 +395,10 @@ int coStrInit(co o, void *data)
   if ( s == NULL )
     s = empty_string;
   if ( o->flags & CO_STRDUP )
+  {
     o->s.str = strdup(s);
+    o->flags |= CO_STRFREE;
+  }
   else
     o->s.str = s;
   o->s.len = strlen(o->s.str);
@@ -432,14 +446,31 @@ void coStrPrint(cco o)
 
 void coStrDestroy(co o)
 {
-  if ( o->flags & CO_STRDUP )
+  if ( o->flags & CO_STRFREE )
     free(o->s.str);
   o->s.str = NULL;
 }
 
 co coStrClone(cco o)
 {
-  return coNewStr(o->flags | CO_STRDUP, o->s.str); 
+  return coNewStr(o->flags | CO_STRDUP | CO_STRFREE, o->s.str); 
+}
+
+/*
+  Close the string object and return a string pointer with the content.
+  The return value points to allocated memory and must be freed 
+*/
+char *coStrDeleteAndGetAllocatedStringContent(co o)
+{
+  assert(coIsStr(o));
+  char *s;
+  if ( o->flags & CO_STRFREE )
+    s = o->s.str;
+  else
+    s = strdup(o->s.str);
+  o->flags &= ~CO_STRFREE;      // clear the strfree flag so that the memory is not released
+  coDelete(o);           // close the object itself
+  return s;     // and finally return the allocated string
 }
 
 /*=== Double ===*/
@@ -516,8 +547,8 @@ co coDblClone(cco o)
 /*=== Map ===*/
 /* based on https://rosettacode.org/wiki/AVL_tree/C */
 
-struct co_avl_node_struct avl_dummy = { NULL, NULL, {&avl_dummy, &avl_dummy}, 0 };
-struct co_avl_node_struct *avl_nnil = &avl_dummy; // internally, avl_nnil is the new nul
+static struct co_avl_node_struct avl_dummy = { NULL, NULL, {&avl_dummy, &avl_dummy}, 0 };
+static struct co_avl_node_struct *avl_nnil = &avl_dummy; // internally, avl_nnil is the new nul
 
 typedef void (*avl_free_fn)(void *p);
 
@@ -735,6 +766,7 @@ cco coMapGetByIdx(co o, long idx);
 const char *coMapToString(co o);
 void coMapPrint(cco o);
 void coMapClear(co o);
+int coMapEmpty(cco o);
 co coMapClone(cco o);
 
 struct coFnStruct coMapStruct = 
@@ -759,6 +791,10 @@ int coMapInit(co o, void *data)
 {
   assert(coIsMap(o));
   o->m.root = avl_nnil;
+  
+  if ( o->flags & CO_STRDUP )
+    o->flags |= CO_STRFREE;
+  
   return 1;
 }
 
@@ -778,7 +814,7 @@ int coMapAdd(co o, const char *key, co value)
     &(o->m.root), 
     k,
     (void *)value,
-    (o->flags & CO_STRDUP)?avl_free_key:avl_keep_key, 
+    (o->flags & CO_STRFREE)?avl_free_key:avl_keep_key, 
     (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
   );  
 }
@@ -814,7 +850,7 @@ void coMapPrint(cco o)
   assert(coIsMap(o));
   printf("{");
   avl_for_each(o, o->m.root, avl_co_map_print_cb, &cnt, NULL);
-  printf("}\n");  
+  printf("}");  
 }
 
 void coMapClear(co o)
@@ -822,9 +858,17 @@ void coMapClear(co o)
   assert(coIsMap(o));
   avl_delete_all(
     &(o->m.root), 
-    (o->flags & CO_STRDUP)?avl_free_key:avl_keep_key, 
+    (o->flags & CO_STRFREE)?avl_free_key:avl_keep_key, 
     (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
   );  
+}
+
+int coMapEmpty(cco o)
+{
+  assert(coIsMap(o));
+  if ( o->m.root == avl_nnil )
+    return 1;
+  return 0;
 }
 
 static int avl_co_map_clone_cb(cco o, long idx, const char *key, cco value, void *data)
@@ -835,7 +879,7 @@ static int avl_co_map_clone_cb(cco o, long idx, const char *key, cco value, void
 co coMapClone(cco o)
 {
   long cnt = 0;
-  co new_obj = coNewMap(o->flags | CO_FREE_VALS | CO_STRDUP);
+  co new_obj = coNewMap(o->flags | CO_FREE_VALS | CO_STRDUP | CO_STRFREE);
   assert(coIsMap(o));
   if ( avl_for_each(o, o->m.root, avl_co_map_clone_cb, &cnt, new_obj) == 0 )
   {
@@ -861,7 +905,7 @@ void coMapErase(co o, const char *key)
   avl_delete(
     &(o->m.root), 
     key,
-    (o->flags & CO_STRDUP)?avl_free_key:avl_keep_key, 
+    (o->flags & CO_STRFREE)?avl_free_key:avl_keep_key, 
     (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
   );    
 }
@@ -873,27 +917,35 @@ void coMapForEach(cco o, coMapForEachCB cb, void *data)
   avl_for_each(o, o->m.root, cb, &cnt, data);
 }
 
+
+
 /*=== JSON Parser ===*/
+
+
 
 struct co_json_struct
 {
   int curr;
-  char *json_string;
+  const char *json_string;
 };
 typedef struct co_json_struct *coj;
 
-int cojNext(coj j)
+co cojGetValue(coj j);          // forward declaration
+
+
+void cojErr(coj j, const char *msg)
+{
+  printf("JSON Parser error '%s', current char='%c'\n", msg, j->curr);
+}
+
+void cojNext(coj j)
 {
   if ( j->curr < 0 )
-    return j->curr;
+    return;
   (j->json_string)++;
-  j->curr = *(j->json_string);
-  
+  j->curr = *(j->json_string);  
   if ( j->curr == '\0' )
-  {
     j->curr = -1;
-  }
-  return j->curr;
 }
 
 int cojCurr(coj j)
@@ -903,13 +955,283 @@ int cojCurr(coj j)
 
 void cojSkipWhitespace(coj j)
 {
-  while(cojCurr(j) <= ' ')
+  for(;;)
   {
+    if ( cojCurr(j) < 0 )
+      break;
+    if ( cojCurr(j) > ' ' )
+      break;
     cojNext(j);
   }
 }
 
-co cojGetStr(coj j)
-{
-    return coNewStr(0, "");
+#define COJ_STR_BUF 4
+char *cojGetStr(coj j)
+{  
+  static char buf[COJ_STR_BUF+16];      // extra data for UTF-8 sequence and \0
+  char *s = NULL;             // upcoming return value (allocated string)
+  size_t len = 0;               // len == strlen(s)
+  size_t idx = 0;
+  int c = 0;
+  if ( cojCurr(j) != '\"' )
+    return cojErr(j, "Internal error"), NULL;
+  cojNext(j);   // skip initial double quote
+  for(;;)
+  {
+    c = cojCurr(j);
+    if ( c < 0 )        // unexpected end of stream
+      return cojErr(j, "Unexpected end of string"), NULL;
+    if ( c == '\"' )
+      break;    // regular end
+    if ( c == '\\' )
+    {
+      cojNext(j);   // skip back slash
+      c = cojCurr(j);
+      if ( c == 'u' )
+      {
+        unsigned long u = 0;
+        int i;
+        for( i = 0; i < 4; i++ )  // read the \uXXXX hex number
+        {
+          cojNext(j);   // skip 'u' or any of the hex chars
+          c = cojCurr(j);
+          if ( c < 0 )
+          {
+            return cojErr(j, "Unexpected end within \\uXXXX"), NULL;    // todo: we might need to free(s)            
+          }
+          if ( c >= '0' && c <= '9' ) { u <<= 4; u += c-'0'; continue; }
+          if ( c >= 'a' && c <= 'f' ) { u <<= 4; u += c-'a'+10; continue; }
+          if ( c >= 'A' && c <= 'F' ) { u <<= 4; u += c-'A'+10; continue; }
+          // if we reach this point, then the \u arg is not a hex number
+          return cojErr(j, "Not a hex number with \\uXXXX"), NULL;      // todo: we might need to free(s)            
+        }
+        cojNext(j);   // skip last hex char 
+        // convert the code point to UTF-8
+        if ( u < 0x80UL )
+        { 
+          buf[idx++] = u; 
+        }
+        else if ( u < 0x800UL ) 
+        { 
+          buf[idx++] = (0xC0 | (u >> 6)); 
+          buf[idx++] = (0x80 | (u & 0x3F)); 
+        }
+        else if ( u < 0x10000UL )
+        { 
+          buf[idx++] = (0xE0 | (u >> 12)); 
+          buf[idx++] = (0x80 | ((u >>  6) & 0x3F)); 
+          buf[idx++] = (0x80 | (u & 0x3F));
+        }
+        else if ( u < 0x200000UL )  // hmmm... we will never arive here
+        {
+          buf[idx++] = (0xE0 | (u >> 18)); 
+          buf[idx++] = (0x80 | ((u >>  12) & 0x3F));
+          buf[idx++] = (0x80 | ((u >>  6) & 0x3F)); 
+          buf[idx++] = (0x80 | (u & 0x3F));
+        }
+        else
+        {
+          return cojErr(j, "Internal error"), NULL;   // I don't think, that this code is reachable, todo: we might need to free(s)            
+        }        
+      } // slash u
+      else if ( c == 'n' ) { cojNext(j); buf[idx++] = '\n'; }
+      else if ( c == 't' ) { cojNext(j); buf[idx++] = '\t'; }
+      else if ( c == 'b' ) { cojNext(j); buf[idx++] = '\b'; }
+      else if ( c == 'f' ) { cojNext(j); buf[idx++] = '\f'; }
+      else if ( c == 'r' ) { cojNext(j); buf[idx++] = '\r'; }
+      else { cojNext(j); buf[idx++] = c; }     // treat escaped char as it is (this will handle both slashes ...
+    } // escape
+    else
+    {
+      cojNext(j); 
+      buf[idx++] = c;   // handle normal char
+    }
+    // check whether we need to flush the buffer to the string object
+    if ( idx > COJ_STR_BUF )
+    {
+      
+      buf[idx] = '\0';      
+      if ( s == NULL )
+      {
+        s = strdup(buf);
+        len = idx;
+        if ( s == NULL )
+          return cojErr(j, "Memory error inside string parser"), NULL;        
+      }
+      else
+      {
+        char *t = (char *)realloc(s, len+idx+1);
+        if ( t == NULL )
+          return cojErr(j, "Memory error inside string parser"), free(s), NULL;   // memory error
+        s = t;
+        strcpy(s+len, buf);
+        len += idx;
+      }
+      
+      idx = 0;  // buf is stored in the string object: reset the buffer counter to 0
+    } // handle buffer flash
+  }
+  cojNext(j);   // skip final double quote
+  cojSkipWhitespace(j);
+  buf[idx] = '\0';
+  
+  if ( s == NULL )
+  {
+    s = strdup(buf);
+    len = idx;
+    if ( s == NULL )
+      return cojErr(j, "Memory error inside string parser"), NULL;        
+  }
+  else
+  {
+    char *t = (char *)realloc(s, len+idx+1);
+    if ( t == NULL )
+      return cojErr(j, "Memory error inside string parser"), free(s), NULL;   // memory error
+    s = t;
+    strcpy(s+len, buf);
+    len += idx;
+  }
+  
+  return s;
 }
+
+#define COJ_DBL_BUF 64
+co cojGetDbl(coj j)
+{  
+  char buf[COJ_DBL_BUF+2];
+  int i = 0;
+  int c;
+  for(;;)
+  {
+    c = cojCurr(j);
+    if ( (c >= '0' && c <= '9') || c == '-' || c == '+' || c == 'e' || c == 'E' || c == '.' )
+    {
+      if ( i < COJ_DBL_BUF )
+        buf[i++] = c;
+      cojNext(j);
+    }
+    else
+    {
+      break;
+    }
+  }
+  cojSkipWhitespace(j);
+  buf[i] = '\0';
+  return coNewDbl(strtod(buf, NULL));
+}
+
+co cojGetArray(coj j)
+{
+  int c;
+  co array_obj;
+  co element;
+  if ( cojCurr(j) != '[' )
+    return cojErr(j, "Internal error"), NULL;
+
+  array_obj = coNewVector(CO_FREE_VALS);
+  cojNext(j);
+  cojSkipWhitespace(j);  
+  for(;;)
+  {
+    c = cojCurr(j);
+    if ( c == ']' )
+      break;
+    if ( c < 0 )
+      return cojErr(j, "Missing ']'"), NULL;
+    
+    if ( coVectorEmpty(array_obj) == 0 )          // expect a ',' after the first element
+      if ( c == ',' )
+      {
+        cojNext(j);
+        cojSkipWhitespace(j);          
+      }
+    
+    element = cojGetValue(j);
+    
+    if ( element == NULL )
+      return NULL;
+    if ( coVectorAdd(array_obj, element) < 0 )
+      return cojErr(j, "Memory error inside 'array'"), coDelete(array_obj), NULL;
+  }
+  cojNext(j);   // skip ']'
+  cojSkipWhitespace(j);
+  return array_obj;
+}
+
+co cojGetMap(coj j)
+{
+  int c;
+  co map_obj;
+  co element;
+  char *key;
+  if ( cojCurr(j) != '{' )
+    return cojErr(j, "Internal error"), NULL;
+
+  map_obj = coNewMap(CO_FREE_VALS|CO_STRFREE);  // do not duplicate keys, because they are already allocated
+  if ( map_obj == NULL )
+      return cojErr(j, "Memory error with map"), NULL;
+    
+  cojNext(j);   // skip '{'
+  cojSkipWhitespace(j);  
+  for(;;)
+  {
+    c = cojCurr(j);
+    if ( c == '}' )
+      break;
+    if ( c < 0 )
+      return cojErr(j, "Missing '}'"), NULL;
+    
+    if ( coMapEmpty(map_obj) == 0 )          // expect a ',' after the first key/value pair
+      if ( c == ',' )
+      {
+        cojNext(j);
+        cojSkipWhitespace(j);          
+      }
+    
+    
+    key = cojGetStr(j);         // key will contain a pointer to allocated memory
+    if ( key == NULL )
+      return coDelete(map_obj), NULL;
+    cojSkipWhitespace(j);  
+    if ( cojCurr(j) != ':' )
+      return cojErr(j, "Missng ':'"), free(key), coDelete(map_obj), NULL;
+    cojNext(j);
+    cojSkipWhitespace(j);  
+    
+    element = cojGetValue(j);
+    if ( element == NULL )
+      return cojErr(j, "Memory error with map element"), free(key), coDelete(map_obj), NULL;
+    if ( coMapAdd(map_obj, key, element) == 0 )
+      return cojErr(j, "Memory error with map"), free(key), coDelete(map_obj), NULL;  // ToDo: do we need to close 'element' here?    
+  }
+  cojNext(j);   // skip '}'
+  cojSkipWhitespace(j);
+  return map_obj;
+}
+
+co cojGetValue(coj j)
+{
+  int c = cojCurr(j);
+  if ( c == '[' )
+    return cojGetArray(j);
+  if ( c == '{' )
+    return cojGetMap(j);
+  if ( c == '\"' )
+    return coNewStr(CO_STRFREE, cojGetStr(j));  // return value of cojGetStr() is a pointer to allocated memory, so don't use CO_STRDUP
+  if ( (c >= '0' && c <= '9') || c == '-' || c == '+' || c == 'e' || c == 'E' || c == '.' )
+    return cojGetDbl(j);
+  // todo: handle true, false, null
+  return NULL;
+}
+
+co coReadJSONByString(const char *json)
+{
+  struct co_json_struct coj;
+  if ( json == NULL )
+    return NULL;
+  coj.json_string = json;
+  coj.curr = coj.json_string[0];
+  cojSkipWhitespace(&coj);
+  return cojGetValue(&coj);
+}
+
