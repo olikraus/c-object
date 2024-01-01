@@ -983,20 +983,17 @@ int coReaderInitByString(coReader reader, const char *s)
   return 1;
 }
 
-/*
-co coReadJSONByFP(FILE *fp)
+int coReaderInitByFP(coReader reader, FILE *fp)
 {
-  struct co_reader_struct coReader;
-  if ( fp == NULL )
-    return NULL;  
-  coReader.json_string = NULL;
-  coReader.fp = fp;
-  coReader.next_cb = coReaderFileNext;
-  coReader.curr = getc(fp);
-  coReaderSkipWhiteSpace(&coReader);
-  return cojGetValue(&coReader);
+  if ( reader == NULL || fp == NULL )
+    return 0;  
+  reader->json_string = NULL;
+  reader->fp = fp;
+  reader->next_cb = coReaderFileNext;
+  reader->curr = getc(fp);
+  coReaderSkipWhiteSpace(reader);
+  return 1;
 }
-*/
 
 
 co cojGetValue(coReader j);          // forward declaration
