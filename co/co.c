@@ -998,11 +998,11 @@ int coReaderInitByFP(coReader reader, FILE *fp)
 /*=== JSON Parser ===*/
 
 
-co cojGetValue(coReader j);          // forward declaration
+co coJSONGetValue(coReader j);          // forward declaration
 
 
 #define COJ_STR_BUF 1024
-char *cojGetStr(coReader j)
+char *coJSONGetStr(coReader j)
 {  
   static char buf[COJ_STR_BUF+16];      // extra data for UTF-8 sequence and \0
   char *s = NULL;             // upcoming return value (allocated string)
@@ -1132,7 +1132,7 @@ char *cojGetStr(coReader j)
 }
 
 #define COJ_DBL_BUF 64
-co cojGetDbl(coReader j)
+co coJSONGetDbl(coReader j)
 {  
   char buf[COJ_DBL_BUF+2];
   int i = 0;
@@ -1182,7 +1182,7 @@ co cojGetArray(coReader j)
         coReaderSkipWhiteSpace(j);          
       }
     
-    element = cojGetValue(j);
+    element = coJSONGetValue(j);
     
     if ( element == NULL )
       return NULL;
@@ -1225,7 +1225,7 @@ co cojGetMap(coReader j)
       }
     
     
-    key = cojGetStr(j);         // key will contain a pointer to allocated memory
+    key = coJSONGetStr(j);         // key will contain a pointer to allocated memory
     if ( key == NULL )
       return coDelete(map_obj), NULL;
     coReaderSkipWhiteSpace(j);  
@@ -1234,7 +1234,7 @@ co cojGetMap(coReader j)
     coReaderNext(j);
     coReaderSkipWhiteSpace(j);  
     
-    element = cojGetValue(j);
+    element = coJSONGetValue(j);
     if ( element == NULL )
       return coReaderErr(j, "Memory error with map element"), free(key), coDelete(map_obj), NULL;
     if ( coMapAdd(map_obj, key, element) == 0 )
@@ -1245,7 +1245,7 @@ co cojGetMap(coReader j)
   return map_obj;
 }
 
-co cojGetValue(coReader j)
+co coJSONGetValue(coReader j)
 {
   int c = coReaderCurr(j);
   if ( c == '[' )
@@ -1253,9 +1253,9 @@ co cojGetValue(coReader j)
   if ( c == '{' )
     return cojGetMap(j);
   if ( c == '\"' )
-    return coNewStr(CO_STRFREE, cojGetStr(j));  // return value of cojGetStr() is a pointer to allocated memory, so don't use CO_STRDUP
+    return coNewStr(CO_STRFREE, coJSONGetStr(j));  // return value of coJSONGetStr() is a pointer to allocated memory, so don't use CO_STRDUP
   if ( (c >= '0' && c <= '9') || c == '-' || c == '+' || c == 'e' || c == 'E' || c == '.' )
-    return cojGetDbl(j);
+    return coJSONGetDbl(j);
   // todo: handle true, false, null
   return NULL;
 }
@@ -1265,7 +1265,7 @@ co coReadJSONByString(const char *json)
   struct co_reader_struct reader;
   if ( coReaderInitByString(&reader, json) == 0 )
     return NULL;
-  return cojGetValue(&reader);
+  return coJSONGetValue(&reader);
 }
 
 co coReadJSONByFP(FILE *fp)
@@ -1273,6 +1273,6 @@ co coReadJSONByFP(FILE *fp)
   struct co_reader_struct reader;
   if ( coReaderInitByFP(&reader, fp) == 0 )
     return NULL;
-  return cojGetValue(&reader);
+  return coJSONGetValue(&reader);
 }
 
