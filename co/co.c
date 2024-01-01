@@ -921,14 +921,16 @@ void coMapForEach(cco o, coMapForEachCB cb, void *data)
 
 /*=== JSON Parser ===*/
 
-
+typedef struct co_json_struct *coj;
+typedef void (*coReaderNextFn)(coj j);
 
 struct co_json_struct
 {
   int curr;
   const char *json_string;
+  FILE *fp;
+  coReaderNextFn next_cb;
 };
-typedef struct co_json_struct *coj;
 
 co cojGetValue(coj j);          // forward declaration
 
@@ -938,22 +940,54 @@ void cojErr(coj j, const char *msg)
   printf("JSON Parser error '%s', current char='%c'\n", msg, j->curr);
 }
 
+/*
 void cojNext(coj j)
+{
+  if ( j->curr < 0 )
+    return;
+  if ( j->json_string )
+  {
+    (j->json_string)++;
+    j->curr = *(j->json_string);  
+    if ( j->curr == '\0' )
+      j->curr = -1;     // code below will check for <0
+  }
+  else 
+  {
+    j->curr = getc(j->fp); // may returen EOF, which is -1, but code below will check for <0 
+  }
+}
+*/
+
+#define cojNext(j) ((j)->next_cb(j))
+
+void cojReaderStringNext(coj j)
 {
   if ( j->curr < 0 )
     return;
   (j->json_string)++;
   j->curr = *(j->json_string);  
   if ( j->curr == '\0' )
-    j->curr = -1;
+    j->curr = -1;     // code below will check for <0
 }
 
+void cojReaderFileNext(coj j)
+{
+  if ( j->curr < 0 )
+    return;
+  j->curr = getc(j->fp); // may returen EOF, which is -1, but code below will check for <0 
+}
+#define cojCurr(j) ((j)->curr)
+
+/*
 int cojCurr(coj j)
 {
   return j->curr;
 }
+*/
 
-void cojSkipWhitespace(coj j)
+/*
+void cojSkipWhiteSpace(coj j)
 {
   for(;;)
   {
@@ -964,6 +998,18 @@ void cojSkipWhitespace(coj j)
     cojNext(j);
   }
 }
+*/
+
+#define cojSkipWhiteSpace(j) \
+  for(;;) \
+  {                                     \
+    if ( cojCurr(j) < 0 )        \
+      break;                            \
+    if ( cojCurr(j) > ' ' )             \
+      break;                            \
+    cojNext(j);                         \
+  }                                     \
+
 
 #define COJ_STR_BUF 4
 char *cojGetStr(coj j)
@@ -1072,7 +1118,7 @@ char *cojGetStr(coj j)
     } // handle buffer flash
   }
   cojNext(j);   // skip final double quote
-  cojSkipWhitespace(j);
+  cojSkipWhiteSpace(j);
   buf[idx] = '\0';
   
   if ( s == NULL )
@@ -1115,7 +1161,7 @@ co cojGetDbl(coj j)
       break;
     }
   }
-  cojSkipWhitespace(j);
+  cojSkipWhiteSpace(j);
   buf[i] = '\0';
   return coNewDbl(strtod(buf, NULL));
 }
@@ -1130,7 +1176,7 @@ co cojGetArray(coj j)
 
   array_obj = coNewVector(CO_FREE_VALS);
   cojNext(j);
-  cojSkipWhitespace(j);  
+  cojSkipWhiteSpace(j);  
   for(;;)
   {
     c = cojCurr(j);
@@ -1143,7 +1189,7 @@ co cojGetArray(coj j)
       if ( c == ',' )
       {
         cojNext(j);
-        cojSkipWhitespace(j);          
+        cojSkipWhiteSpace(j);          
       }
     
     element = cojGetValue(j);
@@ -1154,7 +1200,7 @@ co cojGetArray(coj j)
       return cojErr(j, "Memory error inside 'array'"), coDelete(array_obj), NULL;
   }
   cojNext(j);   // skip ']'
-  cojSkipWhitespace(j);
+  cojSkipWhiteSpace(j);
   return array_obj;
 }
 
@@ -1172,7 +1218,7 @@ co cojGetMap(coj j)
       return cojErr(j, "Memory error with map"), NULL;
     
   cojNext(j);   // skip '{'
-  cojSkipWhitespace(j);  
+  cojSkipWhiteSpace(j);  
   for(;;)
   {
     c = cojCurr(j);
@@ -1185,18 +1231,18 @@ co cojGetMap(coj j)
       if ( c == ',' )
       {
         cojNext(j);
-        cojSkipWhitespace(j);          
+        cojSkipWhiteSpace(j);          
       }
     
     
     key = cojGetStr(j);         // key will contain a pointer to allocated memory
     if ( key == NULL )
       return coDelete(map_obj), NULL;
-    cojSkipWhitespace(j);  
+    cojSkipWhiteSpace(j);  
     if ( cojCurr(j) != ':' )
       return cojErr(j, "Missng ':'"), free(key), coDelete(map_obj), NULL;
     cojNext(j);
-    cojSkipWhitespace(j);  
+    cojSkipWhiteSpace(j);  
     
     element = cojGetValue(j);
     if ( element == NULL )
@@ -1205,7 +1251,7 @@ co cojGetMap(coj j)
       return cojErr(j, "Memory error with map"), free(key), coDelete(map_obj), NULL;  // ToDo: do we need to close 'element' here?    
   }
   cojNext(j);   // skip '}'
-  cojSkipWhitespace(j);
+  cojSkipWhiteSpace(j);
   return map_obj;
 }
 
@@ -1230,8 +1276,23 @@ co coReadJSONByString(const char *json)
   if ( json == NULL )
     return NULL;
   coj.json_string = json;
+  coj.fp = NULL;
+  coj.next_cb = cojReaderStringNext;  
   coj.curr = coj.json_string[0];
-  cojSkipWhitespace(&coj);
+  cojSkipWhiteSpace(&coj);
+  return cojGetValue(&coj);
+}
+
+co coReadJSONByFP(FILE *fp)
+{
+  struct co_json_struct coj;
+  if ( fp == NULL )
+    return NULL;
+  coj.json_string = NULL;
+  coj.fp = fp;
+  coj.next_cb = cojReaderFileNext;
+  coj.curr = getc(fp);
+  cojSkipWhiteSpace(&coj);
   return cojGetValue(&coj);
 }
 

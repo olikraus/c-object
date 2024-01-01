@@ -85,6 +85,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 typedef struct coStruct *co;
 typedef struct coStruct const * const cco;
@@ -190,6 +191,7 @@ co coClone(cco o);
 #define coIsDbl(o) (coGetType(o)==coDblType)
 
 co coReadJSONByString(const char *json);
+co coReadJSONByFP(FILE *fp);
 
 
 /* string functions */

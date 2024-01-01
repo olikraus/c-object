@@ -10,6 +10,7 @@ int main()
   co s;
   co m = coNewMap(CO_STRDUP | CO_FREE_VALS);
   co t;
+  co tt;
   char *json;
   
   coVectorAdd(v, coNewStr(CO_STRDUP, "abc"));
@@ -46,8 +47,14 @@ int main()
   t = coReadJSONByString(json);
   coPrint(t); puts("");
   
-
+  for( int i = 0; i < 16; i++ )
+  {
+    tt = coReadJSONByFP(fopen("5MB.json", "r"));
+    coDelete(tt);
+  }
+  
   coDelete(t);
+  
   coDelete(v);
   coDelete(vv);
   coDelete(m);
