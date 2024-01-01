@@ -46,7 +46,7 @@ int main()
   //json = "\"\\u003c\"";
   t = coReadJSONByString(json);
   coPrint(t); puts("");
-  
+
   for( int i = 0; i < 16; i++ )
   {
     tt = coReadJSONByFP(fopen("5MB.json", "r"));
