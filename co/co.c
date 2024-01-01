@@ -919,7 +919,7 @@ void coMapForEach(cco o, coMapForEachCB cb, void *data)
 
 
 
-/*=== JSON Parser ===*/
+/*=== FILE/String Reader ===*/
 
 typedef struct co_reader_struct *coReader;
 typedef void (*coReaderNextFn)(coReader j);
@@ -994,6 +994,8 @@ int coReaderInitByFP(coReader reader, FILE *fp)
   coReaderSkipWhiteSpace(reader);
   return 1;
 }
+
+/*=== JSON Parser ===*/
 
 
 co cojGetValue(coReader j);          // forward declaration
@@ -1268,14 +1270,9 @@ co coReadJSONByString(const char *json)
 
 co coReadJSONByFP(FILE *fp)
 {
-  struct co_reader_struct coReader;
-  if ( fp == NULL )
-    return NULL;  
-  coReader.json_string = NULL;
-  coReader.fp = fp;
-  coReader.next_cb = coReaderFileNext;
-  coReader.curr = getc(fp);
-  coReaderSkipWhiteSpace(&coReader);
-  return cojGetValue(&coReader);
+  struct co_reader_struct reader;
+  if ( coReaderInitByFP(&reader, fp) == 0 )
+    return NULL;
+  return cojGetValue(&reader);
 }
 
