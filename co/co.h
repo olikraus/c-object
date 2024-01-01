@@ -92,9 +92,9 @@ typedef struct coStruct const * const cco;
 typedef struct coFnStruct *coFn;
 
 typedef int (*coInitFn)(co o, void *data);
-typedef long (*coSizeFn)(co o);
-typedef cco (*coGetByIdxFn)(co o, long idx);
-typedef const char *(*coToStringFn)(co o);
+typedef long (*coSizeFn)(cco o);
+typedef cco (*coGetByIdxFn)(cco o, long idx);
+typedef const char *(*coToStringFn)(cco o);
 typedef void (*coPrintFn)(const cco o);
 typedef void (*coDestroyFn)(co o);
 typedef int (*coEmptyFn)(cco o);
@@ -199,17 +199,21 @@ co coReadA2LByFP(FILE *fp);
 /* string functions */
 int coStrAdd(co o, const char *s);      // concats the given string to the string object, requires the CO_STRDUP flag
 char *coStrDeleteAndGetAllocatedStringContent(co o);  // convert a str obj to a string, return value must be free'd
+const char *coStrToString(cco o);
+
+/* double functions */
+double coDblGet(cco o);
 
 
 /* vector functions */
 co coNewVector(unsigned flags);
 long coVectorAdd(co o, co p);         // add object at the end of the list, returns -1 for error
 int coVectorAppendVector(co v, cco src);  // append elements from src to vector v
-cco coVectorGet(co o, long idx);           // return object at specific position from the vector
+cco coVectorGet(cco o, long idx);           // return object at specific position from the vector
 void coVectorErase(co v, long i);  // delete and remove element at the specified position
 void coVectorClear(co o);    // delete all elements and clear the array
 int coVectorEmpty(cco o);               // return 1 if the vector is empty, return 0 otherwise
-long coVectorSize(co o);                // return the number of elements in the vector
+long coVectorSize(cco o);                // return the number of elements in the vector
 
 typedef int (*coVectorForEachCB)(cco o, long idx, cco element, void *data);
 int coVectorForEach(cco o, coVectorForEachCB cb, void *data);
@@ -225,6 +229,7 @@ cco coMapGet(cco o, const char *key);     // get object from map by key, returns
 void coMapErase(co o, const char *key);   // removes object from the map
 void coMapClear(co o);   // delete all elements and clear the array         
 int coMapEmpty(cco o); // return 1 if the map is empty, return 0 otherwise
+long coMapSize(cco o);  // O(n) !!
 
 typedef int (*coMapForEachCB)(cco o, long idx, const char *key, cco value, void *data);
 void coMapForEach(cco o, coMapForEachCB cb, void *data);

@@ -72,9 +72,9 @@ const char *coToString(co o)
 /*=== Dummy / Blank ===*/
 
 int cobInit(co o, void *data);  // data: ignored
-long cobSize(co o);
-cco cobGetByIdx(co o, long idx);
-const char *cobToString(co o);
+long cobSize(cco o);
+cco cobGetByIdx(cco o, long idx);
+const char *cobToString(cco o);
 void cobPrint(cco o);
 void cobDestroy(co o);
 co cobClone(cco o);
@@ -103,17 +103,17 @@ int cobInit(co o, void *data)
   return 1;
 }
 
-long cobSize(co o)
+long cobSize(cco o)
 {
   return 0;
 }
 
-cco cobGetByIdx(co o, long idx)
+cco cobGetByIdx(cco o, long idx)
 {
   return 0;
 }
 
-const char *cobToString(co o)
+const char *cobToString(cco o)
 {
   return "";
 }
@@ -136,9 +136,9 @@ co cobClone(cco o)
 
 int coVectorInit(co o, void *data);  // data: not used
 long coVectorAdd(co o, co p);   // returns the index of the added element or -1
-long coVectorSize(co o);
-cco coVectorGet(co o, long idx);
-const char *coVectorToString(co o);
+long coVectorSize(cco o);
+cco coVectorGet(cco o, long idx);
+const char *coVectorToString(cco o);
 int coVectorForEach(cco o, coVectorForEachCB cb, void *data);
 void coVectorPrint(cco o);
 static void coVectorDestroy(co o);
@@ -197,19 +197,19 @@ long coVectorAdd(co o, co p)
   return o->v.cnt-1;
 }
 
-long coVectorSize(co o)
+long coVectorSize(cco o)
 {
   return o->v.cnt;
 }
 
-cco coVectorGet(co o, long idx)
+cco coVectorGet(cco o, long idx)
 {
     if ( idx >= o->v.cnt )
       return NULL;
     return o->v.list[idx];
 }
 
-const char *coVectorToString(co o)           // todo
+const char *coVectorToString(cco o)           // todo
 {
   return "";
 }
@@ -360,9 +360,9 @@ int coVectorAppendVector(co v, cco src)
 /*=== String ===*/
 
 int coStrInit(co o, void *data);  // optional data: const char *
-long coStrSize(co o);
-cco coStrGetByIdx(co o, long idx);
-const char *coStrToString(co o);
+long coStrSize(cco o);
+cco coStrGetByIdx(cco o, long idx);
+const char *coStrToString(cco o);
 void coStrPrint(cco o);
 void coStrDestroy(co o);
 co coStrClone(cco o);
@@ -424,17 +424,17 @@ int coStrAdd(co o, const char *s)
 }
 
 
-long coStrSize(co o)
+long coStrSize(cco o)
 {
   return (long)o->s.len;
 }
 
-cco coStrGetByIdx(co o, long idx)
+cco coStrGetByIdx(cco o, long idx)
 {
   return NULL;
 }
 
-const char *coStrToString(co o)
+const char *coStrToString(cco o)
 {
   return o->s.str;
 }
@@ -476,9 +476,9 @@ char *coStrDeleteAndGetAllocatedStringContent(co o)
 /*=== Double ===*/
 
 int coDblInit(co o, void *data);  // optional data: const double *
-long coDblSize(co o);
-cco coDblGetByIdx(co o, long idx);
-const char *coDblToString(co o);
+long coDblSize(cco o);
+cco coDblGetByIdx(cco o, long idx);
+const char *coDblToString(cco o);
 void coDblPrint(cco o);
 void coDblDestroy(co o);
 co coDblClone(cco o);
@@ -514,17 +514,17 @@ int coDblInit(co o, void *data)
 }
 
 
-long coDblSize(co o)
+long coDblSize(cco o)
 {
   return 1;
 }
 
-cco coDblGetByIdx(co o, long idx)
+cco coDblGetByIdx(cco o, long idx)
 {
   return NULL;
 }
 
-const char *coDblToString(co o)
+const char *coDblToString(cco o)
 {
   return "";
 }
@@ -542,6 +542,12 @@ void coDblDestroy(co o)
 co coDblClone(cco o)
 {
   return coNewDbl(o->d.n); 
+}
+
+double coDblGet(cco o)
+{
+  assert( coIsDbl(o) );
+  return o->d.n;
 }
 
 /*=== Map ===*/
@@ -761,9 +767,9 @@ static long avl_get_size(struct co_avl_node_struct *n)
 
 
 int coMapInit(co o, void *data);
-long coMapSize(co o);
-cco coMapGetByIdx(co o, long idx);
-const char *coMapToString(co o);
+long coMapSize(cco o);
+cco coMapGetByIdx(cco o, long idx);
+const char *coMapToString(cco o);
 void coMapPrint(cco o);
 void coMapClear(co o);
 int coMapEmpty(cco o);
@@ -819,18 +825,18 @@ int coMapAdd(co o, const char *key, co value)
   );  
 }
 
-long coMapSize(co o)
+long coMapSize(cco o)
 {
   assert(coIsMap(o));
   return avl_get_size(o->m.root);              // O(n) !
 }
 
-cco coMapGetByIdx(co o, long idx)
+cco coMapGetByIdx(cco o, long idx)
 {
   return NULL;
 }
 
-const char *coMapToString(co o)
+const char *coMapToString(cco o)
 {
   return "";
 }
@@ -1274,6 +1280,107 @@ co coReadJSONByFP(FILE *fp)
     return NULL;
   return coJSONGetValue(&reader);
 }
+
+/*=== JSON Write ===*/
+
+void coWriteJSONTraverse(cco o, int depth, int addComma, FILE *fp);  // forward declaration
+
+static void writeIndent(int depth, FILE *fp)
+{
+  while(depth > 0)
+  {
+    fprintf(fp, "  ");
+    depth--;
+  }
+}
+
+struct json_traverse_struct
+{
+  int depth;
+  FILE *fp;
+  long size;
+};
+
+static int coMapForEachJSONTraverseCB(cco o, long idx, const char *key, cco value, void *data)
+{
+  struct json_traverse_struct *jts = (struct json_traverse_struct *)data;
+  const char *s = key;
+  writeIndent(jts->depth, jts->fp);
+  fputc('\"', jts->fp);
+  while( *s != '\0' )
+  {
+    if ( *s < 32 || *s >= 128 || *s == 34 )
+    {
+      fprintf(jts->fp, "\\u%04x", *s);
+    }
+    else
+    {
+      fputc(*s, jts->fp);
+    }
+    s++;
+  }  
+  fputc('\"', jts->fp);
+  fputc(':', jts->fp);
+  coWriteJSONTraverse(value, jts->depth, idx+1!=jts->size, jts->fp);
+  return 1;
+}
+
+
+void coWriteJSONTraverse(cco o, int depth, int addComma, FILE *fp)
+{
+  
+  if ( coIsStr(o) )
+  {
+    const char *s = coStrToString(o);
+    writeIndent(depth, fp);
+    fputc('\"', fp);
+    while( *s != '\0' )
+    {
+      if ( *s < 32 || *s >= 128 || *s == 34  )
+      {
+        fprintf(fp, "\\u%04x", *s);
+      }
+      else
+      {
+        fputc(*s, fp);
+      }
+      s++;
+    }
+    if ( addComma )
+      fputc(',', fp);      
+    fputc('\n', fp);
+  }
+  else if ( coIsDbl(o) )
+  {
+    writeIndent(depth, fp);
+    fprintf(fp, "%.9g", coDblGet(o));
+    if ( addComma )
+      fputc(',', fp);      
+    fputc('\n', fp);
+  }
+  else if ( coIsVector(o) )
+  {
+    long i;
+    long cnt = coVectorSize(o);
+    writeIndent(depth, fp);
+    fputc('[', fp);
+    for( i = 0; i < cnt; i++ )
+    {
+      coWriteJSONTraverse(coVectorGet(o, i), depth+1, i+1!=cnt, fp);      
+    }
+    writeIndent(depth, fp);
+    fputc(']', fp);
+  }
+  else if ( coIsMap(o) )
+  {
+    struct json_traverse_struct jts;
+    jts.size = coMapSize(o);
+    jts.fp = fp;
+    jts.depth = depth;
+    coMapForEach(o, coMapForEachJSONTraverseCB, &jts);
+  }
+}
+
 
 /*=== A2L Parser ===*/
 
