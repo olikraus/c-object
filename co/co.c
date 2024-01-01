@@ -927,7 +927,7 @@ typedef void (*coReaderNextFn)(coReader j);
 struct co_reader_struct
 {
   int curr;
-  const char *json_string;
+  const char *reader_string;
   FILE *fp;
   coReaderNextFn next_cb;
 };
@@ -942,8 +942,8 @@ void coReaderStringNext(coReader j)
 {
   if ( j->curr < 0 )
     return;
-  (j->json_string)++;
-  j->curr = *(j->json_string);  
+  (j->reader_string)++;
+  j->curr = *(j->reader_string);  
   if ( j->curr == '\0' )
     j->curr = -1;     // code below will check for <0
 }
@@ -973,10 +973,10 @@ int coReaderInitByString(coReader reader, const char *s)
 {
   if ( reader == NULL || s == NULL )
     return 0;
-  reader->json_string = s;
+  reader->reader_string = s;
   reader->fp = NULL;
   reader->next_cb = coReaderStringNext;  
-  reader->curr = reader->json_string[0];
+  reader->curr = reader->reader_string[0];
   if ( reader->curr == '\0' )
     reader->curr = -1;
   coReaderSkipWhiteSpace(reader);
@@ -987,7 +987,7 @@ int coReaderInitByFP(coReader reader, FILE *fp)
 {
   if ( reader == NULL || fp == NULL )
     return 0;  
-  reader->json_string = NULL;
+  reader->reader_string = NULL;
   reader->fp = fp;
   reader->next_cb = coReaderFileNext;
   reader->curr = getc(fp);
@@ -1002,46 +1002,46 @@ co coJSONGetValue(coReader j);          // forward declaration
 
 
 #define COJ_STR_BUF 1024
-char *coJSONGetStr(coReader j)
+char *coJSONGetStr(coReader reader)
 {  
   static char buf[COJ_STR_BUF+16];      // extra data for UTF-8 sequence and \0
   char *s = NULL;             // upcoming return value (allocated string)
   size_t len = 0;               // len == strlen(s)
   size_t idx = 0;
   int c = 0;
-  if ( coReaderCurr(j) != '\"' )
-    return coReaderErr(j, "Internal error"), NULL;
-  coReaderNext(j);   // skip initial double quote
+  if ( coReaderCurr(reader) != '\"' )
+    return coReaderErr(reader, "Internal error"), NULL;
+  coReaderNext(reader);   // skip initial double quote
   for(;;)
   {
-    c = coReaderCurr(j);
+    c = coReaderCurr(reader);
     if ( c < 0 )        // unexpected end of stream
-      return coReaderErr(j, "Unexpected end of string"), NULL;
+      return coReaderErr(reader, "Unexpected end of string"), NULL;
     if ( c == '\"' )
       break;    // regular end
     if ( c == '\\' )
     {
-      coReaderNext(j);   // skip back slash
-      c = coReaderCurr(j);
+      coReaderNext(reader);   // skip back slash
+      c = coReaderCurr(reader);
       if ( c == 'u' )
       {
         unsigned long u = 0;
         int i;
         for( i = 0; i < 4; i++ )  // read the \uXXXX hex number
         {
-          coReaderNext(j);   // skip 'u' or any of the hex chars
-          c = coReaderCurr(j);
+          coReaderNext(reader);   // skip 'u' or any of the hex chars
+          c = coReaderCurr(reader);
           if ( c < 0 )
           {
-            return coReaderErr(j, "Unexpected end within \\uXXXX"), NULL;    // todo: we might need to free(s)            
+            return coReaderErr(reader, "Unexpected end within \\uXXXX"), NULL;    // todo: we might need to free(s)            
           }
           if ( c >= '0' && c <= '9' ) { u <<= 4; u += c-'0'; continue; }
           if ( c >= 'a' && c <= 'f' ) { u <<= 4; u += c-'a'+10; continue; }
           if ( c >= 'A' && c <= 'F' ) { u <<= 4; u += c-'A'+10; continue; }
           // if we reach this point, then the \u arg is not a hex number
-          return coReaderErr(j, "Not a hex number with \\uXXXX"), NULL;      // todo: we might need to free(s)            
+          return coReaderErr(reader, "Not a hex number with \\uXXXX"), NULL;      // todo: we might need to free(s)            
         }
-        coReaderNext(j);   // skip last hex char 
+        coReaderNext(reader);   // skip last hex char 
         // convert the code point to UTF-8
         if ( u < 0x80UL )
         { 
@@ -1067,38 +1067,37 @@ char *coJSONGetStr(coReader j)
         }
         else
         {
-          return coReaderErr(j, "Internal error"), NULL;   // I don't think, that this code is reachable, todo: we might need to free(s)            
+          return coReaderErr(reader, "Internal error"), NULL;   // I don't think, that this code is reachable, todo: we might need to free(s)            
         }        
       } // slash u
-      else if ( c == 'n' ) { coReaderNext(j); buf[idx++] = '\n'; }
-      else if ( c == 't' ) { coReaderNext(j); buf[idx++] = '\t'; }
-      else if ( c == 'b' ) { coReaderNext(j); buf[idx++] = '\b'; }
-      else if ( c == 'f' ) { coReaderNext(j); buf[idx++] = '\f'; }
-      else if ( c == 'r' ) { coReaderNext(j); buf[idx++] = '\r'; }
-      else { coReaderNext(j); buf[idx++] = c; }     // treat escaped char as it is (this will handle both slashes ...
+      else if ( c == 'n' ) { coReaderNext(reader); buf[idx++] = '\n'; }
+      else if ( c == 't' ) { coReaderNext(reader); buf[idx++] = '\t'; }
+      else if ( c == 'b' ) { coReaderNext(reader); buf[idx++] = '\b'; }
+      else if ( c == 'f' ) { coReaderNext(reader); buf[idx++] = '\f'; }
+      else if ( c == 'r' ) { coReaderNext(reader); buf[idx++] = '\r'; }
+      else { coReaderNext(reader); buf[idx++] = c; }     // treat escaped char as it is (this will handle both slashes ...
     } // escape
     else
     {
-      coReaderNext(j); 
+      coReaderNext(reader); 
       buf[idx++] = c;   // handle normal char
     }
     // check whether we need to flush the buffer to the string object
     if ( idx > COJ_STR_BUF )
     {
-      
       buf[idx] = '\0';      
       if ( s == NULL )
       {
         s = strdup(buf);
         len = idx;
         if ( s == NULL )
-          return coReaderErr(j, "Memory error inside string parser"), NULL;        
+          return coReaderErr(reader, "Memory error inside string parser"), NULL;        
       }
       else
       {
         char *t = (char *)realloc(s, len+idx+1);
         if ( t == NULL )
-          return coReaderErr(j, "Memory error inside string parser"), free(s), NULL;   // memory error
+          return coReaderErr(reader, "Memory error inside string parser"), free(s), NULL;   // memory error
         s = t;
         strcpy(s+len, buf);
         len += idx;
@@ -1107,8 +1106,8 @@ char *coJSONGetStr(coReader j)
       idx = 0;  // buf is stored in the string object: reset the buffer counter to 0
     } // handle buffer flash
   }
-  coReaderNext(j);   // skip final double quote
-  coReaderSkipWhiteSpace(j);
+  coReaderNext(reader);   // skip final double quote
+  coReaderSkipWhiteSpace(reader);
   buf[idx] = '\0';
   
   if ( s == NULL )
@@ -1116,13 +1115,13 @@ char *coJSONGetStr(coReader j)
     s = strdup(buf);
     len = idx;
     if ( s == NULL )
-      return coReaderErr(j, "Memory error inside string parser"), NULL;        
+      return coReaderErr(reader, "Memory error inside string parser"), NULL;        
   }
   else
   {
     char *t = (char *)realloc(s, len+idx+1);
     if ( t == NULL )
-      return coReaderErr(j, "Memory error inside string parser"), free(s), NULL;   // memory error
+      return coReaderErr(reader, "Memory error inside string parser"), free(s), NULL;   // memory error
     s = t;
     strcpy(s+len, buf);
     len += idx;
@@ -1132,130 +1131,130 @@ char *coJSONGetStr(coReader j)
 }
 
 #define COJ_DBL_BUF 64
-co coJSONGetDbl(coReader j)
+co coJSONGetDbl(coReader reader)
 {  
   char buf[COJ_DBL_BUF+2];
   int i = 0;
   int c;
   for(;;)
   {
-    c = coReaderCurr(j);
+    c = coReaderCurr(reader);
     if ( (c >= '0' && c <= '9') || c == '-' || c == '+' || c == 'e' || c == 'E' || c == '.' )
     {
       if ( i < COJ_DBL_BUF )
         buf[i++] = c;
-      coReaderNext(j);
+      coReaderNext(reader);
     }
     else
     {
       break;
     }
   }
-  coReaderSkipWhiteSpace(j);
+  coReaderSkipWhiteSpace(reader);
   buf[i] = '\0';
   return coNewDbl(strtod(buf, NULL));
 }
 
-co cojGetArray(coReader j)
+co coJSONGetArray(coReader reader)
 {
   int c;
   co array_obj;
   co element;
-  if ( coReaderCurr(j) != '[' )
-    return coReaderErr(j, "Internal error"), NULL;
+  if ( coReaderCurr(reader) != '[' )
+    return coReaderErr(reader, "Internal error"), NULL;
 
   array_obj = coNewVector(CO_FREE_VALS);
-  coReaderNext(j);
-  coReaderSkipWhiteSpace(j);  
+  coReaderNext(reader);
+  coReaderSkipWhiteSpace(reader);  
   for(;;)
   {
-    c = coReaderCurr(j);
+    c = coReaderCurr(reader);
     if ( c == ']' )
       break;
     if ( c < 0 )
-      return coReaderErr(j, "Missing ']'"), NULL;
+      return coReaderErr(reader, "Missing ']'"), NULL;
     
     if ( coVectorEmpty(array_obj) == 0 )          // expect a ',' after the first element
       if ( c == ',' )
       {
-        coReaderNext(j);
-        coReaderSkipWhiteSpace(j);          
+        coReaderNext(reader);
+        coReaderSkipWhiteSpace(reader);          
       }
     
-    element = coJSONGetValue(j);
+    element = coJSONGetValue(reader);
     
     if ( element == NULL )
       return NULL;
     if ( coVectorAdd(array_obj, element) < 0 )
-      return coReaderErr(j, "Memory error inside 'array'"), coDelete(array_obj), NULL;
+      return coReaderErr(reader, "Memory error inside 'array'"), coDelete(array_obj), NULL;
   }
-  coReaderNext(j);   // skip ']'
-  coReaderSkipWhiteSpace(j);
+  coReaderNext(reader);   // skip ']'
+  coReaderSkipWhiteSpace(reader);
   return array_obj;
 }
 
-co cojGetMap(coReader j)
+co coJSONGetMap(coReader reader)
 {
   int c;
   co map_obj;
   co element;
   char *key;
-  if ( coReaderCurr(j) != '{' )
-    return coReaderErr(j, "Internal error"), NULL;
+  if ( coReaderCurr(reader) != '{' )
+    return coReaderErr(reader, "Internal error"), NULL;
 
   map_obj = coNewMap(CO_FREE_VALS|CO_STRFREE);  // do not duplicate keys, because they are already allocated
   if ( map_obj == NULL )
-      return coReaderErr(j, "Memory error with map"), NULL;
+      return coReaderErr(reader, "Memory error with map"), NULL;
     
-  coReaderNext(j);   // skip '{'
-  coReaderSkipWhiteSpace(j);  
+  coReaderNext(reader);   // skip '{'
+  coReaderSkipWhiteSpace(reader);  
   for(;;)
   {
-    c = coReaderCurr(j);
+    c = coReaderCurr(reader);
     if ( c == '}' )
       break;
     if ( c < 0 )
-      return coReaderErr(j, "Missing '}'"), NULL;
+      return coReaderErr(reader, "Missing '}'"), NULL;
     
     if ( coMapEmpty(map_obj) == 0 )          // expect a ',' after the first key/value pair
       if ( c == ',' )
       {
-        coReaderNext(j);
-        coReaderSkipWhiteSpace(j);          
+        coReaderNext(reader);
+        coReaderSkipWhiteSpace(reader);          
       }
     
     
-    key = coJSONGetStr(j);         // key will contain a pointer to allocated memory
+    key = coJSONGetStr(reader);         // key will contain a pointer to allocated memory
     if ( key == NULL )
       return coDelete(map_obj), NULL;
-    coReaderSkipWhiteSpace(j);  
-    if ( coReaderCurr(j) != ':' )
-      return coReaderErr(j, "Missng ':'"), free(key), coDelete(map_obj), NULL;
-    coReaderNext(j);
-    coReaderSkipWhiteSpace(j);  
+    coReaderSkipWhiteSpace(reader);  
+    if ( coReaderCurr(reader) != ':' )
+      return coReaderErr(reader, "Missng ':'"), free(key), coDelete(map_obj), NULL;
+    coReaderNext(reader);
+    coReaderSkipWhiteSpace(reader);  
     
-    element = coJSONGetValue(j);
+    element = coJSONGetValue(reader);
     if ( element == NULL )
-      return coReaderErr(j, "Memory error with map element"), free(key), coDelete(map_obj), NULL;
+      return coReaderErr(reader, "Memory error with map element"), free(key), coDelete(map_obj), NULL;
     if ( coMapAdd(map_obj, key, element) == 0 )
-      return coReaderErr(j, "Memory error with map"), free(key), coDelete(map_obj), NULL;  // ToDo: do we need to close 'element' here?    
+      return coReaderErr(reader, "Memory error with map"), free(key), coDelete(map_obj), NULL;  // ToDo: do we need to close 'element' here?    
   }
-  coReaderNext(j);   // skip '}'
-  coReaderSkipWhiteSpace(j);
+  coReaderNext(reader);   // skip '}'
+  coReaderSkipWhiteSpace(reader);
   return map_obj;
 }
 
-co coJSONGetValue(coReader j)
+co coJSONGetValue(coReader reader)
 {
-  int c = coReaderCurr(j);
+  int c = coReaderCurr(reader);
   if ( c == '[' )
-    return cojGetArray(j);
+    return coJSONGetArray(reader);
   if ( c == '{' )
-    return cojGetMap(j);
+    return coJSONGetMap(reader);
   if ( c == '\"' )
-    return coNewStr(CO_STRFREE, coJSONGetStr(j));  // return value of coJSONGetStr() is a pointer to allocated memory, so don't use CO_STRDUP
+    return coNewStr(CO_STRFREE, coJSONGetStr(reader));  // return value of coJSONGetStr() is a pointer to allocated memory, so don't use CO_STRDUP
   if ( (c >= '0' && c <= '9') || c == '-' || c == '+' || c == 'e' || c == 'E' || c == '.' )
-    return coJSONGetDbl(j);
+    return coJSONGetDbl(reader);
   // todo: handle true, false, null
   return NULL;
 }
@@ -1276,3 +1275,188 @@ co coReadJSONByFP(FILE *fp)
   return coJSONGetValue(&reader);
 }
 
+/*=== A2L Parser ===*/
+
+
+#define CO_A2L_STRBUF_MAX 8192
+const char *coA2LGetString(coReader reader)
+{
+  static char buf[CO_A2L_STRBUF_MAX+8];                // reservere some extra space, because the overflow check is done only once in the for loop below
+  size_t idx = 0;
+  int c = 0;
+  if ( coReaderCurr(reader) != '\"' )
+    return coReaderErr(reader, "Internal error"), NULL;
+  buf[idx++] = '\"';            // add the initial double quote
+  coReaderNext(reader);   // skip initial double quote
+  for(;;)
+  {
+    c = coReaderCurr(reader);
+    if ( c < 0 )        // unexpected end of stream
+      return coReaderErr(reader, "Unexpected end of string"), NULL;
+    if ( c == '\"' )
+    {
+      buf[idx++] = c;            // add the final double quote 
+      buf[idx++] = '\0';            // terminate the string
+      coReaderNext(reader);   // skip final double quote
+      coReaderSkipWhiteSpace(reader);          
+      break;    // regular end
+    }
+    if ( c == '\\' )
+    {
+      coReaderNext(reader);   // skip back slash
+      c = coReaderCurr(reader);
+      if ( c == 'n' ) { coReaderNext(reader); buf[idx++] = '\n'; }
+      else if ( c == 't' ) { coReaderNext(reader); buf[idx++] = '\t'; }
+      else if ( c == 'b' ) { coReaderNext(reader); buf[idx++] = '\b'; }
+      else if ( c == 'f' ) { coReaderNext(reader); buf[idx++] = '\f'; }
+      else if ( c == 'r' ) { coReaderNext(reader); buf[idx++] = '\r'; }
+      else { coReaderNext(reader); buf[idx++] = c; }     // treat escaped char as it is (this will handle both slashes) ...
+    } // escape
+    else
+    {
+      coReaderNext(reader); 
+      buf[idx++] = c;   // handle normal char
+    }
+    if ( idx >= CO_A2L_STRBUF_MAX ) // check whether the buffer is full
+      return coReaderErr(reader, "String too long"), NULL;
+  } // for
+  return buf;  
+}
+
+#define CO_A2L_IDENTIFIER_MAX 1024
+const char *coA2LGetIdentifier(coReader reader, int prefix)
+{
+  static char buf[CO_A2L_IDENTIFIER_MAX+2];  // add some space for '\0'
+  int c;
+  size_t idx = 0;
+  if ( prefix >= 0 )    // this is used by the '/' detection procedure below
+    buf[idx++] = prefix;
+  for(;;)
+  {
+    c = coReaderCurr(reader);
+    if ( c <= ' ' ) break; // this includes c==-1
+    if ( c == '/' ) break;    // comment start
+    if ( c == '\"' ) break; // string start
+    if ( idx >= CO_A2L_IDENTIFIER_MAX )
+      return coReaderErr(reader, "Identifier too long"), NULL;
+    buf[idx++] = c;
+    coReaderNext(reader);
+  }
+  buf[idx] = '\0';
+  coReaderSkipWhiteSpace(reader);          
+  return buf;
+}
+
+const char *coA2LGetSlashPrefixedToken(coReader reader)
+{
+  if ( coReaderCurr(reader) != '/' )
+    return coReaderErr(reader, "Internal error"), NULL;
+  coReaderNext(reader);   // skip '/'
+  if ( coReaderCurr(reader) == '/' )   // line comment
+  {
+    coReaderNext(reader);   // skip second '/'
+    for(;;)
+    {
+      if ( coReaderCurr(reader) < 0 ) return "";
+      if ( coReaderCurr(reader) == '\n' || coReaderCurr(reader) == '\r' ) { coReaderSkipWhiteSpace(reader); return ""; }
+      coReaderNext(reader);
+    }
+  }
+  if ( coReaderCurr(reader) == '*' )   // block comment
+  {
+    coReaderNext(reader);   // skip '*'
+    for(;;)
+    {
+      if ( coReaderCurr(reader) < 0 ) return "";
+      if ( coReaderCurr(reader) == '*' )
+      {
+        coReaderNext(reader);
+        if ( coReaderCurr(reader) == '/' ) { coReaderNext(reader); coReaderSkipWhiteSpace(reader); return ""; }
+       }
+      else coReaderNext(reader);
+    }
+  }
+  return coA2LGetIdentifier(reader, '/');       // detect /begin and /end keywords
+}
+
+const char *coA2LGetToken(coReader reader)
+{
+  const char *token;
+  for(;;)
+  {
+    if ( coReaderCurr(reader) < 0 )
+      return "";
+    if ( coReaderCurr(reader) == '\"' )
+      return coA2LGetString(reader);
+    if ( coReaderCurr(reader) == '/' )
+    {
+      token = coA2LGetSlashPrefixedToken(reader);
+      if ( token == NULL )
+        return NULL;
+      if ( token[0] == '\0' )
+        continue;
+      return token;
+    }
+    break;
+  }
+  return coA2LGetIdentifier(reader, -1);
+}
+
+co coA2LGetArray(coReader reader)
+{
+  const char *t;
+  co array_obj;
+  co element;
+  
+  array_obj = coNewVector(CO_FREE_VALS);
+  for(;;)
+  {
+    t = coA2LGetToken(reader);
+    if ( coReaderCurr(reader) < 0 ) // end of file?
+    {
+      break;
+    } 
+    else if ( t == NULL )    // some error has happend
+    {
+        return coDelete(array_obj), NULL;
+    }  
+    else if ( strcmp(t, "/begin") == 0 )
+    {
+      element = coA2LGetArray(reader);
+      if ( element == NULL )
+        return NULL;
+      if ( coVectorAdd(array_obj, element) < 0 )
+        return coReaderErr(reader, "Memory error inside 'array'"), coDelete(array_obj), NULL;
+    }
+    else if ( strcmp(t, "/end") == 0 )
+    {
+      coA2LGetToken(reader);    // read next token. this should be the same as the /begin argumnet
+      break;
+    }
+    else
+    {
+      element = coNewStr(CO_STRDUP, t);   // t is a pointer into constant memory, so do a strdup 
+      if ( element == NULL )
+        return NULL;
+      if ( coVectorAdd(array_obj, element) < 0 )
+        return coReaderErr(reader, "Memory error inside 'array'"), coDelete(array_obj), NULL;    
+    }
+  }
+  return array_obj;
+}
+
+co coReadA2LByString(const char *json)
+{
+  struct co_reader_struct reader;
+  if ( coReaderInitByString(&reader, json) == 0 )
+    return NULL;
+  return coA2LGetArray(&reader);
+}
+
+co coReadA2LByFP(FILE *fp)
+{
+  struct co_reader_struct reader;
+  if ( coReaderInitByFP(&reader, fp) == 0 )
+    return NULL;
+  return coA2LGetArray(&reader);
+}

@@ -11,7 +11,9 @@ int main()
   co m = coNewMap(CO_STRDUP | CO_FREE_VALS);
   co t;
   co tt;
+  co a;
   char *json;
+  char *a2l;
   
   coVectorAdd(v, coNewStr(CO_STRDUP, "abc"));
   coVectorAdd(v, coNewStr(CO_STRDUP, "def"));
@@ -40,6 +42,21 @@ int main()
 
   coPrint(coMapGet(m, "def")); puts("");
 
+  a2l=" \
+  blabla \
+/begin PROJECT\
+   ASAM\
+   \"prjname\" /* ... */\
+   /begin HEADER\
+      header_name\
+      PROJECT_NO ASAM2013\
+   /end HEADER\
+   /end PROJECT\
+  ";
+  
+  a = coReadA2LByString(a2l);
+  coPrint(a); puts("");
+  coDelete(a);
   
   json = " [ 123, \"\\u003c\\u003e\", { \"x\":\"abc\", \"y\":456} ] ";
   //json = "{ \"x\":\"abc\", \"y\":456}";

@@ -193,6 +193,8 @@ co coClone(cco o);
 co coReadJSONByString(const char *json);
 co coReadJSONByFP(FILE *fp);
 
+co coReadA2LByString(const char *json);
+co coReadA2LByFP(FILE *fp);
 
 /* string functions */
 int coStrAdd(co o, const char *s);      // concats the given string to the string object, requires the CO_STRDUP flag
