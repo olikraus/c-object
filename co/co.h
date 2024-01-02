@@ -193,7 +193,7 @@ co coClone(cco o);
 co coReadJSONByString(const char *json);
 co coReadJSONByFP(FILE *fp);
 
-void coWriteJSON(cco o, int isCompact, FILE *fp);
+void coWriteJSON(cco o, int isCompact, int isUTF8, FILE *fp); // isUTF8 is 0, then output char codes >=128 via \u 
 
 co coReadA2LByString(const char *json);
 co coReadA2LByFP(FILE *fp);

@@ -1283,7 +1283,7 @@ co coReadJSONByFP(FILE *fp)
 
 /*=== JSON Write ===*/
 
-void coWriteJSONTraverse(cco o, int depth, FILE *fp);  // forward declaration
+void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp);  // forward declaration
 
 static void writeIndent(int depth, FILE *fp)
 {
@@ -1294,9 +1294,60 @@ static void writeIndent(int depth, FILE *fp)
   }
 }
 
+static void writeString(const char *s, int isUTF8, FILE *fp)
+{
+  while( *s != '\0' )
+  {
+    if ( *s == '\"' || *s == '/' || *s == '\\' )
+    {
+      fputc('\\', fp);
+      fputc(*s, fp);
+    }
+    else if ( *s == '\n' )
+    {
+      fputc('\\', fp);
+      fputc('n', fp);
+    }
+    else if ( *s == '\r' )
+    {
+      fputc('\\', fp);
+      fputc('r', fp);
+    }
+    else if ( *s == '\t' )
+    {
+      fputc('\\', fp);
+      fputc('t', fp);
+    }
+    else if ( *s == '\f' )
+    {
+      fputc('\\', fp);
+      fputc('f', fp);
+    }
+    else if ( *s == '\b' )
+    {
+      fputc('\\', fp);
+      fputc('b', fp);
+    }
+    else if ( *s < 32 )
+    {
+      fprintf(fp, "\\u%04x", *s);
+    }
+    else if ( isUTF8 == 0 &&  *s >= 128 )
+    {
+      fprintf(fp, "\\u%04x", *s);
+    }    
+    else
+    {
+      fputc(*s, fp);
+    }
+    s++;
+  }
+}
+
 struct json_traverse_struct
 {
   int depth;
+  int isUTF8;
   FILE *fp;
   long size;
 };
@@ -1304,24 +1355,12 @@ struct json_traverse_struct
 static int coMapForEachJSONTraverseCB(cco o, long idx, const char *key, cco value, void *data)
 {
   struct json_traverse_struct *jts = (struct json_traverse_struct *)data;
-  const char *s = key;
   writeIndent(jts->depth, jts->fp);
   fputc('\"', jts->fp);
-  while( *s != '\0' )
-  {
-    if ( *s < 32 || *s >= 128 || *s == 34 )
-    {
-      fprintf(jts->fp, "\\u%04x", *s);
-    }
-    else
-    {
-      fputc(*s, jts->fp);
-    }
-    s++;
-  }  
+  writeString(key, jts->isUTF8, jts->fp);
   fputc('\"', jts->fp);
   fputc(':', jts->fp);
-  coWriteJSONTraverse(value, jts->depth+1, jts->fp);  
+  coWriteJSONTraverse(value, jts->depth+1, jts->isUTF8, jts->fp);  
   if ( idx+1 != jts->size )
     fputc(',', jts->fp);
   if ( jts->depth >= 0 )
@@ -1329,25 +1368,12 @@ static int coMapForEachJSONTraverseCB(cco o, long idx, const char *key, cco valu
   return 1;
 }
 
-
-void coWriteJSONTraverse(cco o, int depth, FILE *fp)
+void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp)
 {
   if ( coIsStr(o) )
   {
-    const char *s = coStrToString(o);
     fputc('\"', fp);
-    while( *s != '\0' )
-    {
-      if ( *s < 32 || *s >= 128 || *s == 34  )
-      {
-        fprintf(fp, "\\u%04x", *s);
-      }
-      else
-      {
-        fputc(*s, fp);
-      }
-      s++;
-    }
+    writeString(coStrToString(o), isUTF8, fp);
     fputc('\"', fp);
   }
   else if ( coIsDbl(o) )
@@ -1364,7 +1390,7 @@ void coWriteJSONTraverse(cco o, int depth, FILE *fp)
     for( i = 0; i < cnt; i++ )
     {
       writeIndent(depth+1, fp);
-      coWriteJSONTraverse(coVectorGet(o, i), depth+1, fp);      
+      coWriteJSONTraverse(coVectorGet(o, i), depth+1, isUTF8, fp);      
       if ( i+1 != cnt )
         fputc(',', fp);
       if ( depth >= 0 )
@@ -1379,6 +1405,7 @@ void coWriteJSONTraverse(cco o, int depth, FILE *fp)
     jts.size = coMapSize(o);
     jts.fp = fp;
     jts.depth = depth+1;
+    jts.isUTF8 = isUTF8;
     fputc('{', fp);
     if ( depth >= 0 )
       fputc('\n', fp);
@@ -1388,15 +1415,15 @@ void coWriteJSONTraverse(cco o, int depth, FILE *fp)
   }
 }
 
-void coWriteJSON(cco o, int isCompact, FILE *fp)
+void coWriteJSON(cco o, int isCompact, int isUTF8, FILE *fp)
 {
   if ( isCompact )
   {
-    coWriteJSONTraverse(o, -10000, fp);
+    coWriteJSONTraverse(o, -10000, isUTF8, fp);
   }
   else
   {
-    coWriteJSONTraverse(o, 0, fp);
+    coWriteJSONTraverse(o, 0, isUTF8, fp);
   }
 
 }
