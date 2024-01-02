@@ -193,6 +193,8 @@ co coClone(cco o);
 co coReadJSONByString(const char *json);
 co coReadJSONByFP(FILE *fp);
 
+void coWriteJSON(cco o, int isCompact, FILE *fp);
+
 co coReadA2LByString(const char *json);
 co coReadA2LByFP(FILE *fp);
 

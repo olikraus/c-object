@@ -58,13 +58,14 @@ int main()
   coPrint(a); puts("");
   coDelete(a);
   
-  json = " [ 123, \"\\u003c\\u003e\", { \"x\":\"abc\", \"y\":456} ] ";
+  json = " [ 123, \"\\u003c\\u003e\", { \"x\":\"abc\", \"y\":456}, { }, { \"a\":5 } ] ";
   //json = "{ \"x\":\"abc\", \"y\":456}";
   //json = "\"\\u003c\"";
   t = coReadJSONByString(json);
   coPrint(t); puts("");
+  coWriteJSON(t, 1, fopen("tmp.json", "w"));
 
-  for( int i = 0; i < 16; i++ )
+  for( int i = 0; i < 4; i++ )
   {
     tt = coReadJSONByFP(fopen("5MB.json", "r"));
     coDelete(tt);

@@ -531,7 +531,7 @@ const char *coDblToString(cco o)
 
 void coDblPrint(cco o)
 {
-  printf("%lf", o->d.n);
+  printf("%.9g", o->d.n);
 }
 
 void coDblDestroy(co o)
@@ -1283,7 +1283,7 @@ co coReadJSONByFP(FILE *fp)
 
 /*=== JSON Write ===*/
 
-void coWriteJSONTraverse(cco o, int depth, int addComma, FILE *fp);  // forward declaration
+void coWriteJSONTraverse(cco o, int depth, FILE *fp);  // forward declaration
 
 static void writeIndent(int depth, FILE *fp)
 {
@@ -1321,18 +1321,20 @@ static int coMapForEachJSONTraverseCB(cco o, long idx, const char *key, cco valu
   }  
   fputc('\"', jts->fp);
   fputc(':', jts->fp);
-  coWriteJSONTraverse(value, jts->depth, idx+1!=jts->size, jts->fp);
+  coWriteJSONTraverse(value, jts->depth+1, jts->fp);  
+  if ( idx+1 != jts->size )
+    fputc(',', jts->fp);
+  if ( jts->depth >= 0 )
+    fputc('\n', jts->fp);  
   return 1;
 }
 
 
-void coWriteJSONTraverse(cco o, int depth, int addComma, FILE *fp)
+void coWriteJSONTraverse(cco o, int depth, FILE *fp)
 {
-  
   if ( coIsStr(o) )
   {
     const char *s = coStrToString(o);
-    writeIndent(depth, fp);
     fputc('\"', fp);
     while( *s != '\0' )
     {
@@ -1346,27 +1348,27 @@ void coWriteJSONTraverse(cco o, int depth, int addComma, FILE *fp)
       }
       s++;
     }
-    if ( addComma )
-      fputc(',', fp);      
-    fputc('\n', fp);
+    fputc('\"', fp);
   }
   else if ( coIsDbl(o) )
   {
-    writeIndent(depth, fp);
     fprintf(fp, "%.9g", coDblGet(o));
-    if ( addComma )
-      fputc(',', fp);      
-    fputc('\n', fp);
   }
   else if ( coIsVector(o) )
   {
     long i;
     long cnt = coVectorSize(o);
-    writeIndent(depth, fp);
     fputc('[', fp);
+    if ( depth >= 0 )
+      fputc('\n', fp);
     for( i = 0; i < cnt; i++ )
     {
-      coWriteJSONTraverse(coVectorGet(o, i), depth+1, i+1!=cnt, fp);      
+      writeIndent(depth+1, fp);
+      coWriteJSONTraverse(coVectorGet(o, i), depth+1, fp);      
+      if ( i+1 != cnt )
+        fputc(',', fp);
+      if ( depth >= 0 )
+        fputc('\n', fp);
     }
     writeIndent(depth, fp);
     fputc(']', fp);
@@ -1376,11 +1378,28 @@ void coWriteJSONTraverse(cco o, int depth, int addComma, FILE *fp)
     struct json_traverse_struct jts;
     jts.size = coMapSize(o);
     jts.fp = fp;
-    jts.depth = depth;
+    jts.depth = depth+1;
+    fputc('{', fp);
+    if ( depth >= 0 )
+      fputc('\n', fp);
     coMapForEach(o, coMapForEachJSONTraverseCB, &jts);
+    writeIndent(depth, fp);
+    fputc('}', fp);
   }
 }
 
+void coWriteJSON(cco o, int isCompact, FILE *fp)
+{
+  if ( isCompact )
+  {
+    coWriteJSONTraverse(o, -10000, fp);
+  }
+  else
+  {
+    coWriteJSONTraverse(o, 0, fp);
+  }
+
+}
 
 /*=== A2L Parser ===*/
 
