@@ -488,7 +488,7 @@ coFn coMemType = &coMemStruct;
 
 co coNewMem(void)
 {
-  co o = coNewWithData(coStrType, 0, NULL);
+  co o = coNewWithData(coMemType, 0, NULL);
   if ( o == NULL )
     return NULL;
   return o;
@@ -545,6 +545,7 @@ const char *coMemToString(cco o)
 
 void coMemPrint(cco o)
 {
+  printf("<%zd bytes>", o->s.len);
 }
 
 void coMemDestroy(co o)

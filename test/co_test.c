@@ -12,6 +12,7 @@ int main()
   co t;
   co tt;
   co a;
+  co s19;
   char *json;
   char *a2l;
   
@@ -64,6 +65,10 @@ int main()
   t = coReadJSONByString(json);
   coPrint(t); puts("");
   coWriteJSON(t, 1, 0, fopen("tmp.json", "w"));
+
+  s19 = coReadS19ByFP(fopen("example.s19", "r"));
+  coPrint(s19); puts("");
+  coDelete(s19);
 
   for( int i = 0; i < 4; i++ )
   {

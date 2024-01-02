@@ -201,6 +201,9 @@ void coWriteJSON(cco o, int isCompact, int isUTF8, FILE *fp); // isUTF8 is 0, th
 co coReadA2LByString(const char *json);
 co coReadA2LByFP(FILE *fp);
 
+co coReadS19ByFP(FILE *fp); // returns map, key=8digit addres, value=mem block
+
+
 /* string functions */
 int coStrAdd(co o, const char *s);      // concats the given string to the string object, requires the CO_STRDUP flag
 char *coStrDeleteAndGetAllocatedStringContent(co o);  // convert a str obj to a string, return value must be free'd
