@@ -93,7 +93,7 @@ typedef struct coFnStruct *coFn;
 
 typedef int (*coInitFn)(co o, void *data);
 typedef long (*coSizeFn)(cco o);
-typedef cco (*coGetByIdxFn)(cco o, long idx);
+//typedef cco (*coGetByIdxFn)(cco o, long idx);
 typedef const char *(*coToStringFn)(cco o);
 typedef void (*coPrintFn)(const cco o);
 typedef void (*coDestroyFn)(co o);
@@ -140,7 +140,7 @@ struct coStruct
     {
       struct co_avl_node_struct *root;
     } m;
-    struct // string
+    struct // string and memory block
     {
       char *str;
       size_t len;       // current str length
@@ -157,7 +157,7 @@ struct coFnStruct
 {
   coInitFn init;                      // (*coInitFn)(co o);
   coSizeFn size;        
-  coGetByIdxFn getByIdx;
+  //coGetByIdxFn getByIdx;
   coToStringFn toString;
   coPrintFn print;
   coDestroyFn destroy;  // counterpart to init
@@ -169,17 +169,19 @@ struct coFnStruct
 extern coFn coBlankType;
 extern coFn coVectorType;
 extern coFn coStrType;
+extern coFn coMemType;
 extern coFn coMapType;
 extern coFn coDblType;
 
 co coNewBlank();
 co coNewStr(unsigned flags, const char *s);
 co coNewDbl(double n);
+co coNewMem(void);
 
 /* generic functions */
 
 void coPrint(const cco o);
-cco coGetByIdx(co o, long idx);
+//cco coGetByIdx(co o, long idx);
 void coDelete(co o);
 co coClone(cco o);
 
@@ -187,6 +189,7 @@ co coClone(cco o);
 
 #define coIsVector(o) (coGetType(o)==coVectorType)
 #define coIsStr(o) (coGetType(o)==coStrType)
+#define coIsMem(o) (coGetType(o)==coMemType)
 #define coIsMap(o) (coGetType(o)==coMapType)
 #define coIsDbl(o) (coGetType(o)==coDblType)
 
@@ -202,6 +205,12 @@ co coReadA2LByFP(FILE *fp);
 int coStrAdd(co o, const char *s);      // concats the given string to the string object, requires the CO_STRDUP flag
 char *coStrDeleteAndGetAllocatedStringContent(co o);  // convert a str obj to a string, return value must be free'd
 const char *coStrToString(cco o);
+
+/* memory functions */
+long coMemSize(cco o);
+int coMemAdd(co o, const void *mem, size_t len);
+const void *coMemGet(co o);
+
 
 /* double functions */
 double coDblGet(cco o);

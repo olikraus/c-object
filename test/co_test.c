@@ -23,7 +23,7 @@ int main()
   puts("");
   
   
-  coPrint(coGetByIdx(v, 0)); puts("");
+  coPrint(coVectorGet(v, 0)); puts("");
   
   //coAdd(v, coGetByIdx(v, 0));
   

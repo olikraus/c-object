@@ -21,10 +21,10 @@ void coPrint(cco o)
     o->fn->print(o);
 }
 
-cco coGetByIdx(co o, long idx)
-{
-  return o->fn->getByIdx(o, idx);
-}
+//cco coGetByIdx(co o, long idx)
+//{
+//  return o->fn->getByIdx(o, idx);
+//}
 
 /* delete the object, this will also handle o==NULL */
 void coDelete(co o)
@@ -84,7 +84,7 @@ struct coFnStruct cobStruct =
 {
   cobInit,
   cobSize,
-  cobGetByIdx,
+//  cobGetByIdx,
   cobToString,
   cobPrint,
   cobDestroy,
@@ -108,10 +108,10 @@ long cobSize(cco o)
   return 0;
 }
 
-cco cobGetByIdx(cco o, long idx)
-{
-  return 0;
-}
+//cco cobGetByIdx(cco o, long idx)
+//{
+//  return 0;
+//}
 
 const char *cobToString(cco o)
 {
@@ -149,7 +149,7 @@ struct coFnStruct coVectorStruct =
 {
   coVectorInit,
   coVectorSize,
-  coVectorGet,
+//  coVectorGet,
   coVectorToString,
   coVectorPrint,
   coVectorDestroy,
@@ -361,7 +361,6 @@ int coVectorAppendVector(co v, cco src)
 
 int coStrInit(co o, void *data);  // optional data: const char *
 long coStrSize(cco o);
-cco coStrGetByIdx(cco o, long idx);
 const char *coStrToString(cco o);
 void coStrPrint(cco o);
 void coStrDestroy(co o);
@@ -371,7 +370,6 @@ struct coFnStruct coStrStruct =
 {
   coStrInit,
   coStrSize,
-  coStrGetByIdx,
   coStrToString,
   coStrPrint,
   coStrDestroy,
@@ -429,11 +427,6 @@ long coStrSize(cco o)
   return (long)o->s.len;
 }
 
-cco coStrGetByIdx(cco o, long idx)
-{
-  return NULL;
-}
-
 const char *coStrToString(cco o)
 {
   return o->s.str;
@@ -473,11 +466,113 @@ char *coStrDeleteAndGetAllocatedStringContent(co o)
   return s;     // and finally return the allocated string
 }
 
+/*=== Binary Memory Block ===*/
+
+int coMemInit(co o, void *data);  // optional data: const char *
+long coMemSize(cco o);
+const char *coMemToString(cco o);
+void coMemPrint(cco o);
+void coMemDestroy(co o);
+co coMemClone(cco o);
+
+struct coFnStruct coMemStruct = 
+{
+  coMemInit,
+  coMemSize,
+  coMemToString,
+  coMemPrint,
+  coMemDestroy,
+  coMemClone
+};
+coFn coMemType = &coMemStruct;
+
+co coNewMem(void)
+{
+  co o = coNewWithData(coStrType, 0, NULL);
+  if ( o == NULL )
+    return NULL;
+  return o;
+}
+
+int coMemInit(co o, void *data)
+{
+  o->fn = coMemType;
+  o->s.str = NULL;
+  o->s.len = 0;
+  return 1;
+}
+
+int coMemAdd(co o, const void *mem, size_t len)
+{
+  void *m;
+  assert(coIsMem(o));
+  if ( mem == NULL || len == 0 )
+    return 1;
+  
+  
+  if ( o->s.str == NULL )
+    m = malloc(len);
+  else
+    m = realloc(o->s.str, o->s.len + len);
+  
+  if ( m == NULL )
+    return 0;
+
+  memcpy(m+o->s.len, mem, len);
+  o->s.str = (char *)m;  
+  o->s.len += len;
+  return 1;
+}
+
+const void *coMemGet(co o)
+{
+  return (const void *)o->s.str;
+}
+
+
+
+long coMemSize(cco o)
+{
+  assert(coIsMem(o));
+  return (long)o->s.len;
+}
+
+const char *coMemToString(cco o)
+{
+  assert(coIsMem(o));
+  return "";
+}
+
+void coMemPrint(cco o)
+{
+}
+
+void coMemDestroy(co o)
+{
+  if ( o->s.str != NULL )
+    free(o->s.str);
+  o->s.str = NULL;
+}
+
+co coMemClone(cco o)
+{
+  co new_o; 
+  assert(coIsMem(o));
+  new_o = coNewMem(); 
+  if ( new_o == NULL )
+    return NULL;
+  if ( coMemAdd(new_o, o->s.str, o->s.len) != 0 )
+    return new_o;
+  coMemDestroy(new_o);
+  return NULL;  
+}
+
+
 /*=== Double ===*/
 
 int coDblInit(co o, void *data);  // optional data: const double *
 long coDblSize(cco o);
-cco coDblGetByIdx(cco o, long idx);
+//cco coDblGetByIdx(cco o, long idx);
 const char *coDblToString(cco o);
 void coDblPrint(cco o);
 void coDblDestroy(co o);
@@ -487,7 +582,7 @@ struct coFnStruct coDblStruct =
 {
   coDblInit,
   coDblSize,
-  coDblGetByIdx,
+//  coDblGetByIdx,
   coDblToString,
   coDblPrint,
   coDblDestroy,
@@ -519,10 +614,10 @@ long coDblSize(cco o)
   return 1;
 }
 
-cco coDblGetByIdx(cco o, long idx)
-{
-  return NULL;
-}
+//cco coDblGetByIdx(cco o, long idx)
+//{
+//  return NULL;
+//}
 
 const char *coDblToString(cco o)
 {
@@ -768,7 +863,7 @@ static long avl_get_size(struct co_avl_node_struct *n)
 
 int coMapInit(co o, void *data);
 long coMapSize(cco o);
-cco coMapGetByIdx(cco o, long idx);
+//cco coMapGetByIdx(cco o, long idx);
 const char *coMapToString(cco o);
 void coMapPrint(cco o);
 void coMapClear(co o);
@@ -779,7 +874,7 @@ struct coFnStruct coMapStruct =
 {
   coMapInit,
   coMapSize,
-  coMapGetByIdx,
+//  coMapGetByIdx,
   coMapToString,
   coMapPrint,
   coMapClear,             // destroy function is identical to clear function
@@ -831,10 +926,10 @@ long coMapSize(cco o)
   return avl_get_size(o->m.root);              // O(n) !
 }
 
-cco coMapGetByIdx(cco o, long idx)
-{
-  return NULL;
-}
+//cco coMapGetByIdx(cco o, long idx)
+//{
+//  return NULL;
+//}
 
 const char *coMapToString(cco o)
 {
@@ -927,16 +1022,66 @@ void coMapForEach(cco o, coMapForEachCB cb, void *data)
 
 /*=== FILE/String Reader ===*/
 
+#define BOM_NONE 0
+#define BOM_UTF8 1
+#define BOM_UTF16BE 2
+#define BOM_UTF16LE 3
+#define BOM_UTF32BE 4
+#define BOM_UTF32LE 5
+static int bom_read_and_skip(FILE *fp)
+{
+  int c;
+  c = fgetc(fp);
+  if ( c == 0xEF )
+  {
+    if ( fgetc(fp) == 0xBB )
+      if ( fgetc(fp) == 0xBF )
+        return BOM_UTF8;
+    fseek(fp, 0, SEEK_SET);
+    return BOM_NONE;
+  }
+  if ( c == 0xFE )
+  {
+    if ( fgetc(fp) == 0xFF )
+      return BOM_UTF16BE;
+  }
+  else if ( c == 0xFF )
+  {
+    if ( fgetc(fp) == 0xFE )
+    {
+      if ( fgetc(fp) != 0x00 )
+      {
+        fseek(fp, 2, SEEK_SET);
+        return BOM_UTF16LE;
+      }
+      if ( fgetc(fp) == 0x00 )  // second 0x00?
+        return BOM_UTF32LE;      
+    }
+  }
+  else if ( c == 0x00 )
+  {
+    if ( fgetc(fp) == 0x00 )
+      if ( fgetc(fp) == 0xFE )
+        if ( fgetc(fp) == 0xFF )
+          return BOM_UTF32BE;
+  }
+  
+  fseek(fp, 0, SEEK_SET);
+  return BOM_NONE;
+}
+
 typedef struct co_reader_struct *coReader;
 typedef void (*coReaderNextFn)(coReader j);
 
 struct co_reader_struct
 {
   int curr;
+  int bom;
   const char *reader_string;
   FILE *fp;
   coReaderNextFn next_cb;
 };
+
 
 void coReaderErr(coReader j, const char *msg)
 {
@@ -979,6 +1124,7 @@ int coReaderInitByString(coReader reader, const char *s)
 {
   if ( reader == NULL || s == NULL )
     return 0;
+  reader->bom = BOM_NONE;
   reader->reader_string = s;
   reader->fp = NULL;
   reader->next_cb = coReaderStringNext;  
@@ -995,6 +1141,7 @@ int coReaderInitByFP(coReader reader, FILE *fp)
     return 0;  
   reader->reader_string = NULL;
   reader->fp = fp;
+  reader->bom = bom_read_and_skip(fp);
   reader->next_cb = coReaderFileNext;
   reader->curr = getc(fp);
   coReaderSkipWhiteSpace(reader);
@@ -1613,3 +1760,105 @@ co coReadA2LByFP(FILE *fp)
     return NULL;
   return coA2LGetArray(&reader);
 }
+
+/*=== S19 Reader ===*/
+
+
+#define S19_MAX_LINE_LEN 1024
+
+static unsigned hexToUnsigned(const char *s)
+{
+  /* 
+    A = 0x41 = 0100 0001
+    a = 0x61 = 0110 0001
+          0xdf  = 1101 1111
+  */
+  unsigned int n;
+  n = (*s < 'A')?(*s-'0'):((*s&0xdf)-'A'+10);
+  n *= 16;
+  s++;
+  n += (*s < 'A')?(*s-'0'):((*s&0xdf)-'A'+10);
+  return n;
+}
+
+static void hexToMem(const char *s, size_t cnt, unsigned char*mem)
+{
+  while( cnt > 0 )
+  {
+    *mem++ = hexToUnsigned(s);
+    s+=2;
+    cnt--;
+  }
+}
+
+co coReadS19ByFP(FILE *fp)
+{
+  static char buf[S19_MAX_LINE_LEN];
+  static unsigned char mem[S19_MAX_LINE_LEN/2];
+  char addr_as_hex[10];
+  char *line;
+  size_t last_address = 0xffffffff; 
+  size_t address; 
+  size_t byte_cnt; 
+  size_t mem_cnt;
+  int rec_type;
+  co mo;                // memory object
+  co map = coNewMap(CO_FREE_VALS|CO_STRDUP);
+  if ( map == NULL )
+    return NULL;
+  for(;;)
+  {
+    line = fgets(buf, S19_MAX_LINE_LEN, fp);
+    if ( line == NULL )
+      break;
+    while( *line != 'S' && *line != '\0')
+      line++;
+    rec_type = line[1];
+    byte_cnt = hexToUnsigned(line+2);
+    
+    if ( rec_type >= '1' && rec_type <= '3' )
+    {
+      address = (size_t)hexToUnsigned(line+4);
+      address <<= 8;
+      address += (size_t)hexToUnsigned(line+6);
+      if ( rec_type == '1' )
+      {
+        hexToMem(line+8, byte_cnt-2, mem);     // do not read address, but include checksum
+        mem_cnt = byte_cnt - 3;
+      }
+      else if ( rec_type == '2' )
+      {
+        address <<= 8;
+        address += (size_t)hexToUnsigned(line+8);
+        hexToMem(line+10, byte_cnt-3, mem);     // do not read address, but include checksum
+        mem_cnt = byte_cnt - 4;
+      }
+      else if ( rec_type == '3' )
+      {
+        address <<= 8;
+        address += (size_t)hexToUnsigned(line+8);
+        address <<= 8;
+        address += (size_t)hexToUnsigned(line+10);
+        hexToMem(line+12, byte_cnt-4, mem);     // do not read address, but include checksum
+        mem_cnt = byte_cnt - 5;
+      }      
+      sprintf(addr_as_hex, "%08zX", address);
+      if ( mo == NULL || last_address != address )
+      {
+        mo = coNewMem();                // create a new memory block
+        if ( coMemAdd(mo, mem, mem_cnt) == 0 )
+          return coDelete(map), NULL;
+        if ( coMapAdd(map, addr_as_hex, mo) == 0 )
+          return coDelete(map), NULL;
+      }
+      else
+      {
+        if ( coMemAdd(mo, mem, mem_cnt) == 0 )     // extend the existing memory block
+          return coDelete(map), NULL;
+      }
+      last_address = address + mem_cnt;
+    }
+  }
+  return map;
+}
+
