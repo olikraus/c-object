@@ -88,7 +88,7 @@
 #include <stdio.h>
 
 typedef struct coStruct *co;
-typedef struct coStruct const * const cco;
+typedef const struct coStruct *  cco;
 typedef struct coFnStruct *coFn;
 
 typedef int (*coInitFn)(co o, void *data);
