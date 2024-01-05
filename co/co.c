@@ -135,7 +135,7 @@ co cobClone(cco o)
 /*=== Vector ===*/
 
 int coVectorInit(co o, void *data);  // data: not used
-long coVectorAdd(co o, co p);   // returns the index of the added element or -1
+long coVectorAdd(co o, cco p);   // returns the index of the added element or -1
 long coVectorSize(cco o);
 cco coVectorGet(cco o, long idx);
 const char *coVectorToString(cco o);
@@ -170,7 +170,7 @@ int coVectorInit(co o, void *data)
     if ( ptr == NULL )
         return 0;
     o->fn = coVectorType;
-    o->v.list = (co *)ptr;
+    o->v.list = (cco *)ptr;
     o->v.max = COV_EXTEND;
     o->v.cnt = 0;
     return 1;
@@ -181,7 +181,7 @@ int coVectorInit(co o, void *data)
   returns -1 in case of memory error
   otherwise it returns the position where the element was added
 */
-long coVectorAdd(co o, co p)
+long coVectorAdd(co o, cco p)
 {
   void *ptr;
   while( o->v.max <= o->v.cnt )
@@ -189,7 +189,7 @@ long coVectorAdd(co o, co p)
     ptr = realloc(o->v.list, (o->v.cnt+COV_EXTEND)*sizeof(co));
     if ( ptr == NULL )
         return -1;
-    o->v.list = (co *)ptr;
+    o->v.list = (cco *)ptr;
     o->v.max += COV_EXTEND;
   }  
   o->v.list[o->v.cnt] = p;
@@ -204,9 +204,11 @@ long coVectorSize(cco o)
 
 cco coVectorGet(cco o, long idx)
 {
-    if ( idx >= o->v.cnt )
-      return NULL;
-    return o->v.list[idx];
+  assert( o != NULL);
+  assert( idx >= 0 );
+  if ( idx >= o->v.cnt )
+    return NULL;
+  return o->v.list[idx];
 }
 
 const char *coVectorToString(cco o)           // todo
@@ -247,7 +249,8 @@ static int coVectorDestroyCB(cco o, long i, cco e, void *data)
 
 static void coVectorDestroy(co o)
 {
-  coVectorForEach(o, coVectorDestroyCB, NULL);
+  if ( o->flags & CO_FREE_VALS )
+    coVectorForEach(o, coVectorDestroyCB, NULL);
   free(o->v.list);
   o->v.list = NULL;
   o->v.max = 0;
@@ -256,7 +259,8 @@ static void coVectorDestroy(co o)
 
 void coVectorClear(co o)
 {
-  coVectorForEach(o, coVectorDestroyCB, NULL);
+  if ( o->flags & CO_FREE_VALS )
+    coVectorForEach(o, coVectorDestroyCB, NULL);
   o->v.cnt = 0;  
 }
 
@@ -312,7 +316,8 @@ void coVectorErase(co v, long i)
   if ( i >= v->v.cnt )
     return;             // do nothing, index is outside the vecor  
   // note: v->cnt > 0 at this point  
-  coDelete( v->v.list[i] );       // delete the element
+  if ( v->flags & CO_FREE_VALS )
+    coDelete( (co)(v->v.list[i]) );       // delete the element
   i++;
   while( i < v->v.cnt )
     v->v.list[i-1] = v->v.list[i];
@@ -429,8 +434,17 @@ long coStrSize(cco o)
 
 const char *coStrToString(cco o)
 {
+  assert(coIsStr(o));
   return o->s.str;
 }
+
+const char *coStrGet(cco o)
+{
+  assert(coIsStr(o));
+  return o->s.str;
+}
+
+
 
 void coStrPrint(cco o)
 {
@@ -688,9 +702,9 @@ static struct co_avl_node_struct *avl_new_node(const char *key, void *value)
 
 static void avl_delete_node(struct co_avl_node_struct *n, avl_free_fn free_key, avl_free_fn free_value)
 {
-  avl_free_key((void *)(n->key));
+  free_key((void *)(n->key));
   if ( n->value != NULL )
-    avl_free_value(n->value);
+    free_value(n->value);
   n->value = NULL;
   n->kid[0] = NULL;
   n->kid[1] = NULL;
@@ -900,7 +914,7 @@ int coMapInit(co o, void *data)
   return 1;
 }
 
-int coMapAdd(co o, const char *key, co value)
+int coMapAdd(co o, const char *key, cco value)
 {
   const char *k;
   assert(coIsMap(o));

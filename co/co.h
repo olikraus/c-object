@@ -132,7 +132,7 @@ struct coStruct
   {
     struct // vector 
     {
-      co *list;
+      cco *list;
       size_t cnt;
       size_t max;
     } v;
@@ -207,7 +207,8 @@ co coReadS19ByFP(FILE *fp); // returns map, key=8digit addres, value=mem block
 /* string functions */
 int coStrAdd(co o, const char *s);      // concats the given string to the string object, requires the CO_STRDUP flag
 char *coStrDeleteAndGetAllocatedStringContent(co o);  // convert a str obj to a string, return value must be free'd
-const char *coStrToString(cco o);
+const char *coStrToString(cco o);       /* obsolete, use coStrGet() */
+const char *coStrGet(cco o);            /* return the internal string as a reference */
 
 /* memory functions */
 long coMemSize(cco o);
@@ -221,7 +222,7 @@ double coDblGet(cco o);
 
 /* vector functions */
 co coNewVector(unsigned flags);
-long coVectorAdd(co o, co p);         // add object at the end of the list, returns -1 for error
+long coVectorAdd(co o, cco p);         // add object at the end of the list, returns -1 for error
 int coVectorAppendVector(co v, cco src);  // append elements from src to vector v
 cco coVectorGet(cco o, long idx);           // return object at specific position from the vector
 void coVectorErase(co v, long i);  // delete and remove element at the specified position
@@ -238,7 +239,7 @@ co coVectorMap(cco o, coVectorMapCB cb, void *data);
 
 /* map functions */
 co coNewMap(unsigned flags);
-int coMapAdd(co o, const char *key, co value);    // insert object into the map, returns 0 for memory error
+int coMapAdd(co o, const char *key, cco value);    // insert object into the map, returns 0 for memory error
 cco coMapGet(cco o, const char *key);     // get object from map by key, returns NULL if key doesn't exist in the map 
 void coMapErase(co o, const char *key);   // removes object from the map
 void coMapClear(co o);   // delete all elements and clear the array         
