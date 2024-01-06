@@ -158,7 +158,7 @@ struct coFnStruct
   coInitFn init;                      // (*coInitFn)(co o);
   coSizeFn size;        
   //coGetByIdxFn getByIdx;
-  coToStringFn toString;
+  //coToStringFn toString;
   coPrintFn print;
   coDestroyFn destroy;  // counterpart to init
   coCloneFn clone;

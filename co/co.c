@@ -2,7 +2,9 @@
 
   co.c
 
-  C Object Library https://github.coMap/olikraus/c-object
+  C Object Library 
+  (c) 2024 Oliver Kraus
+  https://github.coMap/olikraus/c-object
 
   CC BY-SA 3.0  https://creativecoMapmons.org/licenses/by-sa/3.0/
 
@@ -13,20 +15,18 @@
 #include <stdio.h>
 #include <assert.h>
 
-/*=== Generic Functions ===*/
+/*===================================================================*/
+/* Generic Public Functions */
+/*===================================================================*/
 
+/* print the object, only used for debugging, does not print any \n */
 void coPrint(cco o)
 {
   if ( o != NULL )
     o->fn->print(o);
 }
 
-//cco coGetByIdx(co o, long idx)
-//{
-//  return o->fn->getByIdx(o, idx);
-//}
-
-/* delete the object, this will also handle o==NULL */
+/* Delete the object and all child objects, this will also handle o==NULL */
 void coDelete(co o)
 {
   if ( o != NULL )
@@ -36,14 +36,19 @@ void coDelete(co o)
   }
 }
 
+/* Do a deep clone of the object and return the new objects. Flags are set to CO_NONE for the new object tree. */
 co coClone(cco o)
 {
+  if ( o == NULL )
+    return NULL;
   return o->fn->clone(o);
 }
 
-/*=== Helper Functions ===*/
+/*===================================================================*/
+/* Local Helper Functions */
+/*===================================================================*/
 
-co coNewWithData(coFn t, unsigned flags, void *data)
+static co coNewWithData(coFn t, unsigned flags, void *data)
 {
   co o = (co)malloc(sizeof(struct coStruct));
   if ( o == NULL )
@@ -55,37 +60,25 @@ co coNewWithData(coFn t, unsigned flags, void *data)
   return o;
 }
 
-co coNew(coFn t, unsigned flags)
+static co coNew(coFn t, unsigned flags)
 {
   return coNewWithData(t, flags, NULL);
 }
 
+/*===================================================================*/
+/* Dummy / Blank (probably obsolete) */
+/*===================================================================*/
 
-/*
-const char *coToString(co o)
-{
-  return o->fn.toString(o);
-}
-*/
-
-
-/*=== Dummy / Blank ===*/
-
-int cobInit(co o, void *data);  // data: ignored
+int cobInit(co o, void *data);
 long cobSize(cco o);
-cco cobGetByIdx(cco o, long idx);
-const char *cobToString(cco o);
 void cobPrint(cco o);
 void cobDestroy(co o);
 co cobClone(cco o);
-
 
 struct coFnStruct cobStruct = 
 {
   cobInit,
   cobSize,
-//  cobGetByIdx,
-  cobToString,
   cobPrint,
   cobDestroy,
   cobClone
@@ -108,16 +101,6 @@ long cobSize(cco o)
   return 0;
 }
 
-//cco cobGetByIdx(cco o, long idx)
-//{
-//  return 0;
-//}
-
-const char *cobToString(cco o)
-{
-  return "";
-}
-
 void cobPrint(cco o)
 {
 }
@@ -132,13 +115,14 @@ co cobClone(cco o)
 }
 
 
-/*=== Vector ===*/
+/*===================================================================*/
+/* Vector / Arry Object */
+/*===================================================================*/
 
 int coVectorInit(co o, void *data);  // data: not used
 long coVectorAdd(co o, cco p);   // returns the index of the added element or -1
 long coVectorSize(cco o);
 cco coVectorGet(cco o, long idx);
-const char *coVectorToString(cco o);
 int coVectorForEach(cco o, coVectorForEachCB cb, void *data);
 void coVectorPrint(cco o);
 static void coVectorDestroy(co o);
@@ -149,8 +133,6 @@ struct coFnStruct coVectorStruct =
 {
   coVectorInit,
   coVectorSize,
-//  coVectorGet,
-  coVectorToString,
   coVectorPrint,
   coVectorDestroy,
   coVectorClone
@@ -161,7 +143,6 @@ co coNewVector(unsigned flags)
 {
   return coNew(coVectorType, flags);
 }
-
 
 #define COV_EXTEND 32
 int coVectorInit(co o, void *data)
@@ -184,6 +165,7 @@ int coVectorInit(co o, void *data)
 long coVectorAdd(co o, cco p)
 {
   void *ptr;
+  assert(coIsVector(o));
   while( o->v.max <= o->v.cnt )
   {
     ptr = realloc(o->v.list, (o->v.cnt+COV_EXTEND)*sizeof(co));
@@ -199,21 +181,22 @@ long coVectorAdd(co o, cco p)
 
 long coVectorSize(cco o)
 {
+  if ( o == NULL )
+    return 0;
+  assert(coIsVector(o));
   return o->v.cnt;
 }
 
 cco coVectorGet(cco o, long idx)
 {
-  assert( o != NULL);
-  assert( idx >= 0 );
+  if ( o == NULL )
+    return NULL;
+  assert(coIsVector(o));
+  if ( idx < 0 )
+    return NULL;
   if ( idx >= o->v.cnt )
     return NULL;
   return o->v.list[idx];
-}
-
-const char *coVectorToString(cco o)           // todo
-{
-  return "";
 }
 
 /* returns 1 (success) or 0 (no success) */
@@ -221,6 +204,9 @@ int coVectorForEach(cco o, coVectorForEachCB cb, void *data)
 {
   long i;
   long cnt = o->v.cnt;        // not sure what todo if v.cnt is modified...
+  if ( o == NULL )
+    return 0;
+  assert(coIsVector(o));
   for( i = 0; i < cnt; i++ )
     if ( cb(o, i, o->v.list[i], data) == 0 )
       return 0;
@@ -236,9 +222,10 @@ static int coVectorPrintCB(cco o, long i, cco e, void *data)
 }
 void coVectorPrint(cco o)
 {
-    printf("[");
-    coVectorForEach(o, coVectorPrintCB, NULL);
-    printf("]");
+  assert(coIsVector(o));
+  printf("[");
+  coVectorForEach(o, coVectorPrintCB, NULL);
+  printf("]");
 }
 
 static int coVectorDestroyCB(cco o, long i, cco e, void *data)
@@ -249,6 +236,7 @@ static int coVectorDestroyCB(cco o, long i, cco e, void *data)
 
 static void coVectorDestroy(co o)
 {
+  assert(coIsVector(o));
   if ( o->flags & CO_FREE_VALS )
     coVectorForEach(o, coVectorDestroyCB, NULL);
   else if ( (o->flags & CO_FREE_FIRST) != 0 && o->v.cnt > 0 )
@@ -261,6 +249,7 @@ static void coVectorDestroy(co o)
 
 void coVectorClear(co o)
 {
+  assert(coIsVector(o));
   if ( o->flags & CO_FREE_VALS )
     coVectorForEach(o, coVectorDestroyCB, NULL);
   else if ( (o->flags & CO_FREE_FIRST) != 0 && o->v.cnt > 0 )
@@ -270,6 +259,7 @@ void coVectorClear(co o)
 
 int coVectorEmpty(cco o)
 {
+  assert(coIsVector(o));
   if ( o->v.cnt == 0 )
     return 1;
   return 0;
@@ -280,6 +270,7 @@ co coVectorMap(cco o, coVectorMapCB cb, void *data)
   co v = coNewVector(CO_FREE_VALS);
   co e;
   long i;
+  assert(coIsVector(o));
   for( i = 0; i < o->v.cnt; i++ )
   {
     e = cb(o, i, o->v.list[i], data);
@@ -311,8 +302,9 @@ co coVectorClone(cco o)
 
 
 
-/*--------------------------*/
+/*===================================================================*/
 /* special vector functions */
+/*===================================================================*/
 
 /* delete an element in the vector. Size is reduced  by 1 */
 void coVectorErase(co v, long i)
@@ -373,11 +365,12 @@ int coVectorAppendVector(co v, cco src)
   return 0;     // first / seconad arg is NOT a vector
 }
 
-/*=== String ===*/
+/*===================================================================*/
+/* String */
+/*===================================================================*/
 
 int coStrInit(co o, void *data);  // optional data: const char *
 long coStrSize(cco o);
-const char *coStrToString(cco o);
 void coStrPrint(cco o);
 void coStrDestroy(co o);
 co coStrClone(cco o);
@@ -386,7 +379,6 @@ struct coFnStruct coStrStruct =
 {
   coStrInit,
   coStrSize,
-  coStrToString,
   coStrPrint,
   coStrDestroy,
   coStrClone
@@ -451,11 +443,11 @@ const char *coStrToString(cco o)
 
 const char *coStrGet(cco o)
 {
+  if ( o == NULL )
+    return "";
   assert(coIsStr(o));
   return o->s.str;
 }
-
-
 
 void coStrPrint(cco o)
 {
@@ -491,11 +483,12 @@ char *coStrDeleteAndGetAllocatedStringContent(co o)
   return s;     // and finally return the allocated string
 }
 
-/*=== Binary Memory Block ===*/
+/*===================================================================*/
+/* Binary Memory Block */
+/*===================================================================*/
 
 int coMemInit(co o, void *data);  // optional data: const char *
 long coMemSize(cco o);
-const char *coMemToString(cco o);
 void coMemPrint(cco o);
 void coMemDestroy(co o);
 co coMemClone(cco o);
@@ -504,7 +497,6 @@ struct coFnStruct coMemStruct =
 {
   coMemInit,
   coMemSize,
-  coMemToString,
   coMemPrint,
   coMemDestroy,
   coMemClone
@@ -562,12 +554,6 @@ long coMemSize(cco o)
   return (long)o->s.len;
 }
 
-const char *coMemToString(cco o)
-{
-  assert(coIsMem(o));
-  return "";
-}
-
 void coMemPrint(cco o)
 {
   printf("<%zd bytes>", o->s.len);
@@ -594,12 +580,12 @@ co coMemClone(cco o)
 }
 
 
-/*=== Double ===*/
+/*===================================================================*/
+/* Double */
+/*===================================================================*/
 
 int coDblInit(co o, void *data);  // optional data: const double *
 long coDblSize(cco o);
-//cco coDblGetByIdx(cco o, long idx);
-const char *coDblToString(cco o);
 void coDblPrint(cco o);
 void coDblDestroy(co o);
 co coDblClone(cco o);
@@ -608,8 +594,6 @@ struct coFnStruct coDblStruct =
 {
   coDblInit,
   coDblSize,
-//  coDblGetByIdx,
-  coDblToString,
   coDblPrint,
   coDblDestroy,
   coDblClone
@@ -634,20 +618,9 @@ int coDblInit(co o, void *data)
   return 1;
 }
 
-
 long coDblSize(cco o)
 {
   return 1;
-}
-
-//cco coDblGetByIdx(cco o, long idx)
-//{
-//  return NULL;
-//}
-
-const char *coDblToString(cco o)
-{
-  return "";
 }
 
 void coDblPrint(cco o)
@@ -667,12 +640,16 @@ co coDblClone(cco o)
 
 double coDblGet(cco o)
 {
+  if ( o == NULL )
+    return 0.0;
   assert( coIsDbl(o) );
   return o->d.n;
 }
 
-/*=== Map ===*/
+/*===================================================================*/
+/* Map */
 /* based on https://rosettacode.org/wiki/AVL_tree/C */
+/*===================================================================*/
 
 static struct co_avl_node_struct avl_dummy = { NULL, NULL, {&avl_dummy, &avl_dummy}, 0 };
 static struct co_avl_node_struct *avl_nnil = &avl_dummy; // internally, avl_nnil is the new nul
@@ -687,7 +664,6 @@ static void avl_free_value(void *value)
 static void avl_keep_value(void *value)
 {
 }
-
 
 static void avl_free_key(void *key)
 {
@@ -889,8 +865,6 @@ static long avl_get_size(struct co_avl_node_struct *n)
 
 int coMapInit(co o, void *data);
 long coMapSize(cco o);
-//cco coMapGetByIdx(cco o, long idx);
-const char *coMapToString(cco o);
 void coMapPrint(cco o);
 void coMapClear(co o);
 int coMapEmpty(cco o);
@@ -900,8 +874,6 @@ struct coFnStruct coMapStruct =
 {
   coMapInit,
   coMapSize,
-//  coMapGetByIdx,
-  coMapToString,
   coMapPrint,
   coMapClear,             // destroy function is identical to clear function
   coMapClone
@@ -912,7 +884,6 @@ co coNewMap(unsigned flags)
 {
   return coNew(coMapType, flags);
 }
-
 
 int coMapInit(co o, void *data)
 {
@@ -950,16 +921,6 @@ long coMapSize(cco o)
 {
   assert(coIsMap(o));
   return avl_get_size(o->m.root);              // O(n) !
-}
-
-//cco coMapGetByIdx(cco o, long idx)
-//{
-//  return NULL;
-//}
-
-const char *coMapToString(cco o)
-{
-  return "";
 }
 
 static int avl_co_map_print_cb(cco o, long idx, const char *key, cco value, void *data)
@@ -1044,12 +1005,16 @@ int coMapForEach(cco o, coMapForEachCB cb, void *data)
   return avl_for_each(o, o->m.root, cb, &cnt, data);
 }
 
-/*=== Utility Functions ===*/
+/*===================================================================*/
+/* Publlic Utility Functions */
+/*===================================================================*/
 
 static int coVectorByMapCB(cco o, long idx, const char *key, cco value, void *data)
 {
   co parent = (co)data;
   co key_value_vector = coNewVector(CO_FREE_FIRST);  // the first element is a string object, which must be freed
+  assert( coIsMap(o) );
+  assert( key != NULL );
   if ( key_value_vector == NULL )
     return 0;
   if ( coVectorAdd(key_value_vector, coNewStr(CO_NONE, key)) < 0 )  // do not free the key-string, it belongs to the map
@@ -1127,7 +1092,9 @@ long coVectorPredecessorBinarySearch(co v, const char *search_key)
 }
 
 
-/*=== FILE/String Reader ===*/
+/*===================================================================*/
+/* FILE/String Reader */
+/*===================================================================*/
 
 #define BOM_NONE 0
 #define BOM_UTF8 1
@@ -1255,7 +1222,9 @@ int coReaderInitByFP(coReader reader, FILE *fp)
   return 1;
 }
 
-/*=== JSON Parser ===*/
+/*===================================================================*/
+/* JSON Parser */
+/*===================================================================*/
 
 
 co coJSONGetValue(coReader j);          // forward declaration
@@ -1627,7 +1596,7 @@ void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp)
   if ( coIsStr(o) )
   {
     fputc('\"', fp);
-    writeString(coStrToString(o), isUTF8, fp);
+    writeString(coStrGet(o), isUTF8, fp);
     fputc('\"', fp);
   }
   else if ( coIsDbl(o) )
@@ -1682,7 +1651,9 @@ void coWriteJSON(cco o, int isCompact, int isUTF8, FILE *fp)
 
 }
 
-/*=== A2L Parser ===*/
+/*===================================================================*/
+/* A2L Parser */
+/*===================================================================*/
 
 
 #define CO_A2L_STRBUF_MAX 8192
