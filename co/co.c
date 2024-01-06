@@ -1508,7 +1508,7 @@ co coReadJSONByFP(FILE *fp)
 /* JSON File Write */
 /*===================================================================*/
 
-void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp);  // forward declaration
+static void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp);  // forward declaration
 
 static void writeIndent(int depth, FILE *fp)
 {
