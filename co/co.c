@@ -1504,7 +1504,9 @@ co coReadJSONByFP(FILE *fp)
   return coJSONGetValue(&reader);
 }
 
-/*=== JSON Write ===*/
+/*===================================================================*/
+/* JSON File Write */
+/*===================================================================*/
 
 void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp);  // forward declaration
 
@@ -1591,7 +1593,7 @@ static int coMapForEachJSONTraverseCB(cco o, long idx, const char *key, cco valu
   return 1;
 }
 
-void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp)
+static void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp)
 {
   if ( coIsStr(o) )
   {
@@ -1654,7 +1656,6 @@ void coWriteJSON(cco o, int isCompact, int isUTF8, FILE *fp)
 /*===================================================================*/
 /* A2L Parser */
 /*===================================================================*/
-
 
 #define CO_A2L_STRBUF_MAX 8192
 const char *coA2LGetString(coReader reader)
@@ -1839,7 +1840,9 @@ co coReadA2LByFP(FILE *fp)
   return coA2LGetArray(&reader);
 }
 
-/*=== S19 Reader ===*/
+/*===================================================================*/
+/* S19 Reader */
+/*===================================================================*/
 
 
 #define S19_MAX_LINE_LEN 1024
