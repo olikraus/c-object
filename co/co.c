@@ -547,7 +547,7 @@ int coMemAdd(co o, const void *mem, size_t len)
   return 1;
 }
 
-const void *coMemGet(co o)
+const void *coMemGet(cco o)
 {
   return (const void *)o->s.str;
 }
@@ -1073,7 +1073,7 @@ co coNewVectorByMap(cco map)
     [2, 4, 6] search 7 --> result 2
 
 */
-long coVectorPredecessorBinarySearch(co v, const char *search_key)
+long coVectorPredecessorBinarySearch(cco v, const char *search_key)
 {
   long lower_pos = 0;
   long upper_pos = coVectorSize(v);

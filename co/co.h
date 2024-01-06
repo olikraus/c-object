@@ -215,7 +215,7 @@ const char *coStrGet(cco o);            /* return the internal string as a refer
 /* memory functions */
 long coMemSize(cco o);
 int coMemAdd(co o, const void *mem, size_t len);
-const void *coMemGet(co o);
+const void *coMemGet(cco o);
 
 
 /* double functions */
@@ -226,7 +226,7 @@ double coDblGet(cco o);
 co coNewVector(unsigned flags);
 co coNewVectorByMap(cco map);  // constructs a vector from a map
 
-long coVectorPredecessorBinarySearch(co v, const char *search_key); 
+long coVectorPredecessorBinarySearch(cco v, const char *search_key); 
 
 
 long coVectorAdd(co o, cco p);         // add object at the end of the list, returns -1 for error

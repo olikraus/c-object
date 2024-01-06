@@ -2,6 +2,7 @@
 #include "co.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 
 #define COMPU_METHOD_POS 0
@@ -9,6 +10,7 @@
 #define CHARACTERISTIC_POS 2
 #define A2L_POS 3
 #define S19_POS 4
+#define S19_VECTOR_POS 5
 
 /*
   Create empty vector for the global index tables.
@@ -139,6 +141,41 @@ long getVectorIndexByString(cco v, const char *s)
   return -1;
 }
 
+unsigned char *getMemoryArea(cco sw_object, size_t address, size_t length)
+{
+  char addr_as_hex[10];
+  long pos;
+  cco memory_block;
+  size_t memory_adr;
+  size_t memory_len;
+  size_t delta;
+  unsigned char *ptr;
+  
+  sprintf(addr_as_hex, "%08zX", address);
+  pos = coVectorPredecessorBinarySearch(coVectorGet(sw_object, S19_VECTOR_POS), addr_as_hex); 
+  if ( pos < 0 )
+  {
+    return NULL;
+  }
+  memory_block = coVectorGet(coVectorGet(sw_object, S19_VECTOR_POS), pos);
+  memory_adr = strtol(coStrGet(coVectorGet(memory_block, 0)), NULL, 16);
+  memory_len = coMemSize(coVectorGet(memory_block, 1));
+  delta = address - memory_adr;
+  
+  printf("getMemoryArea %08zX --> %08zX-%08zX, delta=%08zX\n", address, memory_adr, memory_adr+memory_len-1, delta);
+
+  if ( delta+length >= memory_len )
+  {
+    printf("getMemoryArea: requested memory not found\n");
+    return NULL;
+  }
+  
+  ptr = (unsigned char *)coMemGet(coVectorGet(memory_block, 1));
+  ptr += delta;
+  
+  return ptr;
+}
+
 void getCharacteristicValue(cco sw_object, cco characteristic_rec)
 {
   const char *name = coStrGet(coVectorGet(characteristic_rec, 1));
@@ -167,16 +204,27 @@ int main()
   
   co sw_object = create_sw_object();
   
+  /* read a2l file */
   fp = fopen("example-a2l-file.a2l.gz", "r");
   coVectorAdd(sw_object, coReadA2LByFP(fp));
   fclose(fp);
-  
+
+  /* read .s19 file */
   fp = fopen("example.s19", "r");
   coVectorAdd(sw_object, coReadS19ByFP(fp));
   fclose(fp);
-  
+
+  /* build the sorted vector version of the s19 file */
+  coVectorAdd(sw_object, coNewVectorByMap(coVectorGet(sw_object, S19_POS)));
+
+  /* build the remaining index tables */
   build_index_tables(sw_object, coVectorGet(sw_object, A2L_POS));
   coPrint(sw_object); puts("");
+
+  getMemoryArea(sw_object, 0x00008085, 2);
+  getMemoryArea(sw_object, 0x000080f0, 2);
+  getMemoryArea(sw_object, 0x000080f1, 2);
+  getMemoryArea(sw_object, 0x000080f2, 2);
 
   /*
   {
