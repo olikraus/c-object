@@ -1318,6 +1318,32 @@ int coReaderInitByFP(coReader reader, FILE *fp)
     fseek(fp, 0, SEEK_SET);
     coReaderGZInit(reader);
     reader->next_cb = coReaderGZFileNext;
+    coReaderNext(reader);               // read the first byte
+    
+    // detect and skip UTF8 BOM if present
+    if ( coReaderCurr(reader) == 0xEF ) // UTF8 BOM?
+    {
+      coReaderNext(reader);
+      if ( coReaderCurr(reader) == 0xBB )
+      {
+        coReaderNext(reader);
+        if ( coReaderCurr(reader) == 0xBF )
+        {
+          coReaderNext(reader);
+          reader->bom = BOM_UTF8;
+        }
+        else
+        {
+          reader->pos = 0;
+          coReaderNext(reader);               // read the first byte          
+        }
+      }
+      else
+      {
+        reader->pos = 0;
+        coReaderNext(reader);               // read the first byte          
+      }
+    }
   }
 #endif /* CO_USE_ZLIB */
   
