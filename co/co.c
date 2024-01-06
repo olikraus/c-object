@@ -7,6 +7,9 @@
   https://github.coMap/olikraus/c-object
 
   CC BY-SA 3.0  https://creativecoMapmons.org/licenses/by-sa/3.0/
+  
+  -DCO_USE_ZLIB
+    will enable autodetection of .gz compressed input files (this will require linking against "-lz")
 
 */
 #include "co.h"
@@ -14,6 +17,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#ifdef CO_USE_ZLIB
+#include "zlib.h"
+#endif /* CO_USE_ZLIB */
 
 /*===================================================================*/
 /* Generic Public Functions */
@@ -1154,6 +1160,14 @@ struct co_reader_struct
   const char *reader_string;
   FILE *fp;
   coReaderNextFn next_cb;
+#ifdef CO_USE_ZLIB
+#define CHUNK (16*1024)
+    unsigned have;
+    unsigned pos;
+    z_stream strm;
+    unsigned char in[CHUNK];
+    unsigned char out[CHUNK];
+#endif /* CO_USE_ZLIB */
 };
 
 
@@ -1179,6 +1193,85 @@ void coReaderFileNext(coReader j)
     return;
   j->curr = getc(j->fp); // may returen EOF, which is -1, but code below will check for <0 
 }
+
+#ifdef CO_USE_ZLIB
+int coReaderGZInit(coReader r)
+{
+    int ret;
+    /* allocate inflate state */
+    r->have = 0;
+    r->pos = 0;
+    r->strm.zalloc = Z_NULL;
+    r->strm.zfree = Z_NULL;
+    r->strm.opaque = Z_NULL;
+    r->strm.avail_in = 0;
+    r->strm.avail_out = 0;
+    r->strm.next_in = r->in;
+    r->strm.next_out = r->out;
+    ret = inflateInit2(&(r->strm), 16+MAX_WBITS);  // https://stackoverflow.com/questions/1838699/how-can-i-decompress-a-gzip-stream-with-zlib
+    if (ret != Z_OK)
+        return 0;
+    return 1;
+}
+
+
+void coReaderGZFileNext(coReader r)
+{
+  /* https://chromium.googlesource.com/native_client/nacl-gcc/+/master/zlib/examples/zpipe.c */
+  int ret;
+      
+      if ( r->pos >= r->have )
+      {      
+        if ( r->strm.avail_out == 0 )
+        {
+          r->strm.avail_in = fread(r->in, 1, CHUNK, r->fp);
+          if (ferror(r->fp)) 
+          {
+              inflateEnd(&(r->strm));
+              coReaderErr(r, "File Read Error");
+              r->curr = -1;
+              return;
+          }
+          if (r->strm.avail_in == 0)
+          {
+              r->curr = -1;
+              inflateEnd(&(r->strm));
+              return;
+          }
+        }
+      
+        r->strm.avail_out = CHUNK;
+        ret = inflate(&(r->strm), Z_NO_FLUSH);
+        switch(ret)
+        {
+              case Z_NEED_DICT:
+                  coReaderErr(r, "ZLIB Decompression NEED_DICT Error");
+                  inflateEnd(&(r->strm));
+                  r->curr = -1;
+                  return;
+              case Z_DATA_ERROR:
+                  coReaderErr(r, "ZLIB Decompression DATA Error");
+                  inflateEnd(&(r->strm));
+                  r->curr = -1;
+                  return;
+              case Z_MEM_ERROR:
+                  coReaderErr(r, "ZLIB Decompression MEM Error");
+                  inflateEnd(&(r->strm));
+                  r->curr = -1;
+                  return;
+              case Z_STREAM_END:
+                  inflateEnd(&(r->strm));
+                  r->curr = -1;
+                  return;              
+        }
+        r->have = CHUNK - r->strm.avail_out;
+        r->pos = 0;
+      }
+      
+      r->curr = r->out[r->pos];
+      r->pos++;
+}
+#endif /* CO_USE_ZLIB */
 
 #define coReaderNext(j) ((j)->next_cb(j))
 #define coReaderCurr(j) ((j)->curr)
@@ -1218,6 +1311,16 @@ int coReaderInitByFP(coReader reader, FILE *fp)
   reader->bom = bom_read_and_skip(fp);
   reader->next_cb = coReaderFileNext;
   reader->curr = getc(fp);
+
+#ifdef CO_USE_ZLIB
+  if ( reader->curr == 0x1f )           // GZIP IDs: 0x1f 0x8b, see https://www.rfc-editor.org/rfc/rfc1952#page-5
+  {
+    fseek(fp, 0, SEEK_SET);
+    coReaderGZInit(reader);
+    reader->next_cb = coReaderGZFileNext;
+  }
+#endif /* CO_USE_ZLIB */
+  
   coReaderSkipWhiteSpace(reader);
   return 1;
 }
@@ -1650,7 +1753,6 @@ void coWriteJSON(cco o, int isCompact, int isUTF8, FILE *fp)
   {
     coWriteJSONTraverse(o, 0, isUTF8, fp);
   }
-
 }
 
 /*===================================================================*/

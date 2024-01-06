@@ -167,7 +167,7 @@ int main()
   
   co sw_object = create_sw_object();
   
-  fp = fopen("example-a2l-file.a2l", "r");
+  fp = fopen("example-a2l-file.a2l.gz", "r");
   coVectorAdd(sw_object, coReadA2LByFP(fp));
   fclose(fp);
   
