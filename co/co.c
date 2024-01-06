@@ -1026,13 +1026,42 @@ void coMapErase(co o, const char *key)
   );    
 }
 
-void coMapForEach(cco o, coMapForEachCB cb, void *data)
+int coMapForEach(cco o, coMapForEachCB cb, void *data)
 {
   long cnt = 0;
   assert(coIsMap(o));
-  avl_for_each(o, o->m.root, cb, &cnt, data);
+  return avl_for_each(o, o->m.root, cb, &cnt, data);
 }
 
+/*=== Utility Functions ===*/
+
+static int coVectorByMapCB(cco o, long idx, const char *key, cco value, void *data)
+{
+  co parent = (co)data;
+  co key_value_vector = coNewVector(CO_FREE_FIRST);  // the first element is a string object, which must be freed
+  if ( key_value_vector == NULL )
+    return 0;
+  if ( coVectorAdd(key_value_vector, coNewStr(CO_NONE, key)) < 0 )  // do not free the key-string, it belongs to the map
+    return coDelete(key_value_vector), 0;
+  if ( coVectorAdd(key_value_vector, value) < 0 )  // do not free the value, it belongs to the map
+    return coDelete(key_value_vector), 0;
+  if ( coVectorAdd(parent, key_value_vector) < 0 )      // add the key value vector to the parent vector
+    return coDelete(key_value_vector), 0;
+  return 1;
+}
+
+/*
+  Return a vector, where each element is a vector with two elements: Key and value from the map:
+  [ [key, value], [key, value], ..., [key, value] ]
+  key and value refer to the map, this means, the return value must be deleted before the map is deleted.
+*/
+co coNewVectorByMap(cco map)
+{
+  co vector = coNewVector(CO_FREE_VALS);  // the inner vectors (key, value pairs) should be free'd
+  if ( coMapForEach(map, coVectorByMapCB, vector) == 0 )
+    return coDelete(vector), NULL;
+  return vector;
+}
 
 
 /*=== FILE/String Reader ===*/

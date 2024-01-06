@@ -193,6 +193,8 @@ co coClone(cco o);
 #define coIsMap(o) (coGetType(o)==coMapType)
 #define coIsDbl(o) (coGetType(o)==coDblType)
 
+
+
 co coReadJSONByString(const char *json);
 co coReadJSONByFP(FILE *fp);
 
@@ -222,6 +224,8 @@ double coDblGet(cco o);
 
 /* vector functions */
 co coNewVector(unsigned flags);
+co coNewVectorByMap(cco map);  // constructs a vector from a map
+
 long coVectorAdd(co o, cco p);         // add object at the end of the list, returns -1 for error
 int coVectorAppendVector(co v, cco src);  // append elements from src to vector v
 cco coVectorGet(cco o, long idx);           // return object at specific position from the vector
@@ -247,5 +251,5 @@ int coMapEmpty(cco o); // return 1 if the map is empty, return 0 otherwise
 long coMapSize(cco o);  // O(n) !!
 
 typedef int (*coMapForEachCB)(cco o, long idx, const char *key, cco value, void *data);
-void coMapForEach(cco o, coMapForEachCB cb, void *data);
+int coMapForEach(cco o, coMapForEachCB cb, void *data); // returns 0 as soon as the callback function returns 0
 
