@@ -113,7 +113,7 @@ struct co_avl_node_struct
 
 #define CO_NONE 0
 #define CO_FREE_VALS 1
-//#define CO_FREE_KEYS 2
+#define CO_FREE_FIRST 2
 //#define CO_FREE (CO_FREE_VALS|CO_FREE_KEYS)
 
 /* used by str and map objects 

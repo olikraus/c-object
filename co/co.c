@@ -251,6 +251,8 @@ static void coVectorDestroy(co o)
 {
   if ( o->flags & CO_FREE_VALS )
     coVectorForEach(o, coVectorDestroyCB, NULL);
+  else if ( (o->flags & CO_FREE_FIRST) != 0 && o->v.cnt > 0 )
+    coDelete((co)o->v.list[0]);
   free(o->v.list);
   o->v.list = NULL;
   o->v.max = 0;
@@ -261,6 +263,8 @@ void coVectorClear(co o)
 {
   if ( o->flags & CO_FREE_VALS )
     coVectorForEach(o, coVectorDestroyCB, NULL);
+  else if ( (o->flags & CO_FREE_FIRST) != 0 && o->v.cnt > 0 )
+    coDelete((co)o->v.list[0]);
   o->v.cnt = 0;  
 }
 
@@ -317,7 +321,14 @@ void coVectorErase(co v, long i)
     return;             // do nothing, index is outside the vecor  
   // note: v->cnt > 0 at this point  
   if ( v->flags & CO_FREE_VALS )
+  {
     coDelete( (co)(v->v.list[i]) );       // delete the element
+  }
+  else if ( (v->flags & CO_FREE_FIRST) != 0 && i == 0 )         // consider the case, where only the first element needs to be deleted
+  {
+    coDelete((co)v->v.list[0]);
+    v->flags &= ~CO_FREE_FIRST;                 // reset the FRE_FIRST flag, because the other elements must not be deleted
+  }
   i++;
   while( i < v->v.cnt )
     v->v.list[i-1] = v->v.list[i];
