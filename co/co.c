@@ -1074,6 +1074,58 @@ co coNewVectorByMap(cco map)
   return vector;
 }
 
+/*
+  Search for index position within a sorted vector.
+  Assumes a vector with key/value pairs: [ [key, value], [key, value], ..., [key, value] ] (=return value from coNewVectorByMap())
+  The vector must be sorted according to "key".
+  Returns an index for which the key is lower or equal to the provided "search_key" argument.  
+  The returned index is the predecessor for the given "search_key": The position of the element, which is lower or equal to "search_key".
+  The returned index can be -1 if there is no predecessor element. This means "search_key" is smaller than any other element in the vector.
+  The returned index is always smaller than coVectorSize()
+  The returned index is -1 if the vector is empty
+
+    [] search 1 --> result -1
+    [2] search 1 --> result -1
+    [2] search 2 --> result 0
+    [2] search 3 --> result 0
+    [2, 4] search 1 --> result -1
+    [2, 4] search 2 --> result 0
+    [2, 4] search 3 --> result 0
+    [2, 4] search 4 --> result 1
+    [2, 4] search 5 --> result 1
+    [2, 4, 6] search 1 --> result -1
+    [2, 4, 6] search 2 --> result 0
+    [2, 4, 6] search 3 --> result 0
+    [2, 4, 6] search 4 --> result 1
+    [2, 4, 6] search 5 --> result 1
+    [2, 4, 6] search 6 --> result 2
+    [2, 4, 6] search 7 --> result 2
+
+*/
+long coVectorPredecessorBinarySearch(co v, const char *search_key)
+{
+  long lower_pos = 0;
+  long upper_pos = coVectorSize(v);
+  long mid_pos;
+  const char *mid_str;
+  
+  while(lower_pos < upper_pos)
+  {
+    mid_pos = (upper_pos+lower_pos)/2;
+    mid_str = coStrGet(coVectorGet(coVectorGet(v, mid_pos), 0));
+    assert( mid_str != NULL );
+    if ( strcmp(mid_str, search_key) > 0 )
+    {
+      upper_pos = mid_pos ;
+    }
+    else
+    {
+      lower_pos = mid_pos + 1;
+    }    
+  }
+  return upper_pos - 1;
+}
+
 
 /*=== FILE/String Reader ===*/
 

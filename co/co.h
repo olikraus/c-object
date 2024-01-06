@@ -226,6 +226,9 @@ double coDblGet(cco o);
 co coNewVector(unsigned flags);
 co coNewVectorByMap(cco map);  // constructs a vector from a map
 
+long coVectorPredecessorBinarySearch(co v, const char *search_key); 
+
+
 long coVectorAdd(co o, cco p);         // add object at the end of the list, returns -1 for error
 int coVectorAppendVector(co v, cco src);  // append elements from src to vector v
 cco coVectorGet(cco o, long idx);           // return object at specific position from the vector
@@ -239,6 +242,7 @@ int coVectorForEach(cco o, coVectorForEachCB cb, void *data);
 
 typedef co (*coVectorMapCB)(cco o, long idx, cco element, void *data);
 co coVectorMap(cco o, coVectorMapCB cb, void *data);
+
 
 
 /* map functions */
