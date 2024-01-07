@@ -20,8 +20,15 @@
       sw_object[1]: Map with all COMPU_VTAB records
       sw_object[1]: Map with all COMPU_VTAB records
 
+  ./co_a2l -a2l example-a2l-file.a2l.gz -s19 example.s19
 
 */
+
+const char *a2l_file_name = NULL;
+const char *s19_file_name = NULL;
+
+
+
 co create_sw_object(void)
 {
   co o;
@@ -198,19 +205,70 @@ void getCharacteristicValue(cco sw_object, cco characteristic_rec)
   }
 }
 
-int main()
+void help(void)
+{
+  puts("-h            This help text");
+  puts("-a2l <file>   A2L File");
+  puts("-s19 <file>   S19 File");
+}
+
+int parse_args(int argc, char **argv)
+{
+  while( *argv != NULL )
+  {
+    if ( strcmp(*argv, "-h" ) == 0 )
+    {
+      help();
+      argv++;
+    }
+    else if ( strcmp(*argv, "-a2l" ) == 0 )
+    {
+      argv++;
+      if ( *argv != NULL )
+      {
+        a2l_file_name = *argv;
+        argv++;
+      }
+    }
+    else if ( strcmp(*argv, "-s19" ) == 0 )
+    {
+      argv++;
+      if ( *argv != NULL )
+      {
+        s19_file_name = *argv;
+        argv++;
+      }
+    }
+    else
+    {
+      argv++;
+    }
+  }
+  return 1;
+}
+
+int main(int argc, char **argv)
 {
   FILE *fp;
   
   co sw_object = create_sw_object();
   
+  parse_args(argc, argv);
+  
+  if ( a2l_file_name == NULL || s19_file_name == NULL )
+    return coDelete(sw_object), 0;
+  
   /* read a2l file */
-  fp = fopen("example-a2l-file.a2l.gz", "r");
+  fp = fopen(a2l_file_name, "r");
+  if ( fp == NULL )
+    return perror(a2l_file_name), coDelete(sw_object), 0;
   coVectorAdd(sw_object, coReadA2LByFP(fp));
   fclose(fp);
 
   /* read .s19 file */
-  fp = fopen("example.s19", "r");
+  fp = fopen(s19_file_name, "r");
+  if ( fp == NULL )
+    return perror(s19_file_name), coDelete(sw_object), 0;
   coVectorAdd(sw_object, coReadS19ByFP(fp));
   fclose(fp);
 
@@ -226,20 +284,10 @@ int main()
   getMemoryArea(sw_object, 0x000080f1, 2);
   getMemoryArea(sw_object, 0x000080f2, 2);
 
-  /*
-  {
-    co v = coNewVectorByMap(coVectorGet(tables, COMPU_METHOD_POS));
-    long idx = coVectorPredecessorBinarySearch(v, "CompuMethod_01");
-    coPrint(coVectorGet(v, idx)); puts("");
-    coDelete(v);
-  }
-  */
   
   //dfs_characteristic(a2l);
   
   coDelete(sw_object);     // delete tables first, because they will refer to a2l
-  //coDelete(a2l);
-  //coDelete(s19);
 }
   
   
