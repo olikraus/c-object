@@ -2,9 +2,14 @@
 
   co.h
   
-  C Object Library https://github.coMap/olikraus/c-object
+  C Object Library 
+  (c) 2024 Oliver Kraus
+  https://github.coMap/olikraus/c-object
 
   CC BY-SA 3.0  https://creativecoMapmons.org/licenses/by-sa/3.0/
+  
+  -DCO_USE_ZLIB
+    will enable autodetection of .gz compressed input files (this will require linking against "-lz")
 
   co    read/and writeable c-object
   cco   read only c-object
@@ -83,9 +88,15 @@
   
 */
 
+#ifndef CO_INCLUDE
+#define CO_INCLUDE
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#ifdef CO_USE_ZLIB
+#include "zlib.h"
+#endif /* CO_USE_ZLIB */
 
 typedef struct coStruct *co;
 typedef const struct coStruct *  cco;
@@ -93,17 +104,11 @@ typedef struct coFnStruct *coFn;
 
 typedef int (*coInitFn)(co o, void *data);
 typedef long (*coSizeFn)(cco o);
-//typedef cco (*coGetByIdxFn)(cco o, long idx);
-typedef const char *(*coToStringFn)(cco o);
 typedef void (*coPrintFn)(const cco o);
 typedef void (*coDestroyFn)(co o);
-typedef int (*coEmptyFn)(cco o);
 typedef co (*coCloneFn)(cco o);
 
-
-typedef long int coInt;
-
-struct co_avl_node_struct 
+struct co_avl_node_struct // structure to build the AVL tree for the "map" object
 {
   const char *key;
   void *value;
@@ -114,7 +119,6 @@ struct co_avl_node_struct
 #define CO_NONE 0
 #define CO_FREE_VALS 1
 #define CO_FREE_FIRST 2
-//#define CO_FREE (CO_FREE_VALS|CO_FREE_KEYS)
 
 /* used by str and map objects 
   CO_STRDUP: execute a strdup on the string or key
@@ -124,10 +128,11 @@ struct co_avl_node_struct
 #define CO_STRDUP 4
 #define CO_STRFREE 8 
 
+
 struct coStruct
 {
   coFn fn;
-  unsigned flags;
+  unsigned flags;       // see above, e.g. CO_NONE, CO_FREE_VALS, etc...
   union
   {
     struct // vector 
@@ -157,14 +162,12 @@ struct coFnStruct
 {
   coInitFn init;                      // (*coInitFn)(co o);
   coSizeFn size;        
-  //coGetByIdxFn getByIdx;
-  //coToStringFn toString;
   coPrintFn print;
   coDestroyFn destroy;  // counterpart to init
   coCloneFn clone;
 };
 
-/* user interface */
+/* object types */
 
 extern coFn coBlankType;
 extern coFn coVectorType;
@@ -173,17 +176,17 @@ extern coFn coMemType;
 extern coFn coMapType;
 extern coFn coDblType;
 
+/* object construction */
+
 co coNewBlank();
 co coNewStr(unsigned flags, const char *s);
 co coNewDbl(double n);
 co coNewMem(void);
+co coNewVector(unsigned flags);
+co coNewVectorByMap(cco map);  // constructs a vector from a map
+co coNewMap(unsigned flags);
 
-/* generic functions */
-
-void coPrint(const cco o);
-//cco coGetByIdx(co o, long idx);
-void coDelete(co o);
-co coClone(cco o);
+/* object type test procedures */
 
 #define coGetType(o) ((o)->fn)
 
@@ -193,17 +196,17 @@ co coClone(cco o);
 #define coIsMap(o) (coGetType(o)==coMapType)
 #define coIsDbl(o) (coGetType(o)==coDblType)
 
+/* generic object functions */
 
+void coPrint(const cco o);      // debug output of the provided object "o"
+void coDelete(co o);               // deletes "o" and the childs objects of "o" depending on the flags
+co coClone(cco o);              // do a deep copy of the object "o"
+
+/* JSON read/write */
 
 co coReadJSONByString(const char *json);
-co coReadJSONByFP(FILE *fp);
-
+co coReadJSONByFP(FILE *fp);  // supports UTF-8 BOM and detects GZIP (if CO_USE_ZLIB is enabled)
 void coWriteJSON(cco o, int isCompact, int isUTF8, FILE *fp); // isUTF8 is 0, then output char codes >=128 via \u 
-
-co coReadA2LByString(const char *json);
-co coReadA2LByFP(FILE *fp);
-
-co coReadS19ByFP(FILE *fp); // returns map, key=8digit addres, value=mem block
 
 
 /* string functions */
@@ -217,18 +220,10 @@ long coMemSize(cco o);
 int coMemAdd(co o, const void *mem, size_t len);
 const void *coMemGet(cco o);
 
-
 /* double functions */
 double coDblGet(cco o);
 
-
 /* vector functions */
-co coNewVector(unsigned flags);
-co coNewVectorByMap(cco map);  // constructs a vector from a map
-
-long coVectorPredecessorBinarySearch(cco v, const char *search_key); 
-
-
 long coVectorAdd(co o, cco p);         // add object at the end of the list, returns -1 for error
 int coVectorAppendVector(co v, cco src);  // append elements from src to vector v
 cco coVectorGet(cco o, long idx);           // return object at specific position from the vector
@@ -243,10 +238,9 @@ int coVectorForEach(cco o, coVectorForEachCB cb, void *data);
 typedef co (*coVectorMapCB)(cco o, long idx, cco element, void *data);
 co coVectorMap(cco o, coVectorMapCB cb, void *data);
 
-
+long coVectorPredecessorBinarySearch(cco v, const char *search_key);  // assumes structre as returned by "coNewVectorByMap()"
 
 /* map functions */
-co coNewMap(unsigned flags);
 int coMapAdd(co o, const char *key, cco value);    // insert object into the map, returns 0 for memory error
 cco coMapGet(cco o, const char *key);     // get object from map by key, returns NULL if key doesn't exist in the map 
 void coMapErase(co o, const char *key);   // removes object from the map
@@ -256,4 +250,63 @@ long coMapSize(cco o);  // O(n) !!
 
 typedef int (*coMapForEachCB)(cco o, long idx, const char *key, cco value, void *data);
 int coMapForEach(cco o, coMapForEachCB cb, void *data); // returns 0 as soon as the callback function returns 0
+
+/* file / string reader interface */
+
+#define BOM_NONE 0
+#define BOM_UTF8 1
+#define BOM_UTF16BE 2
+#define BOM_UTF16LE 3
+#define BOM_UTF32BE 4
+#define BOM_UTF32LE 5
+
+typedef struct co_reader_struct *coReader;
+typedef void (*coReaderNextFn)(coReader r);
+
+struct co_reader_struct
+{
+  int curr;
+  int bom;              // see constants above
+  const char *reader_string;
+  FILE *fp;
+  coReaderNextFn next_cb;
+#ifdef CO_USE_ZLIB
+#define CHUNK (16*1024)
+    unsigned have;
+    unsigned pos;
+    z_stream strm;
+    unsigned char in[CHUNK];
+    unsigned char out[CHUNK];
+#endif /* CO_USE_ZLIB */
+};
+
+
+
+int coReaderInitByString(coReader reader, const char *s);
+int coReaderInitByFP(coReader reader, FILE *fp);
+void coReaderErr(coReader r, const char *msg);
+
+
+#define coReaderNext(r) ((r)->next_cb(r))
+#define coReaderCurr(r) ((r)->curr)
+
+#define coReaderSkipWhiteSpace(r) \
+  for(;;) \
+  {                                     \
+    if ( coReaderCurr(r) < 0 )        \
+      break;                            \
+    if ( coReaderCurr(r) > ' ' )             \
+      break;                            \
+    coReaderNext(r);                         \
+  }                                     \
+
+
+/* functions from co_extra.c */
+co coReadA2LByString(const char *json);
+co coReadA2LByFP(FILE *fp);
+co coReadS19ByFP(FILE *fp); // returns map, key=8digit addres, value=mem block
+
+
+
+#endif /* CO_INCLUDE */
 

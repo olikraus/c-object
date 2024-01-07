@@ -16,5 +16,5 @@ co_a2l: $(COOBJ) ./test/co_a2l.o
 	$(CC) $(CFLAGS)  $^ -o $@ -lm $(LDFLAGS)
 
 clean:
-	-rm $(COOBJ) co_test
+	-rm $(COOBJ) co_test co_a2l
 	
