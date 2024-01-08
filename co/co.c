@@ -1143,7 +1143,14 @@ static int bom_read_and_skip(FILE *fp)
 
 void coReaderErr(coReader r, const char *msg)
 {
+  fpos_t pos = 0;
   printf("JSON Parser error '%s', current char='%c'\n", msg, r->curr);
+  if ( r->fp != NULL )
+  {
+	fgetpos(r->fp, &pos);
+	printf("JSON Parser error at file pos %lld\n", (long long int)(pos));	  
+  }
+	  
 }
 
 
@@ -1178,68 +1185,83 @@ static int coReaderGZInit(coReader r)
     r->strm.avail_out = 0;
     r->strm.next_in = r->in;
     r->strm.next_out = r->out;
-    ret = inflateInit2(&(r->strm), 16+MAX_WBITS);  // https://stackoverflow.com/questions/1838699/how-can-i-decompress-a-gzip-stream-with-zlib
+    ret = inflateInit2(&(r->strm), 32+MAX_WBITS);  // https://stackoverflow.com/questions/1838699/how-can-i-decompress-a-gzip-stream-with-zlib
     if (ret != Z_OK)
         return 0;
     return 1;
 }
 
+#define STRINGIZE(x) STRINGIZE2(x)
+#define STRINGIZE2(x) #x
+#define LINE STRINGIZE(__LINE__)
 
 static void coReaderGZFileNext(coReader r)
 {
   /* https://chromium.googlesource.com/native_client/nacl-gcc/+/master/zlib/examples/zpipe.c */
   int ret;
       
-      if ( r->pos >= r->have )
-      {      
-        if ( r->strm.avail_out == 0 )
-        {
-          r->strm.avail_in = fread(r->in, 1, CHUNK, r->fp);
-          if (ferror(r->fp)) 
-          {
-              inflateEnd(&(r->strm));
-              coReaderErr(r, "File Read Error");
-              r->curr = -1;
-              return;
-          }
-          if (r->strm.avail_in == 0)
-          {
-              r->curr = -1;
-              inflateEnd(&(r->strm));
-              return;
-          }
-        }
-      
-        r->strm.avail_out = CHUNK;
-        ret = inflate(&(r->strm), Z_NO_FLUSH);
-        switch(ret)
-        {
-              case Z_NEED_DICT:
-                  coReaderErr(r, "ZLIB Decompression NEED_DICT Error");
-                  inflateEnd(&(r->strm));
-                  r->curr = -1;
-                  return;
-              case Z_DATA_ERROR:
-                  coReaderErr(r, "ZLIB Decompression DATA Error");
-                  inflateEnd(&(r->strm));
-                  r->curr = -1;
-                  return;
-              case Z_MEM_ERROR:
-                  coReaderErr(r, "ZLIB Decompression MEM Error");
-                  inflateEnd(&(r->strm));
-                  r->curr = -1;
-                  return;
-              case Z_STREAM_END:
-                  inflateEnd(&(r->strm));
-                  r->curr = -1;
-                  return;              
-        }
-        r->have = CHUNK - r->strm.avail_out;
-        r->pos = 0;
-      }
-      
-      r->curr = r->out[r->pos];
-      r->pos++;
+  if ( r->pos >= r->have )
+  {
+	//printf(LINE " GZ: pos=%d have=%d strm.avail_in=%d strm.avail_out=%d\n", r->pos, r->have, r->strm.avail_in, r->strm.avail_out);
+	if ( r->strm.avail_in == 0 )  // initially avail_in is 0, later we will only execute the if body if further reads are required
+	{
+	  r->strm.avail_in = fread(r->in, 1, CHUNK, r->fp);
+	  //printf(LINE " GZ: fread strm.avail_in=%d\n", r->strm.avail_in);
+	  r->strm.next_in = r->in;
+	  if (ferror(r->fp)) 
+	  {
+		  inflateEnd(&(r->strm));
+		  coReaderErr(r, "File Read Error");
+		  r->curr = -1;
+		  return;
+	  }
+	  if (r->strm.avail_in == 0)
+	  {
+		  r->curr = -1;
+		  inflateEnd(&(r->strm));
+		  return;
+	  }
+	}
+  
+	r->strm.avail_out = CHUNK;
+    r->strm.next_out = r->out;
+
+	ret = inflate(&(r->strm), Z_NO_FLUSH);
+	//printf(LINE " GZ: ret=%d strm.avail_out=%d\n", ret, r->strm.avail_out);
+	switch(ret)
+	{
+		  case Z_NEED_DICT:
+			  coReaderErr(r, "ZLIB Decompression NEED_DICT Error");
+			  inflateEnd(&(r->strm));
+			  r->curr = -1;
+			  return;
+		  case Z_DATA_ERROR:
+			  coReaderErr(r, "ZLIB Decompression DATA Error");
+			  inflateEnd(&(r->strm));
+			  r->curr = -1;
+			  return;
+		  case Z_MEM_ERROR:
+			  coReaderErr(r, "ZLIB Decompression MEM Error");
+			  inflateEnd(&(r->strm));
+			  r->curr = -1;
+			  return;
+		  case Z_BUF_ERROR:
+			  coReaderErr(r, "ZLIB Decompression BUF Error (missing binary mode for fopen?)");
+			  inflateEnd(&(r->strm));
+			  r->curr = -1;
+			  return;
+		  case Z_STREAM_END:
+			  inflateEnd(&(r->strm));
+			  r->curr = -1;
+			  return;              
+	}
+	r->have = CHUNK - r->strm.avail_out;
+	r->pos = 0;
+	//printf(LINE " GZ: have=%d\n", r->have);
+  }
+  
+  r->curr = r->out[r->pos];
+  r->pos++;
 }
 #endif /* CO_USE_ZLIB */
 

@@ -97,7 +97,12 @@
 #ifdef CO_USE_ZLIB
 #include "zlib.h"
 #endif /* CO_USE_ZLIB */
-
+/*
+#if defined(MSDOS) || defined(OS2) || defined(WIN32) || defined(__CYGWIN__)
+#  include <fcntl.h>
+#  include <io.h>
+#endif
+*/
 typedef struct coStruct *co;
 typedef const struct coStruct *  cco;
 typedef struct coFnStruct *coFn;
