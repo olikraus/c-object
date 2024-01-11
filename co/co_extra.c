@@ -4,9 +4,9 @@
 
   C Object Library 
   (c) 2024 Oliver Kraus
-  https://github.coMap/olikraus/c-object
+  https://github.com/olikraus/c-object
 
-  CC BY-SA 3.0  https://creativecoMapmons.org/licenses/by-sa/3.0/
+  CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
   
   Additionall function, which are not required for the core functionality
 
