@@ -8,9 +8,6 @@
   CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
   
   
-  Example:
-  ./a2l_info.exe -a2l CDCC10-2317a-MDCA30-311M.a2l.gz  -s19 CDCC10-2317a-MDCA30-311M.s19 -ascii -v
-
   
 */
 
