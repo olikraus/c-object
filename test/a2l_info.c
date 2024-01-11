@@ -13,11 +13,14 @@
 #define COMPU_METHOD_MAP_POS 0
 #define COMPU_VTAB_MAP_POS 1
 #define RECORD_LAYOUT_MAP_POS 2
-#define CHARACTERISTIC_VECTOR_POS 3
-#define CHARACTERISTIC_MAP_POS 4
+#define ADDRESS_MAP_POS 3
+#define CHARACTERISTIC_NAME_MAP_POS 4
+#define AXIS_PTS_NAME_MAP_POS 5
+#define CHARACTERISTIC_VECTOR_POS 6
+#define AXIS_PTS_VECTOR_POS 7
+#define A2L_POS 8
 
 
-#define A2L_POS 5
 //#define S19_POS 4
 //#define S19_VECTOR_POS 5
 
@@ -51,9 +54,12 @@ co create_sw_object(void)
   coVectorAdd(o, coNewMap(CO_NONE));          // references to COMPU_METHOD
   coVectorAdd(o, coNewMap(CO_NONE));          // references to COMPU_VTAB
   coVectorAdd(o, coNewMap(CO_NONE));          // references to RECORD_LAYOUT
-  coVectorAdd(o, coNewVector(CO_NONE));          // references to CHARACTERISTIC
-  coVectorAdd(o, coNewMap(CO_NONE));          // references to CHARACTERISTIC
-  if ( coVectorSize(o) != 5 )
+  coVectorAdd(o, coNewMap(CO_NONE));          // ADDRESS_MAP_POS: references to CHARACTERISTIC & AXIS_PTS, key = address
+  coVectorAdd(o, coNewMap(CO_NONE));          // CHARACTERISTIC_NAME_MAP_POS: references to CHARACTERISTIC, key = name
+  coVectorAdd(o, coNewMap(CO_NONE));          // AXIS_PTS_NAME_MAP_POS: references to AXIS_PTS, key = name
+  coVectorAdd(o, coNewVector(CO_NONE));          // CHARACTERISTIC_VECTOR_POS: references to CHARACTERISTIC
+  coVectorAdd(o, coNewVector(CO_NONE));          // AXIS_PTS_VECTOR_POS: references to AXIS_PTS
+  if ( coVectorSize(o) != 8 )
     return NULL;
   return o;
 }
@@ -106,11 +112,23 @@ void build_index_tables(cco sw_object, cco a2l)
     }
     if ( strcmp( coStrGet(element), "CHARACTERISTIC" ) == 0 )
     {
+	  const char *characteristic_name = coStrGet(coVectorGet(a2l, 1));
+	  const char *characteristic_address = coStrGet(coVectorGet(a2l, 4));
       coVectorAdd((co)coVectorGet(sw_object, CHARACTERISTIC_VECTOR_POS), a2l);
 
-      coMapAdd((co)coVectorGet(sw_object, CHARACTERISTIC_MAP_POS), 
-        coStrGet(coVectorGet(a2l, 1)), 
-        a2l);
+      coMapAdd((co)coVectorGet(sw_object, CHARACTERISTIC_NAME_MAP_POS), characteristic_name, a2l);
+		
+      coMapAdd((co)coVectorGet(sw_object, ADDRESS_MAP_POS), characteristic_address, a2l);
+    }
+    if ( strcmp( coStrGet(element), "AXIS_PTS" ) == 0 )
+    {
+	  const char *axis_pts_name = coStrGet(coVectorGet(a2l, 1));
+	  const char *axis_pts_address = coStrGet(coVectorGet(a2l, 3));
+      coVectorAdd((co)coVectorGet(sw_object, AXIS_PTS_VECTOR_POS), a2l);
+
+      coMapAdd((co)coVectorGet(sw_object, AXIS_PTS_NAME_MAP_POS), axis_pts_name, a2l);
+		
+      coMapAdd((co)coVectorGet(sw_object, ADDRESS_MAP_POS), axis_pts_address, a2l);
     }
   }
   for( i = 1; i < cnt; i++ )
@@ -182,9 +200,11 @@ long getVectorIndexByString(cco v, const char *s)
 	for a data array, some values in the record layout are stored multiple times.
     the multiplicator is the value how often such values are stored.
 	
-	this will check only for one AXIS_DESCR. Can there be more than one AXIS_DESCR??
+	This will check for one or more AXIS_DESCR.
+	For multiple AXIS_DESCR the max_axis_points is the product of all AXIS_DESCR sub structures
+	
 */
-long getCharacteristicMeasurementAxisPTSDataMultiplicator(cco characteristic_rec)
+long getCharacteristicMeasurementAxisPTSDataMultiplicator(cco cma_rec)
 {
 	
 	long matrix_dim_list[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -194,12 +214,21 @@ long getCharacteristicMeasurementAxisPTSDataMultiplicator(cco characteristic_rec
 	long max_axis_points = 0;
 	long multiplier = 1;
 	long i;
-	long cnt = coVectorSize(characteristic_rec);
+	long cnt = coVectorSize(cma_rec);
+	const char *cma_type = coStrGet(coVectorGet(cma_rec, 0));	// one of CHARACTERISTIC, MEASUREMENT or AXIS_PTS
 	cco o;
 	i = 0;
+	
+	if ( cma_type[0] == 'A' ) // if this an AXIS_PTS element, then 
+	{
+		max_axis_points = atol(coStrGet(coVectorGet(cma_rec, 8)));	// ... take the max number of axis points from position 8
+	}
+	
+	//printf("%s: %s %s\n", coStrGet(coVectorGet(cma_rec, 0)), coStrGet(coVectorGet(cma_rec, 1)), coStrGet(coVectorGet(cma_rec, 7)));
+	
 	while( i < cnt )
 	{
-		o = coVectorGet(characteristic_rec, i);
+		o = coVectorGet(cma_rec, i);
 		if ( coIsStr(o) )
 		{
 			if ( strcmp( coStrGet(o), "MATRIX_DIM" ) == 0 )
@@ -207,7 +236,7 @@ long getCharacteristicMeasurementAxisPTSDataMultiplicator(cco characteristic_rec
 				i++;
 				while( matrix_dim_idx < 10 )
 				{
-					o = coVectorGet(characteristic_rec, i);
+					o = coVectorGet(cma_rec, i);
 					if ( !coIsStr(o) )
 						break;
 					matrix_dim_list[matrix_dim_idx] = atol(coStrGet(o));
@@ -221,7 +250,7 @@ long getCharacteristicMeasurementAxisPTSDataMultiplicator(cco characteristic_rec
 			else if ( strcmp( coStrGet(o), "NUMBER" ) == 0 || strcmp( coStrGet(o), "ARRAY_SIZE" ) == 0 )
 			{
 				i++;
-				o = coVectorGet(characteristic_rec, i);
+				o = coVectorGet(cma_rec, i);
 				if ( coIsStr(o) )
 				{
 					number_array_size = atol(coStrGet(o));
@@ -236,9 +265,12 @@ long getCharacteristicMeasurementAxisPTSDataMultiplicator(cco characteristic_rec
 		else if ( coIsVector(o) )
 		{
 			const char *element = coStrGet(coVectorGet(o, 0));
-			if ( strcmp(element, "AXIS_DESCR") == 0 )
+			if ( strcmp(element, "AXIS_DESCR") == 0 )	// this is the AXIS description within a CHARACTERISTIC record
 			{
-				max_axis_points = atol(coStrGet(coVectorGet(o, 4)));
+				if ( max_axis_points == 0 )
+					max_axis_points = atol(coStrGet(coVectorGet(o, 4)));
+				else
+					max_axis_points *= atol(coStrGet(coVectorGet(o, 4)));
 			}
 			i++;
 		}
@@ -251,21 +283,182 @@ long getCharacteristicMeasurementAxisPTSDataMultiplicator(cco characteristic_rec
 	if ( matrix_dim_idx > 0 )
 	{
 		multiplier *= matrix_product;
-		printf("matrix_dim_idx=%ld matrix_product=%ld - ", matrix_dim_idx, matrix_product);
+		// printf("matrix_dim_idx=%ld matrix_product=%ld - ", matrix_dim_idx, matrix_product);
 	}
 	if ( number_array_size > 0 )
 	{
 		multiplier *= number_array_size;
-		printf("number_array_size=%ld - ", number_array_size);
+		// printf("number_array_size=%ld - ", number_array_size);
 	}
 	if ( max_axis_points > 0 )
 	{
 		multiplier *= max_axis_points;
-		printf("max_axis_points=%ld - ", max_axis_points);
+		// printf("max_axis_points=%ld - ", max_axis_points);
 	}
 	
 	return multiplier;
 }
+
+/* expects a data type string like "UBYTE" and returns the number of bytes 
+	occupied by that data type.
+*/
+long getAtomicDataTypeSize(const char *datatype)
+{
+	if ( datatype[0] == 'U' )
+	{
+		if ( strcmp(datatype, "UBYTE") == 0 )
+			return 1;
+		if ( strcmp(datatype, "UWORD") == 0 )
+			return 2;
+		if ( strcmp(datatype, "ULONG") == 0 )
+			return 4;
+	}
+	else if ( datatype[0] == 'S' )
+	{
+		if ( strcmp(datatype, "SBYTE") == 0 )
+			return 1;
+		if ( strcmp(datatype, "SWORD") == 0 )
+			return 2;
+		if ( strcmp(datatype, "SLONG") == 0 )
+			return 4;
+	}
+	else if ( datatype[0] == 'F' )
+	{
+		if ( strcmp(datatype, "FLOAT16_IEEE") == 0 )
+			return 2;
+		if ( strcmp(datatype, "FLOAT32_IEEE") == 0 )
+			return 4;
+		if ( strcmp(datatype, "FLOAT64_IEEE") == 0 )
+			return 8;
+	}
+	else if ( datatype[0] == 'A' )
+	{
+		// A_UINT64,
+		// A_INT64,
+
+		return 8;
+	}
+	return 0;
+}
+
+/*
+	This will calculate the number of bytes occupied by an A2L element which is stored in memory.
+	The record may contain data which will appear only once (fixed size) and data which will appear multiple times (dynamic_size).
+	Not all type of data is supported.
+	return 0 if the record layout contains unsupported information
+*/
+int getRecordLayoutSize(cco record_layout_rec, long *fixed_size, long *dynamic_size)
+{
+	long i = 2;
+	long cnt = coVectorSize(record_layout_rec);
+	const char *s;
+	const char *data_type;
+	const char *addr_type;
+	
+	*fixed_size = 0;
+	*dynamic_size = 0;
+	
+	while( i < cnt )
+	{
+		s = coStrGet(coVectorGet(record_layout_rec, i));
+		if ( strncmp(s, "AXIS_PTS_", 9)==0 || strncmp(s, "FNC", 3)==0 )		// followed by <pos> <type> <mode> <addresstype>
+		{
+			data_type = coStrGet(coVectorGet(record_layout_rec, i+2));
+			// not sure about the address type.
+			// maybe it is like this: if this is DIRECT, then the size is the size of the "data_type" otherwise it is the size of the pointer
+			// at the moment, the addr_type is ignored if this is not DIRECT
+			addr_type = coStrGet(coVectorGet(record_layout_rec, i+4));  // PBYTE, PWORD, PLONG, PLONGLONG, DIRECT
+			if ( addr_type[0] == 'D' )
+				*dynamic_size += getAtomicDataTypeSize(data_type);
+			else
+				return 0;	// Pxxxx are not supported, because we don't know how to calculate this
+			i += 5;
+		}
+		else if ( strncmp(s, "NO_AXIS_PTS_", 12)==0 )	// followed by <pos> <type>
+		{
+			data_type = coStrGet(coVectorGet(record_layout_rec, i+2));
+			*fixed_size += getAtomicDataTypeSize(data_type);
+			assert( *fixed_size > 0 );
+			i += 3;
+		}
+		else if ( strncmp(s, "FIX_NO_AXIS_PTS_", 16)==0 )	// followed by <cnt>
+		{
+			//ASSUMPTION: 
+			//if this value is given, then the corresponding data size  from AXIS_PTS_x should be multiplied with this value and returned as fixed_size
+			return 0; // not supported at the moment
+		}
+		else if ( strncmp(s, "SHIFT_OP_", 9)==0 
+				|| strncmp(s, "SRC_ADDR_", 9)==0 
+				|| strncmp(s, "RIP_ADDR_", 9)==0 
+				|| strncmp(s, "OFFSET_", 7)==0 
+				|| strncmp(s, "NO_RESCALE_", 11)==0 
+				|| strncmp(s, "DIST_OP_", 8)==0 
+				|| strncmp(s, "AXIS_RESCALE_", 13)==0 
+				|| strncmp(s, "ALIGNMENT_", 10)==0 
+				)
+		{
+			
+			return 0;	// not supported
+		}
+		else if ( strcmp(s, "IDENTIFICATION")==0 )
+		{
+			return 0;	// not supported
+		}
+		else
+		{
+			i++;
+		}
+	}
+	return 1;
+}
+
+int showAddressListCB(cco o, long idx, const char *key, cco characteristic_or_axis_pts, void *data)
+{
+	static int show_next = 0;
+	static long long int last_address = -1;
+	cco sw_object = (cco)data;
+	const char *element_type = coStrGet(coVectorGet(characteristic_or_axis_pts, 0)); // either AXIS_PTS or CHARACTERISTIC
+    const char *element_name = coStrGet(coVectorGet(characteristic_or_axis_pts, 1)); // name of the AXIS_PTS or CHARACTERISTIC
+	const char *record_layout_name = coStrGet(coVectorGet(characteristic_or_axis_pts, 5)); // record layout name is at the same position for both CHARACTERISTIC and AXIS_PTS
+	long fixed_size;
+	long dynamic_size;
+	cco record_layout_rec = coMapGet((co)coVectorGet(sw_object, RECORD_LAYOUT_MAP_POS), record_layout_name);
+	
+	long factor = getCharacteristicMeasurementAxisPTSDataMultiplicator(characteristic_or_axis_pts);
+	int is_supported = getRecordLayoutSize(record_layout_rec, &fixed_size, &dynamic_size);
+	long record_size = factor*dynamic_size+fixed_size;	// maybe this is a simplified calculation, but it seems to work...
+	long long int current_address = strtoll(key, NULL, 16);
+		
+	//if ( show_next != 0 || factor > 100 || fixed_size!=0 )
+	{
+		if ( !(last_address > current_address+10000 || last_address < 0) )
+		{
+			if ( last_address > current_address )
+			{
+				printf("0x%08llX  %11lld OVERLAP ERROR %lld Bytes\n", last_address, last_address, last_address-current_address);
+			}
+			if ( last_address < current_address )
+			{
+				printf("0x%08llX  %11lld GAP %lld Bytes\n", last_address, last_address, current_address-last_address);
+			}
+		}
+		printf("%-11s %11lld %3ld*%3ld+%3ld=%4ld  %s: %s %s\n", key, current_address, 
+			factor, dynamic_size, fixed_size, record_size, 
+			element_type, element_name, is_supported?"":"NOT SUPPORTED");
+		last_address = current_address+record_size;
+		if ( factor > 1 )
+			show_next = 1;
+		else
+			show_next = 0;
+	}
+	return 1;
+}
+void showAddressList(cco sw_object)
+{
+	coMapForEach(coVectorGet(sw_object, ADDRESS_MAP_POS), showAddressListCB, (void *)sw_object); // returns 0 as soon as the callback function returns 0
+}
+
+
 
 void showCharacteristic(cco sw_object, cco characteristic_rec)
 {
@@ -310,6 +503,7 @@ void showAllCharacteristic(cco sw_object)
 	}
 	
 }
+
 
 
 void help(void)
@@ -471,11 +665,14 @@ int main(int argc, char **argv)
   printf("COMPU_VTAB cnt=%ld\n", coMapSize(coVectorGet(sw_object, COMPU_VTAB_MAP_POS)));
   printf("RECORD_LAYOUT cnt=%ld\n", coMapSize(coVectorGet(sw_object, RECORD_LAYOUT_MAP_POS)));
   printf("CHARACTERISTIC Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, CHARACTERISTIC_VECTOR_POS)));
-  printf("CHARACTERISTIC Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, CHARACTERISTIC_MAP_POS)));
+  printf("CHARACTERISTIC Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, CHARACTERISTIC_NAME_MAP_POS)));
+  printf("AXIS_PTS Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, AXIS_PTS_VECTOR_POS)));
+  printf("AXIS_PTS Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, AXIS_PTS_NAME_MAP_POS)));
+  printf("Address Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, ADDRESS_MAP_POS)));
   
   //dfs_characteristic(a2l);
-  showAllCharacteristic(sw_object);
-  
+  // showAllCharacteristic(sw_object);
+  showAddressList(sw_object);
   
   coDelete(sw_object);     // delete tables first, because they will refer to a2l
 }
