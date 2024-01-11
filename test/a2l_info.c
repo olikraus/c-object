@@ -1,6 +1,17 @@
 /* 
-	a2l_info
+  a2l_info
+  
+  a2l info tool, based on C Object Library 
+  (c) 2024 Oliver Kraus
+  https://github.coMap/olikraus/c-object
 
+  CC BY-SA 3.0  https://creativecoMapmons.org/licenses/by-sa/3.0/
+  
+  
+  Example:
+  ./a2l_info.exe -a2l CDCC10-2317a-MDCA30-311M.a2l.gz  -s19 CDCC10-2317a-MDCA30-311M.s19 -ascii -v
+
+  
 */
 
 #include "co.h"
@@ -22,21 +33,6 @@
 #define DATA_MAP_POS 9
 #define DATA_VECTOR_POS 10
 
-
-//#define S19_POS 4
-//#define S19_VECTOR_POS 5
-
-/*
-  Create empty vector for the global index tables.
-  This will be filled by build_index_tables() function
-
-      sw_object[0]: Map with all COMPU_METHOD records
-      sw_object[1]: Map with all COMPU_VTAB records
-      sw_object[1]: Map with all COMPU_VTAB records
-
-  ./a2l_info -a2l example-a2l-file.a2l.gz -s19 example.s19
-
-*/
 
 const char *a2l_file_name = NULL;
 const char *s19_file_name = NULL;
