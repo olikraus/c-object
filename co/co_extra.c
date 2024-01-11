@@ -246,7 +246,7 @@ co coReadS19ByFP(FILE *fp)
   size_t byte_cnt; 
   size_t mem_cnt;
   int rec_type;
-  co mo;                // memory object
+  co mo = NULL;                // memory object
   co map = coNewMap(CO_FREE_VALS|CO_STRDUP);
   if ( map == NULL )
     return NULL;
@@ -258,49 +258,54 @@ co coReadS19ByFP(FILE *fp)
     while( *line != 'S' && *line != '\0')
       line++;
     rec_type = line[1];
-    byte_cnt = hexToUnsigned(line+2);
-    
-    if ( rec_type >= '1' && rec_type <= '3' )
-    {
-      address = (size_t)hexToUnsigned(line+4);
-      address <<= 8;
-      address += (size_t)hexToUnsigned(line+6);
-      if ( rec_type == '1' )
-      {
-        hexToMem(line+8, byte_cnt-2, mem);     // do not read address, but include checksum
-        mem_cnt = byte_cnt - 3;
-      }
-      else if ( rec_type == '2' )
-      {
-        address <<= 8;
-        address += (size_t)hexToUnsigned(line+8);
-        hexToMem(line+10, byte_cnt-3, mem);     // do not read address, but include checksum
-        mem_cnt = byte_cnt - 4;
-      }
-      else if ( rec_type == '3' )
-      {
-        address <<= 8;
-        address += (size_t)hexToUnsigned(line+8);
-        address <<= 8;
-        address += (size_t)hexToUnsigned(line+10);
-        hexToMem(line+12, byte_cnt-4, mem);     // do not read address, but include checksum
-        mem_cnt = byte_cnt - 5;
-      }      
-      sprintf(addr_as_hex, "%08zX", address);
-      if ( mo == NULL || last_address != address )
-      {
-        mo = coNewMem();                // create a new memory block
-        if ( coMemAdd(mo, mem, mem_cnt) == 0 )
-          return coDelete(map), NULL;
-        if ( coMapAdd(map, addr_as_hex, mo) == 0 )
-          return coDelete(map), NULL;
-      }
-      else
-      {
-        if ( coMemAdd(mo, mem, mem_cnt) == 0 )     // extend the existing memory block
-          return coDelete(map), NULL;
-      }
-      last_address = address + mem_cnt;
+	if ( rec_type >= '1' && rec_type <= '9' )
+	{
+		byte_cnt = hexToUnsigned(line+2);
+		if ( byte_cnt > 255 )
+		  return puts("wrong byte_cnt"), coDelete(map), NULL;		
+		
+		if ( rec_type >= '1' && rec_type <= '3' )
+		{
+		  address = (size_t)hexToUnsigned(line+4);
+		  address <<= 8;
+		  address += (size_t)hexToUnsigned(line+6);
+		  if ( rec_type == '1' )
+		  {
+			hexToMem(line+8, byte_cnt-2, mem);     // do not read address, but include checksum
+			mem_cnt = byte_cnt - 3;
+		  }
+		  else if ( rec_type == '2' )
+		  {
+			address <<= 8;
+			address += (size_t)hexToUnsigned(line+8);
+			hexToMem(line+10, byte_cnt-3, mem);     // do not read address, but include checksum
+			mem_cnt = byte_cnt - 4;
+		  }
+		  else if ( rec_type == '3' )
+		  {
+			address <<= 8;
+			address += (size_t)hexToUnsigned(line+8);
+			address <<= 8;
+			address += (size_t)hexToUnsigned(line+10);
+			hexToMem(line+12, byte_cnt-4, mem);     // do not read address, but include checksum
+			mem_cnt = byte_cnt - 5;
+		  }      
+		  sprintf(addr_as_hex, "%08zX", address);
+		  if ( mo == NULL || last_address != address )
+		  {
+			mo = coNewMem();                // create a new memory block
+			if ( coMemAdd(mo, mem, mem_cnt) == 0 )
+			  return coDelete(map), NULL;
+			if ( coMapAdd(map, addr_as_hex, mo) == 0 )
+			  return coDelete(map), NULL;
+		  }
+		  else
+		  {
+			if ( coMemAdd(mo, mem, mem_cnt) == 0 )     // extend the existing memory block
+			  return coDelete(map), NULL;
+		  }
+		  last_address = address + mem_cnt;
+	   }
     }
   }
   return map;

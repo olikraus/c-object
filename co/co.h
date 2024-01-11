@@ -153,8 +153,8 @@ struct coStruct
     struct // string and memory block
     {
       char *str;
-      size_t len;       // current str length
-      //size_t memlen;    // allocated memory
+      size_t len;       // current str/mem length
+      size_t memlen;    // allocated memory (not used for strings)
     } s;
     struct // double
     {
@@ -188,7 +188,7 @@ co coNewStr(unsigned flags, const char *s);
 co coNewDbl(double n);
 co coNewMem(void);
 co coNewVector(unsigned flags);
-co coNewVectorByMap(cco map);  // constructs a vector from a map
+co coNewVectorByMap(cco map);  // constructs a vector from a map, elements of the vector is again a vector with two elements, the key and the value
 co coNewMap(unsigned flags);
 
 /* object type test procedures */

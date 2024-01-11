@@ -410,6 +410,8 @@ int coStrInit(co o, void *data)
   else
     o->s.str = s;
   o->s.len = strlen(o->s.str);
+  o->s.memlen = 0;  // not used for string
+
   return 1;
 }
 
@@ -518,21 +520,44 @@ int coMemInit(co o, void *data)
   o->fn = coMemType;
   o->s.str = NULL;
   o->s.len = 0;
+  o->s.memlen = 0;
   return 1;
 }
 
+#define CO_MEM_MIN_EXTEND (16*1024)
+#define CO_MEM_MAX_EXTEND (1024*1024)
 int coMemAdd(co o, const void *mem, size_t len)
 {
   void *m;
+  size_t extend;
+   
+  extend = o->s.memlen;				// double the memory...
+  if ( extend < CO_MEM_MIN_EXTEND )
+	  extend = CO_MEM_MIN_EXTEND;
+  if ( extend > CO_MEM_MAX_EXTEND )	// ... but only the max extend value is reached
+	  extend = CO_MEM_MAX_EXTEND;
+  if ( extend < len )
+	  extend = len;
+  
   assert(coIsMem(o));
   if ( mem == NULL || len == 0 )
     return 1;
   
-  
   if ( o->s.str == NULL )
-    m = malloc(len);
+  {
+	o->s.memlen = extend;
+    m = malloc(o->s.memlen);
+	o->s.len = 0;
+  }
+  else if ( o->s.len+len > o->s.memlen ) 
+  {
+	o->s.memlen = o->s.len + extend;
+    m = realloc(o->s.str, o->s.memlen);
+  }
   else
-    m = realloc(o->s.str, o->s.len + len);
+  {
+	m = o->s.str;
+  }
   
   if ( m == NULL )
     return 0;

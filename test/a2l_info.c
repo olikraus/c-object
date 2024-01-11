@@ -19,6 +19,8 @@
 #define CHARACTERISTIC_VECTOR_POS 6
 #define AXIS_PTS_VECTOR_POS 7
 #define A2L_POS 8
+#define DATA_MAP_POS 9
+#define DATA_VECTOR_POS 10
 
 
 //#define S19_POS 4
@@ -37,6 +39,10 @@
 */
 
 const char *a2l_file_name = NULL;
+const char *s19_file_name = NULL;
+int is_verbose = 0;
+int is_ascii_characteristic_list = 0;
+int is_characteristic_address_list = 0;
 
 uint64_t getEpochMilliseconds(void)
 {
@@ -141,6 +147,7 @@ void build_index_tables(cco sw_object, cco a2l)
   }  
 }
 
+#ifdef NOT_USED
 void dfs_characteristic(cco a2l)
 {
   long i, cnt;
@@ -172,6 +179,7 @@ void dfs_characteristic(cco a2l)
     }
   }
 }
+#endif
 
 /*
   within a vector, search for the given string and return the index to that
@@ -341,6 +349,7 @@ long getAtomicDataTypeSize(const char *datatype)
 	return 0;
 }
 
+
 /*
 	This will calculate the number of bytes occupied by an A2L element which is stored in memory.
 	The record may contain data which will appear only once (fixed size) and data which will appear multiple times (dynamic_size).
@@ -412,9 +421,71 @@ int getRecordLayoutSize(cco record_layout_rec, long *fixed_size, long *dynamic_s
 	return 1;
 }
 
+unsigned char *getMemoryArea(cco sw_object, size_t address, size_t length)
+{
+  char addr_as_hex[10];
+  long pos;
+  cco memory_block;
+  size_t memory_adr;
+  size_t memory_len;
+  size_t delta;
+  unsigned char *ptr;
+  
+  sprintf(addr_as_hex, "%08zX", address);
+  pos = coVectorPredecessorBinarySearch(coVectorGet(sw_object, DATA_VECTOR_POS), addr_as_hex); 
+  if ( pos < 0 )
+  {
+    return NULL;
+  }
+  memory_block = coVectorGet(coVectorGet(sw_object, DATA_VECTOR_POS), pos);
+  memory_adr = strtoll(coStrGet(coVectorGet(memory_block, 0)), NULL, 16);
+  memory_len = coMemSize(coVectorGet(memory_block, 1));
+  delta = address - memory_adr;
+  
+
+  if ( delta+length >= memory_len )
+  {
+    //printf("getMemoryArea: requested memory not found\n");
+    return NULL;
+  }
+
+  
+  ptr = (unsigned char *)coMemGet(coVectorGet(memory_block, 1));
+  ptr += delta;
+
+  //printf("getMemoryArea(%08zX,%08zX) -%ld-> %08zX-%08zX, delta=%08zX, first byte=%02X\n", address, length, pos, memory_adr, memory_adr+memory_len-1, delta, (unsigned)*ptr);
+  
+  return ptr;
+}
+
+char *getMemoryAreaString(cco sw_object, size_t address, size_t length)
+{
+	static char buf[256];
+	unsigned char *ptr = getMemoryArea(sw_object, address, length);
+	int i=0;
+	buf[0] = '\0';
+	
+	if ( ptr == NULL )
+	{
+		// sprintf(buf, "Memory location not available");
+	}
+	else if ( ptr != NULL && length > 0 )
+	{
+		while( i < 4 && i < length)
+		{
+			sprintf(buf+strlen(buf), " %02X", (int)ptr[i]);
+			i++;
+		}
+		if ( i < length )
+			sprintf(buf+strlen(buf), "... <total %zd bytes>", length);
+	}
+	return buf;
+}
+
+
 int showAddressListCB(cco o, long idx, const char *key, cco characteristic_or_axis_pts, void *data)
 {
-	static int show_next = 0;
+	//static int show_next = 0;
 	static long long int last_address = -1;
 	cco sw_object = (cco)data;
 	const char *element_type = coStrGet(coVectorGet(characteristic_or_axis_pts, 0)); // either AXIS_PTS or CHARACTERISTIC
@@ -442,14 +513,17 @@ int showAddressListCB(cco o, long idx, const char *key, cco characteristic_or_ax
 				printf("0x%08llX  %11lld GAP %lld Bytes\n", last_address, last_address, current_address-last_address);
 			}
 		}
-		printf("%-11s %11lld %3ld*%3ld+%3ld=%4ld  %s: %s %s\n", key, current_address, 
+		printf("%-11s %11lld %3ld*%3ld+%3ld=%4ld  %14s:%-75s %s %s\n", key, current_address, 
 			factor, dynamic_size, fixed_size, record_size, 
-			element_type, element_name, is_supported?"":"NOT SUPPORTED");
+			element_type, element_name, is_supported?"":"NOT SUPPORTED",
+			getMemoryAreaString(sw_object, current_address, record_size) );
 		last_address = current_address+record_size;
+		/*
 		if ( factor > 1 )
 			show_next = 1;
 		else
 			show_next = 0;
+		*/
 	}
 	return 1;
 }
@@ -505,11 +579,57 @@ void showAllCharacteristic(cco sw_object)
 }
 
 
+void showAllASCIICharacteristic(cco sw_object)
+{
+	long i, cnt;
+	char buf[1024];
+	cco characteristic_vector = coVectorGet(sw_object, CHARACTERISTIC_VECTOR_POS);
+	cco characteristic_rec;
+	cnt = coVectorSize(characteristic_vector);
+	printf("Address    Size Label                Content\n");
+	for( i = 0; i < cnt; i++ )
+	{
+		characteristic_rec = coVectorGet(characteristic_vector, i);
+		if ( strcmp( coStrGet(coVectorGet(characteristic_rec, 3)), "ASCII" ) == 0 )
+		{
+			const char *name = coStrGet(coVectorGet(characteristic_rec, 1));
+ 		    const char *address = coStrGet(coVectorGet(characteristic_rec, 4));
+			const char *record_layout_name = coStrGet(coVectorGet(characteristic_rec, 5)); // record layout name 
+			long fixed_size;
+			long dynamic_size;
+			cco record_layout_rec = coMapGet((co)coVectorGet(sw_object, RECORD_LAYOUT_MAP_POS), record_layout_name);
+			long factor = getCharacteristicMeasurementAxisPTSDataMultiplicator(characteristic_rec);
+			int is_supported = getRecordLayoutSize(record_layout_rec, &fixed_size, &dynamic_size);
+			if ( is_supported )
+			{
+				long record_size = factor*dynamic_size+fixed_size;	// maybe this is a simplified calculation, but it seems to work...
+				unsigned char *string = getMemoryArea(sw_object, strtoll(address, NULL, 16), (size_t)record_size);
+				memset(buf, '\0', 1024);
+				if ( string != NULL )
+				{
+					if ( record_size < 1022 )
+					{
+						memcpy(buf, string, (size_t)record_size);
+					}
+				}
+				printf("%10s %4ld %-20s %s\n", address, record_size, name, buf);
+			}
+		}
+		
+	}
+	
+}
+
+
 
 void help(void)
 {
   puts("-h            This help text");
-  puts("-a2l <file>   A2L File");
+  puts("-a2l <file>   A2L File (also accepts .gz files)");
+  puts("-s19 <file>   S19 File");
+  puts("-v            Verbose output");
+  puts("-ascii        Output all ASCII Characteristics");
+  puts("-addrlist     Output all ASCII Characteristics");  
 }
 
 int parse_args(int argc, char **argv)
@@ -521,12 +641,36 @@ int parse_args(int argc, char **argv)
       help();
       argv++;
     }
+    else if ( strcmp(*argv, "-v" ) == 0 )
+    {
+	  is_verbose = 1;
+      argv++;
+    }
+    else if ( strcmp(*argv, "-ascii" ) == 0 )
+    {
+	  is_ascii_characteristic_list = 1;
+      argv++;
+    }
+    else if ( strcmp(*argv, "-addrlist" ) == 0 )
+    {
+	  is_characteristic_address_list = 1;
+      argv++;
+    }
     else if ( strcmp(*argv, "-a2l" ) == 0 )
     {
       argv++;
       if ( *argv != NULL )
       {
         a2l_file_name = *argv;
+        argv++;
+      }
+    }
+    else if ( strcmp(*argv, "-s19" ) == 0 )
+    {
+      argv++;
+      if ( *argv != NULL )
+      {
+        s19_file_name = *argv;
         argv++;
       }
     }
@@ -538,89 +682,6 @@ int parse_args(int argc, char **argv)
   return 1;
 }
 
-/* report a zlib or i/o error */
-#ifdef OBSOLETE
-void zerr(int ret)
-{
-    fputs("zpipe: ", stderr);
-    switch (ret) {
-    case Z_ERRNO:
-        if (ferror(stdin))
-            fputs("error reading stdin\n", stderr);
-        if (ferror(stdout))
-            fputs("error writing stdout\n", stderr);
-        break;
-    case Z_STREAM_ERROR:
-        fputs("invalid compression level\n", stderr);
-        break;
-    case Z_DATA_ERROR:
-        fputs("invalid or incomplete deflate data\n", stderr);
-        break;
-    case Z_MEM_ERROR:
-        fputs("out of memory\n", stderr);
-        break;
-    case Z_VERSION_ERROR:
-        fputs("zlib version mismatch!\n", stderr);
-    }
-}
-
-int inf(FILE *source, FILE *dest)
-{
-    int ret;
-    unsigned have;
-    z_stream strm;
-    char in[CHUNK];
-    char out[CHUNK];
-    /* allocate inflate state */
-    strm.zalloc = Z_NULL;
-    strm.zfree = Z_NULL;
-    strm.opaque = Z_NULL;
-    strm.avail_in = 0;
-    strm.next_in = Z_NULL;
-    //ret = inflateInit(&strm);
-	ret = inflateInit2((&strm), 32+MAX_WBITS);
-	printf("inflateInit ret=%d\n", ret);
-    if (ret != Z_OK)
-        return ret;
-    /* decompress until deflate stream ends or end of file */
-    do {
-        strm.avail_in = fread(in, 1, CHUNK, source);
-		printf("inf strm.avail_in=%d\n", strm.avail_in);
-        if (ferror(source)) {
-            (void)inflateEnd(&strm);
-            return Z_ERRNO;
-        }
-        if (strm.avail_in == 0)
-            break;
-        strm.next_in = in;
-        /* run inflate() on input until output buffer not full */
-        do {
-            strm.avail_out = CHUNK;
-            strm.next_out = out;
-            ret = inflate(&strm, Z_NO_FLUSH);
-            assert(ret != Z_STREAM_ERROR);  /* state not clobbered */
-            switch (ret) {
-            case Z_NEED_DICT:
-                ret = Z_DATA_ERROR;     /* and fall through */
-            case Z_DATA_ERROR:
-            case Z_MEM_ERROR:
-                (void)inflateEnd(&strm);
-                return ret;
-            }
-            have = CHUNK - strm.avail_out;
-			printf("inf have=%d strm.avail_out=%d strm.avail_in=%d\n", have, strm.avail_out, strm.avail_in);
-            if (fwrite(out, 1, have, dest) != have || ferror(dest)) {
-                (void)inflateEnd(&strm);
-                return Z_ERRNO;
-            }
-        } while (strm.avail_out == 0);
-        /* done when inflate() says it's done */
-    } while (ret != Z_STREAM_END);
-    /* clean up and return */
-    (void)inflateEnd(&strm);
-    return ret == Z_STREAM_END ? Z_OK : Z_DATA_ERROR;
-}
-#endif
 int main(int argc, char **argv)
 {
   FILE *fp;
@@ -641,38 +702,59 @@ int main(int argc, char **argv)
   fp = fopen(a2l_file_name, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
   if ( fp == NULL )
     return perror(a2l_file_name), coDelete(sw_object), 0;
-  printf("Reading A2L '%s'\n", a2l_file_name);
-  
-  //zerr(inf(fp, fopen("tmp.out", "wb"))); fseek(fp, 0, SEEK_SET);
- 
+  if ( is_verbose ) printf("Reading A2L '%s'\n", a2l_file_name);
   coVectorAdd(sw_object, coReadA2LByFP(fp));
   t1 = getEpochMilliseconds();
-  printf("Reading A2L done, milliseconds=%lld\n", t1-t0);
+  if ( is_verbose ) printf("Reading A2L done, milliseconds=%lld\n", t1-t0);
   fclose(fp);
-
-  /* build the sorted vector version of the s19 file */
-  //coVectorAdd(sw_object, coNewVectorByMap(coVectorGet(sw_object, S19_POS)));
+  
+  /* read the s19 file */
+  if ( s19_file_name != NULL )
+  {
+	  /* read s19 file */
+	  fp = fopen(s19_file_name, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
+	  if ( fp == NULL )
+		return perror(s19_file_name), coDelete(sw_object), 0;
+	  if ( is_verbose ) printf("Reading S19 '%s'\n", s19_file_name);
+	  t1 = getEpochMilliseconds();
+	  coVectorAdd(sw_object, coReadS19ByFP(fp));
+	  t2 = getEpochMilliseconds();
+	  if ( is_verbose ) printf("Reading S19 done, milliseconds=%lld\n", t2-t1);
+	  fclose(fp);	  
+	  coVectorAdd(sw_object, coNewVectorByMap(coVectorGet(sw_object, DATA_MAP_POS)));	// build the sorted vector from the data map file
+	  if ( is_verbose ) 
+	  {
+		  coPrint(coVectorGet(sw_object, DATA_VECTOR_POS));
+		  puts("");
+	  }
+  }
+  else
+  {
+	  coVectorAdd(sw_object, coNewMap(CO_NONE));	// add dummy entry
+  }
 
   /* build the remaining index tables */
-  printf("Building A2L index tables\n");
+  if ( is_verbose ) printf("Building A2L index tables\n");
+  t1 = getEpochMilliseconds();
   build_index_tables(sw_object, coVectorGet(sw_object, A2L_POS));
   t2 = getEpochMilliseconds();  
-  printf("Building A2L index tables done, milliseconds=%lld\n", t2-t1);
-  //coPrint(sw_object); puts("");
+  if ( is_verbose ) printf("Building A2L index tables done, milliseconds=%lld\n", t2-t1);
 
-
-  printf("COMPU_METHOD cnt=%ld\n", coMapSize(coVectorGet(sw_object, COMPU_METHOD_MAP_POS)));
-  printf("COMPU_VTAB cnt=%ld\n", coMapSize(coVectorGet(sw_object, COMPU_VTAB_MAP_POS)));
-  printf("RECORD_LAYOUT cnt=%ld\n", coMapSize(coVectorGet(sw_object, RECORD_LAYOUT_MAP_POS)));
-  printf("CHARACTERISTIC Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, CHARACTERISTIC_VECTOR_POS)));
-  printf("CHARACTERISTIC Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, CHARACTERISTIC_NAME_MAP_POS)));
-  printf("AXIS_PTS Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, AXIS_PTS_VECTOR_POS)));
-  printf("AXIS_PTS Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, AXIS_PTS_NAME_MAP_POS)));
-  printf("Address Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, ADDRESS_MAP_POS)));
-  
-  //dfs_characteristic(a2l);
-  // showAllCharacteristic(sw_object);
-  showAddressList(sw_object);
+  if ( is_verbose ) 
+  {
+	  printf("COMPU_METHOD cnt=%ld\n", coMapSize(coVectorGet(sw_object, COMPU_METHOD_MAP_POS)));
+	  printf("COMPU_VTAB cnt=%ld\n", coMapSize(coVectorGet(sw_object, COMPU_VTAB_MAP_POS)));
+	  printf("RECORD_LAYOUT cnt=%ld\n", coMapSize(coVectorGet(sw_object, RECORD_LAYOUT_MAP_POS)));
+	  printf("CHARACTERISTIC Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, CHARACTERISTIC_VECTOR_POS)));
+	  printf("CHARACTERISTIC Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, CHARACTERISTIC_NAME_MAP_POS)));
+	  printf("AXIS_PTS Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, AXIS_PTS_VECTOR_POS)));
+	  printf("AXIS_PTS Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, AXIS_PTS_NAME_MAP_POS)));
+	  printf("Address Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, ADDRESS_MAP_POS)));
+  }
+  if ( is_characteristic_address_list )
+	showAddressList(sw_object);
+  if ( is_ascii_characteristic_list )
+	showAllASCIICharacteristic(sw_object);
   
   coDelete(sw_object);     // delete tables first, because they will refer to a2l
 }
