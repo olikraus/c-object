@@ -247,6 +247,10 @@ co coReadS19ByFP(FILE *fp)
   size_t mem_cnt;
   int rec_type;
   int i, c;
+  struct co_reader_struct reader_struct;
+  coReader r = &reader_struct;
+  coReaderInitByFP(r, fp);
+  
   co mo = NULL;                // memory object
   co map = coNewMap(CO_FREE_VALS|CO_STRDUP);
   if ( map == NULL )
@@ -256,7 +260,9 @@ co coReadS19ByFP(FILE *fp)
 	i = 0;
 	for(;;)
 	{
-		c = getc(fp);
+		// c = getc(fp);
+		c = coReaderCurr(r);
+		coReaderNext(r);
 		if ( c < 0 )
 		{
 			if ( i == 0 )

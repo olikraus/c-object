@@ -44,7 +44,7 @@ uint64_t getEpochMilliseconds(void)
 	return (uint64_t)(tv.tv_sec) * 1000 + (uint64_t)(tv.tv_usec) / 1000;
 }
 
-co create_sw_object(void)
+co createSWObject(void)
 {
   co o;
   o = coNewVector(CO_FREE_VALS);
@@ -617,7 +617,7 @@ void help(void)
 {
   puts("-h            This help text");
   puts("-a2l <file>   A2L File (also accepts .gz files)");
-  puts("-s19 <file>   S19 File");
+  puts("-s19 <file>   S19 File (also accepts .gz files)");
   puts("-v            Verbose output");
   puts("-ascii        Output all ASCII Characteristics");
   puts("-addrlist     Output all characteristics and axis_pts sorted by memory address");  
@@ -674,12 +674,17 @@ int parse_args(int argc, char **argv)
 }
 
 
+co getSWObject(const char *a2l, const char *s19)
+{
+}
+
+
 int main(int argc, char **argv)
 {
   FILE *fp;
   uint64_t t0, t1, t2;
   
-  co sw_object = create_sw_object();
+  co sw_object = createSWObject();
   
   assert( sw_object != NULL );
   
