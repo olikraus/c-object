@@ -676,29 +676,19 @@ int parse_args(int argc, char **argv)
 
 co getSWObject(const char *a2l, const char *s19)
 {
-}
-
-
-int main(int argc, char **argv)
-{
   FILE *fp;
   uint64_t t0, t1, t2;
-  
   co sw_object = createSWObject();
-  
   assert( sw_object != NULL );
-  
-  parse_args(argc, argv);
-  
-  if ( a2l_file_name == NULL )
-    return coDelete(sw_object), 0;
+  if ( a2l == NULL )
+    return coDelete(sw_object), NULL;
 
   t0 = getEpochMilliseconds();  
   
   /* read a2l file */
   fp = fopen(a2l_file_name, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
   if ( fp == NULL )
-    return perror(a2l_file_name), coDelete(sw_object), 0;
+    return perror(a2l_file_name), coDelete(sw_object), NULL;
   //setvbuf(fp, filebuf, _IOFBF, FILEBUF_SIZE);
   if ( is_verbose ) printf("Reading A2L '%s'\n", a2l_file_name);
   coVectorAdd(sw_object, coReadA2LByFP(fp));
@@ -712,7 +702,7 @@ int main(int argc, char **argv)
 	  /* read s19 file */
 	  fp = fopen(s19_file_name, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
 	  if ( fp == NULL )
-		return perror(s19_file_name), coDelete(sw_object), 0;
+		return perror(s19_file_name), coDelete(sw_object), NULL;
 	  if ( is_verbose ) printf("Reading S19 '%s'\n", s19_file_name);
 	  t1 = getEpochMilliseconds();
 	  coVectorAdd(sw_object, coReadS19ByFP(fp));
@@ -738,6 +728,20 @@ int main(int argc, char **argv)
   t2 = getEpochMilliseconds();  
   if ( is_verbose ) printf("Building A2L index tables done, milliseconds=%lld\n", t2-t1);
 
+  return sw_object;
+}
+
+
+int main(int argc, char **argv)
+{
+  co sw_object;
+  
+  parse_args(argc, argv);
+
+  sw_object = getSWObject(a2l_file_name, s19_file_name);
+  if ( sw_object == NULL )
+	  return 0;
+  
   if ( is_verbose ) 
   {
 	  printf("COMPU_METHOD cnt=%ld\n", coMapSize(coVectorGet(sw_object, COMPU_METHOD_MAP_POS)));
