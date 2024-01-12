@@ -608,9 +608,7 @@ void showAllASCIICharacteristic(cco sw_object)
 				printf("%10s %4ld %-20s %s\n", address, record_size, name, buf);
 			}
 		}
-		
 	}
-	
 }
 
 
@@ -622,7 +620,7 @@ void help(void)
   puts("-s19 <file>   S19 File");
   puts("-v            Verbose output");
   puts("-ascii        Output all ASCII Characteristics");
-  puts("-addrlist     Output all ASCII Characteristics");  
+  puts("-addrlist     Output all characteristics and axis_pts sorted by memory address");  
 }
 
 int parse_args(int argc, char **argv)
@@ -675,6 +673,7 @@ int parse_args(int argc, char **argv)
   return 1;
 }
 
+
 int main(int argc, char **argv)
 {
   FILE *fp;
@@ -695,6 +694,7 @@ int main(int argc, char **argv)
   fp = fopen(a2l_file_name, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
   if ( fp == NULL )
     return perror(a2l_file_name), coDelete(sw_object), 0;
+  //setvbuf(fp, filebuf, _IOFBF, FILEBUF_SIZE);
   if ( is_verbose ) printf("Reading A2L '%s'\n", a2l_file_name);
   coVectorAdd(sw_object, coReadA2LByFP(fp));
   t1 = getEpochMilliseconds();

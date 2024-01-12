@@ -246,15 +246,44 @@ co coReadS19ByFP(FILE *fp)
   size_t byte_cnt; 
   size_t mem_cnt;
   int rec_type;
+  int i, c;
   co mo = NULL;                // memory object
   co map = coNewMap(CO_FREE_VALS|CO_STRDUP);
   if ( map == NULL )
     return NULL;
   for(;;)
   {
-    line = fgets(buf, S19_MAX_LINE_LEN, fp);
+	i = 0;
+	for(;;)
+	{
+		c = getc(fp);
+		if ( c < 0 )
+		{
+			if ( i == 0 )
+				line = NULL;
+			else	
+			{
+				line = buf;
+				buf[i] = '\0';
+			}
+			break;
+		}
+		
+		if ( c == '\n' )
+		{
+			line = buf;
+			buf[i] = '\0';			
+			break;
+		}
+		if ( i >= S19_MAX_LINE_LEN )
+		  return puts("illegal line length in s19 file"), coDelete(map), NULL;		
+		buf[i++] = c;
+	}
+	
+    //line = fgets(buf, S19_MAX_LINE_LEN, fp);
     if ( line == NULL )
       break;
+  
     while( *line != 'S' && *line != '\0')
       line++;
     rec_type = line[1];
