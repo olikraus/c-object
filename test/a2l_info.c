@@ -41,6 +41,7 @@ int sw_pair_cnt = 0;
 int is_verbose = 0;
 int is_ascii_characteristic_list = 0;
 int is_characteristic_address_list = 0;
+int is_diff = 0;
 
 uint64_t getEpochMilliseconds(void)
 {
@@ -480,6 +481,38 @@ char *getMemoryAreaString(cco sw_object, size_t address, size_t length)
 	return buf;
 }
 
+/*
+	For a given CHARACTERISTIC or AXIS_PTS, return address and size of the CHARACTERISTIC or AXIS_PTS.
+	This function returns 0, if the record layout is not supported.
+*/
+int getCharacteristicAxisPtsMemoryArea(cco sw_object, cco characteristic_or_axis_pts, long long int *address, long *size)
+{
+	const char *element_type = coStrGet(coVectorGet(characteristic_or_axis_pts, 0)); // either AXIS_PTS or CHARACTERISTIC
+	const char *record_layout_name = coStrGet(coVectorGet(characteristic_or_axis_pts, 5)); // record layout name is at the same position for both 
+	const char *address_string = coStrGet(coVectorGet(characteristic_or_axis_pts, 4)); //  
+	cco record_layout_rec = coMapGet((co)coVectorGet(sw_object, RECORD_LAYOUT_MAP_POS), record_layout_name);	// find the record layout element
+	long factor = getCharacteristicMeasurementAxisPTSDataMultiplicator(characteristic_or_axis_pts);  // get the object multiplication factor
+	long fixed_size;
+	long dynamic_size;
+	int is_supported = getRecordLayoutSize(record_layout_rec, &fixed_size, &dynamic_size);
+	
+	if ( is_supported == 0 )
+	{
+		*address = 0;
+		*size = 0;
+		return 0;
+	}	
+	*size = factor*dynamic_size+fixed_size;	// maybe this is a simplified calculation, but it seems to work...
+	
+	if ( element_type[0] == 'C' )  // is this a CHARACTERISTIC?
+		address_string = coStrGet(coVectorGet(characteristic_or_axis_pts, 4));	// CHARACTERISTIC address is at pos 4
+	else
+		address_string = coStrGet(coVectorGet(characteristic_or_axis_pts, 3));	// AXIS_PTS address is at pos 3
+	*address = strtoll(address_string, NULL, 16);
+	
+	return 1;
+}
+
 
 int showAddressListCB(cco o, long idx, const char *key, cco characteristic_or_axis_pts, void *data)
 {
@@ -618,82 +651,6 @@ void showAllASCIICharacteristic(cco sw_object)
 
 
 
-void help(void)
-{
-  puts("-h            This help text");
-  puts("-a2l <file>   A2L File (also accepts .gz files)");
-  puts("-s19 <file>   S19 File (also accepts .gz files)");
-  puts("-v            Verbose output");
-  puts("-ascii        Output all ASCII Characteristics");
-  puts("-addrlist     Output all characteristics and axis_pts sorted by memory address");  
-}
-
-int parse_args(int argc, char **argv)
-{
-  while( *argv != NULL )
-  {
-    if ( strcmp(*argv, "-h" ) == 0 )
-    {
-      help();
-      argv++;
-    }
-    else if ( strcmp(*argv, "-v" ) == 0 )
-    {
-	  is_verbose = 1;
-      argv++;
-    }
-    else if ( strcmp(*argv, "-ascii" ) == 0 )
-    {
-	  is_ascii_characteristic_list = 1;
-      argv++;
-    }
-    else if ( strcmp(*argv, "-addrlist" ) == 0 )
-    {
-	  is_characteristic_address_list = 1;
-      argv++;
-    }
-    else if ( strcmp(*argv, "-a2l" ) == 0 )
-    {
-      argv++;
-	  
-      if ( *argv != NULL )
-      {
-		if ( sw_pair_cnt+1 < SW_PAIR_MAX )
-		{
-			if ( a2l_file_name_list[sw_pair_cnt] != NULL )
-				sw_pair_cnt++;
-			a2l_file_name_list[sw_pair_cnt] = *argv;
-		}
-        argv++;
-      }
-    }
-    else if ( strcmp(*argv, "-s19" ) == 0 )
-    {
-      argv++;
-      if ( *argv != NULL )
-      {
-		if ( sw_pair_cnt+1 < SW_PAIR_MAX )
-		{
-			if ( s19_file_name_list[sw_pair_cnt] != NULL )
-				sw_pair_cnt++;
-			s19_file_name_list[sw_pair_cnt] = *argv;
-		}
-        argv++;
-      }
-    }
-    else
-    {
-      argv++;
-    }
-  }
-  
-  if ( a2l_file_name_list[sw_pair_cnt] != NULL )
-	sw_pair_cnt++;
-  
-  return 1;
-}
-
-
 co getSWObject(const char *a2l, const char *s19)
 {
   FILE *fp;
@@ -780,7 +737,7 @@ co getSWList(void)
 	This reference can be NULL, if the CHARACTERISTIC is not present in that sw_object
 	
 */
-co getAllCharacteristicMap(cco sw_list)
+co getAllCharacteristicDifferenceMap(cco sw_list)
 {
   long i, j, k;
   cco sw_object;
@@ -789,6 +746,9 @@ co getAllCharacteristicMap(cco sw_list)
   const char *key;
   co all_characteristic_map = coNewMap(CO_FREE_VALS); 	// key is neither strdup'd nor free'd, because it is taken from the CHARACTERISTIC record
   co all_map_value_vector;
+  long long int t0, t1;
+  t0 = getEpochMilliseconds();  
+
   if ( all_characteristic_map == NULL )
 	  return NULL;
   for( i = 0; i < coVectorSize(sw_list); i++ )
@@ -815,8 +775,178 @@ co getAllCharacteristicMap(cco sw_list)
 		  coVectorSet(all_map_value_vector, i, characteristic_rec);
 	  }
   }
+  t1 = getEpochMilliseconds();  
+  if ( is_verbose )
+	  printf("Build CHARACTERISTIC difference, milliseconds=%lld\n", t1-t0);
   return all_characteristic_map;
 }
+
+int showAllCharacteristicDifferenceMapCB(cco o, long idx, const char *key, cco value_vector, void *data)
+{
+	cco sw_list = (cco)data;
+	long i, j;
+	int nullCnt = 0; 	// number of NULL records in the value_vector 
+	cco first;
+	cco second;
+	char *mem_info = NULL;
+	
+	assert(sw_list != NULL);
+	for( i = 0; i < coVectorSize(value_vector); i++ )
+	{
+		first = coVectorGet(value_vector, i);
+		if ( first == NULL )
+		{
+			nullCnt++;
+		}
+		else
+		{
+			for( j = i + 1; j < coVectorSize(value_vector); j++ )
+			{
+				second = coVectorGet(value_vector, j);
+				if ( second != NULL )
+				{
+					// first and second are not NULL
+					cco first_sw_object = coVectorGet(sw_list, i);
+					cco second_sw_object = coVectorGet(sw_list, j);
+					assert(first_sw_object != NULL);
+					assert(second_sw_object != NULL);
+					long long int first_address;
+					long long int second_address;
+					long first_size;
+					long second_size;
+					int first_is_supported = getCharacteristicAxisPtsMemoryArea(first_sw_object, first, &first_address, &first_size);
+					int second_is_supported = getCharacteristicAxisPtsMemoryArea(second_sw_object, second, &second_address, &second_size);
+					
+					if ( first_is_supported == 0 || second_is_supported == 0 )
+					{
+						mem_info = "record layout not supported";
+						break;
+					}
+					else if ( first_size != second_size )
+					{
+						mem_info = "record size different";
+						break;
+					}
+					else
+					{
+						unsigned char *first_mem = getMemoryArea(first_sw_object, first_address, first_size);
+						unsigned char *second_mem = getMemoryArea(second_sw_object, second_address, second_size);
+						
+						if ( first_mem != NULL && second_mem != NULL )
+						{
+							if ( memcmp(first_mem, second_mem, first_size) != 0 )
+							{
+								mem_info = "data difference";
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if ( nullCnt == 0 && mem_info == NULL )
+		return 1; // exit, if there are no dfferences
+	
+	printf("%-99s ", key);
+	for( i = 0; i < coVectorSize(value_vector); i++ )
+		if ( coVectorGet(value_vector, i) == NULL )
+			printf(" _");
+		else
+			printf(" x");
+	printf(" %s\n", mem_info==NULL?"":mem_info);
+	return 1;
+}
+
+void showAllCharacteristicDifferenceMap(cco all_characteristic_map, cco sw_list)
+{
+	coMapForEach(all_characteristic_map, showAllCharacteristicDifferenceMapCB, (void *)sw_list);
+}
+
+
+void help(void)
+{
+  puts("-h            This help text");
+  puts("-a2l <file>   A2L File (accepts .gz files, can be used mutliple times)");
+  puts("-s19 <file>   S19 File (accepts .gz files, can be used mutliple times)");
+  puts("-v            Verbose output");
+  puts("-ascii        Output all ASCII Characteristics");
+  puts("-addrlist     Output all characteristics and axis_pts sorted by memory address");  
+  puts("-diff         A2L S19 difference analysis");
+}
+
+int parse_args(int argc, char **argv)
+{
+  while( *argv != NULL )
+  {
+    if ( strcmp(*argv, "-h" ) == 0 )
+    {
+      help();
+      argv++;
+    }
+    else if ( strcmp(*argv, "-v" ) == 0 )
+    {
+	  is_verbose = 1;
+      argv++;
+    }
+    else if ( strcmp(*argv, "-ascii" ) == 0 )
+    {
+	  is_ascii_characteristic_list = 1;
+      argv++;
+    }
+    else if ( strcmp(*argv, "-addrlist" ) == 0 )
+    {
+	  is_characteristic_address_list = 1;
+      argv++;
+    }
+    else if ( strcmp(*argv, "-diff" ) == 0 )
+    {
+	  is_diff = 1;
+      argv++;
+    }
+	
+    else if ( strcmp(*argv, "-a2l" ) == 0 )
+    {
+      argv++;
+	  
+      if ( *argv != NULL )
+      {
+		if ( sw_pair_cnt+1 < SW_PAIR_MAX )
+		{
+			if ( a2l_file_name_list[sw_pair_cnt] != NULL )
+				sw_pair_cnt++;
+			a2l_file_name_list[sw_pair_cnt] = *argv;
+		}
+        argv++;
+      }
+    }
+    else if ( strcmp(*argv, "-s19" ) == 0 )
+    {
+      argv++;
+      if ( *argv != NULL )
+      {
+		if ( sw_pair_cnt+1 < SW_PAIR_MAX )
+		{
+			if ( s19_file_name_list[sw_pair_cnt] != NULL )
+				sw_pair_cnt++;
+			s19_file_name_list[sw_pair_cnt] = *argv;
+		}
+        argv++;
+      }
+    }
+    else
+    {
+      argv++;
+    }
+  }
+  
+  if ( a2l_file_name_list[sw_pair_cnt] != NULL )
+	sw_pair_cnt++;
+  if ( sw_pair_cnt == 0 )
+	  help();
+  
+  return 1;
+}
+
 
 
 int main(int argc, char **argv)
@@ -824,8 +954,8 @@ int main(int argc, char **argv)
 	
   long i;
   co sw_list;
-  cco sw_object;
-  co all_characteristic_map;
+  cco sw_object = NULL;
+  co all_characteristic_map = NULL;
   
   parse_args(argc, argv);
 
@@ -853,9 +983,13 @@ int main(int argc, char **argv)
 		showAllASCIICharacteristic(sw_object);
   }  
   
-  all_characteristic_map = getAllCharacteristicMap(sw_list);	
+  if ( is_diff )
+  {
+	  all_characteristic_map = getAllCharacteristicDifferenceMap(sw_list);	
+	  showAllCharacteristicDifferenceMap(all_characteristic_map, sw_list);
+	  coDelete(all_characteristic_map); // delete this before sw_list (ok, wouldn't make a difference, but still)
+  }
   
-  coDelete(all_characteristic_map); // delete this before sw_list (ok, wouldn't make a difference, but still)
   coDelete(sw_list);     // delete all software objects
 }
   
