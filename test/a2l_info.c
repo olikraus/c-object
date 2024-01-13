@@ -677,7 +677,7 @@ int parse_args(int argc, char **argv)
 co getSWObject(const char *a2l, const char *s19)
 {
   FILE *fp;
-  uint64_t t0, t1, t2;
+  long long int t0, t1, t2;
   co sw_object = createSWObject();
   assert( sw_object != NULL );
   if ( a2l == NULL )

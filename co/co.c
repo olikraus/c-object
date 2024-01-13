@@ -1168,13 +1168,15 @@ static int bom_read_and_skip(FILE *fp)
 
 void coReaderErr(coReader r, const char *msg)
 {
-  fpos_t pos = 0;
+  //fpos_t pos;
   printf("JSON Parser error '%s', current char='%c'\n", msg, r->curr);
+  /* removed, because we can't print fpos_t
   if ( r->fp != NULL )
   {
 	fgetpos(r->fp, &pos);
 	printf("JSON Parser error at file pos %lld\n", (long long int)(pos));	  
   }
+  */
 	  
 }
 
@@ -1249,7 +1251,7 @@ static void coReaderGZFileNext(coReader r)
 	}
   
 	r->strm.avail_out = CHUNK;
-    r->strm.next_out = r->out;
+        r->strm.next_out = r->out;
 
 	ret = inflate(&(r->strm), Z_NO_FLUSH);
 	//printf(LINE " GZ: ret=%d strm.avail_out=%d\n", ret, r->strm.avail_out);
@@ -1276,6 +1278,9 @@ static void coReaderGZFileNext(coReader r)
 			  r->curr = -1;
 			  return;
 		  case Z_STREAM_END:
+                          if ( CHUNK - r->strm.avail_out > 0 )
+                            break;
+                          //printf(LINE " GZ: STREAM_END\n");
 			  inflateEnd(&(r->strm));
 			  r->curr = -1;
 			  return;              
