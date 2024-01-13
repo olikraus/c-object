@@ -20,10 +20,14 @@
 /* A2L Parser */
 /*===================================================================*/
 
-#define CO_A2L_STRBUF_MAX 8192
-const char *coA2LGetString(coReader reader)
+#define CO_A2L_IDENTIFIER_STRING_MAX (1024*8)
+
+/*
+	buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX bytes
+*/
+const char *coA2LGetString(coReader reader, char *buf)
 {
-  static char buf[CO_A2L_STRBUF_MAX+8];                // reservere some extra space, because the overflow check is done only once in the for loop below
+  //static char buf[CO_A2L_STRBUF_MAX+8];                // reservere some extra space, because the overflow check is done only once in the for loop below
   size_t idx = 0;
   int c = 0;
   if ( coReaderCurr(reader) != '\"' )
@@ -59,16 +63,17 @@ const char *coA2LGetString(coReader reader)
       coReaderNext(reader); 
       buf[idx++] = c;   // handle normal char
     }
-    if ( idx >= CO_A2L_STRBUF_MAX ) // check whether the buffer is full
+    if ( idx+8 >= CO_A2L_IDENTIFIER_STRING_MAX ) // check whether the buffer is full
       return coReaderErr(reader, "String too long"), NULL;
   } // for
   return buf;  
 }
 
-#define CO_A2L_IDENTIFIER_MAX 1024
-const char *coA2LGetIdentifier(coReader reader, int prefix)
+/*
+	buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX bytes
+*/
+const char *coA2LGetIdentifier(coReader reader, int prefix, char *buf)
 {
-  static char buf[CO_A2L_IDENTIFIER_MAX+2];  // add some space for '\0'
   int c;
   size_t idx = 0;
   if ( prefix >= 0 )    // this is used by the '/' detection procedure below
@@ -79,7 +84,7 @@ const char *coA2LGetIdentifier(coReader reader, int prefix)
     if ( c <= ' ' ) break; // this includes c==-1
     if ( c == '/' ) break;    // comment start
     if ( c == '\"' ) break; // string start
-    if ( idx >= CO_A2L_IDENTIFIER_MAX )
+    if ( idx+2 >= CO_A2L_IDENTIFIER_STRING_MAX )
       return coReaderErr(reader, "Identifier too long"), NULL;
     buf[idx++] = c;
     coReaderNext(reader);
@@ -89,7 +94,10 @@ const char *coA2LGetIdentifier(coReader reader, int prefix)
   return buf;
 }
 
-const char *coA2LGetSlashPrefixedToken(coReader reader)
+/*
+	buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX bytes
+*/
+const char *coA2LGetSlashPrefixedToken(coReader reader, char *buf)
 {
   if ( coReaderCurr(reader) != '/' )
     return coReaderErr(reader, "Internal error"), NULL;
@@ -118,10 +126,13 @@ const char *coA2LGetSlashPrefixedToken(coReader reader)
       else coReaderNext(reader);
     }
   }
-  return coA2LGetIdentifier(reader, '/');       // detect /begin and /end keywords
+  return coA2LGetIdentifier(reader, '/', buf);       // detect /begin and /end keywords
 }
 
-const char *coA2LGetToken(coReader reader)
+/*
+	buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX bytes
+*/
+const char *coA2LGetToken(coReader reader, char *buf)
 {
   const char *token;
   for(;;)
@@ -129,10 +140,10 @@ const char *coA2LGetToken(coReader reader)
     if ( coReaderCurr(reader) < 0 )
       return "";
     if ( coReaderCurr(reader) == '\"' )
-      return coA2LGetString(reader);
+      return coA2LGetString(reader, buf);
     if ( coReaderCurr(reader) == '/' )
     {
-      token = coA2LGetSlashPrefixedToken(reader);
+      token = coA2LGetSlashPrefixedToken(reader, buf);
       if ( token == NULL )
         return NULL;
       if ( token[0] == '\0' )
@@ -141,10 +152,10 @@ const char *coA2LGetToken(coReader reader)
     }
     break;
   }
-  return coA2LGetIdentifier(reader, -1);
+  return coA2LGetIdentifier(reader, -1, buf);
 }
 
-co coA2LGetArray(coReader reader)
+co coA2LGetArray(coReader reader, char *buf)
 {
   const char *t;
   co array_obj;
@@ -153,7 +164,7 @@ co coA2LGetArray(coReader reader)
   array_obj = coNewVector(CO_FREE_VALS);
   for(;;)
   {
-    t = coA2LGetToken(reader);
+    t = coA2LGetToken(reader, buf);
     if ( coReaderCurr(reader) < 0 ) // end of file?
     {
       break;
@@ -164,7 +175,7 @@ co coA2LGetArray(coReader reader)
     }  
     else if ( strcmp(t, "/begin") == 0 )
     {
-      element = coA2LGetArray(reader);
+      element = coA2LGetArray(reader, buf);
       if ( element == NULL )
         return NULL;
       if ( coVectorAdd(array_obj, element) < 0 )
@@ -172,7 +183,7 @@ co coA2LGetArray(coReader reader)
     }
     else if ( strcmp(t, "/end") == 0 )
     {
-      coA2LGetToken(reader);    // read next token. this should be the same as the /begin argumnet
+      coA2LGetToken(reader, buf);    // read next token. this should be the same as the /begin argumnet
       break;
     }
     else
@@ -190,17 +201,21 @@ co coA2LGetArray(coReader reader)
 co coReadA2LByString(const char *json)
 {
   struct co_reader_struct reader;
+  char buf[CO_A2L_IDENTIFIER_STRING_MAX];
+  
   if ( coReaderInitByString(&reader, json) == 0 )
     return NULL;
-  return coA2LGetArray(&reader);
+  return coA2LGetArray(&reader, buf);
 }
 
 co coReadA2LByFP(FILE *fp)
 {
   struct co_reader_struct reader;
+  char buf[CO_A2L_IDENTIFIER_STRING_MAX];
+  
   if ( coReaderInitByFP(&reader, fp) == 0 )
     return NULL;
-  return coA2LGetArray(&reader);
+  return coA2LGetArray(&reader, buf);
 }
 
 /*===================================================================*/
@@ -237,8 +252,8 @@ static void hexToMem(const char *s, size_t cnt, unsigned char*mem)
 
 co coReadS19ByFP(FILE *fp)
 {
-  static char buf[S19_MAX_LINE_LEN];
-  static unsigned char mem[S19_MAX_LINE_LEN/2];
+  char buf[S19_MAX_LINE_LEN];
+  unsigned char mem[S19_MAX_LINE_LEN/2];
   char addr_as_hex[10];
   char *line;
   size_t last_address = 0xffffffff; 

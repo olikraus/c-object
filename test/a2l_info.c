@@ -7,7 +7,7 @@
 
   CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
   
-  
+  There is a little PTHREAD support..
   
 */
 
@@ -17,6 +17,12 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <sys/time.h>
+
+#define USE_PTHREAD
+
+#ifdef USE_PTHREAD
+#include <pthread.h>
+#endif /* USE_PTHREAD */
 
 #define COMPU_METHOD_MAP_POS 0
 #define COMPU_VTAB_MAP_POS 1
@@ -35,6 +41,7 @@
 
 const char *a2l_file_name_list[SW_PAIR_MAX];		// assumes, that global variables are initialized with 0
 const char *s19_file_name_list[SW_PAIR_MAX];		// assumes, that global variables are initialized with 0
+co sw_object_list[SW_PAIR_MAX];					// temporary storage area for sw_objects created from tbe above files
 
 
 int sw_pair_cnt = 0;
@@ -670,7 +677,7 @@ co getSWObject(const char *a2l, const char *s19)
   if ( is_verbose ) printf("Reading A2L '%s'\n", a2l);
   coVectorAdd(sw_object, coReadA2LByFP(fp));
   t1 = getEpochMilliseconds();
-  if ( is_verbose ) printf("Reading A2L done, milliseconds=%lld\n", t1-t0);
+  if ( is_verbose ) printf("Reading A2L '%s' done, milliseconds=%lld\n", a2l, t1-t0);
   fclose(fp);
   
   /* read the s19 file */
@@ -684,7 +691,7 @@ co getSWObject(const char *a2l, const char *s19)
 	  t1 = getEpochMilliseconds();
 	  coVectorAdd(sw_object, coReadS19ByFP(fp));
 	  t2 = getEpochMilliseconds();
-	  if ( is_verbose ) printf("Reading S19 done, milliseconds=%lld\n", t2-t1);
+	  if ( is_verbose ) printf("Reading S19 '%s' done, milliseconds=%lld\n", s19, t2-t1);
 	  fclose(fp);	  
 	  coVectorAdd(sw_object, coNewVectorByMap(coVectorGet(sw_object, DATA_MAP_POS)));	// build the sorted vector from the data map file
 	  if ( is_verbose ) 
@@ -699,25 +706,40 @@ co getSWObject(const char *a2l, const char *s19)
   }
 
   /* build the remaining index tables */
-  if ( is_verbose ) printf("Building A2L index tables\n");
+  if ( is_verbose ) printf("Building A2L index tables '%s'\n", a2l);
   t1 = getEpochMilliseconds();
   build_index_tables(sw_object, coVectorGet(sw_object, A2L_POS));
   t2 = getEpochMilliseconds();  
-  if ( is_verbose ) printf("Building A2L index tables done, milliseconds=%lld\n", t2-t1);
+  if ( is_verbose ) printf("Building A2L index tables '%s' done, milliseconds=%lld\n", a2l, t2-t1);
 
   return sw_object;
 }
+
+void *getSWListThread( void *ptr )
+{
+	int idx = *(int *)ptr;
+	sw_object_list[idx] = getSWObject(a2l_file_name_list[idx], s19_file_name_list[idx]);
+	return NULL;
+}
+       
 
 co getSWList(void)
 {
 	int i;
 	co sw_list;
-	co sw_object;
+	int index[SW_PAIR_MAX];
+	
+	
+#ifdef USE_PTHREAD
+	pthread_t threads[SW_PAIR_MAX];
+	int create_result;
+#endif
 
 	sw_list = coNewVector(CO_FREE_VALS);
 	if ( sw_list == NULL )
 		return NULL;  
 
+	/*
 	for( i = 0; i < sw_pair_cnt; i++ )
 	{
 		sw_object = getSWObject(a2l_file_name_list[i], s19_file_name_list[i]);
@@ -725,6 +747,32 @@ co getSWList(void)
 			return coDelete(sw_list), NULL;
 		coVectorAdd(sw_list, sw_object);
 	}
+	*/
+
+	for( i = 0; i < sw_pair_cnt; i++ )
+	{
+		index[i] = i;
+
+#ifdef USE_PTHREAD
+		create_result = pthread_create( threads+i, NULL, getSWListThread, (void*)(index+i));
+		if ( create_result != 0 )
+			return coDelete(sw_list), NULL; // maybe we should delete the results from the threads...
+#else
+		getSWListThread( (void*)(index+i) );
+#endif
+	}
+	
+#ifdef USE_PTHREAD
+	for( i = 0; i < sw_pair_cnt; i++ )
+		pthread_join( threads[i], NULL);
+#endif
+
+	for( i = 0; i < sw_pair_cnt; i++ )
+	{
+		if ( sw_object_list[i] != NULL )
+			coVectorAdd(sw_list, sw_object_list[i]);		
+	}
+	
 	return sw_list;
 }
 
