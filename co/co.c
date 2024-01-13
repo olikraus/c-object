@@ -308,6 +308,31 @@ co coVectorClone(cco o)
 /* special vector functions */
 /*===================================================================*/
 
+/*
+	Replace element inside a vector.
+	The existing element is free'd according to the flags.
+	The same will be true with the new element 'e'.
+	The new element 'e' can be the NULL pointer.
+	'i' must be a valid entry into the vector
+*/
+void coVectorSet(co v, long i, cco e)
+{
+  assert(coIsVector(v));
+  assert( i < v->v.cnt );
+  assert( i >= 0 );
+
+  if ( v->flags & CO_FREE_VALS )
+  {
+    coDelete( (co)(v->v.list[i]) );       // delete the element, NULL is handled within coDelete
+  }
+  else if ( (v->flags & CO_FREE_FIRST) != 0 && i == 0 )         // consider the case, where only the first element needs to be deleted
+  {
+    coDelete((co)v->v.list[0]);
+  }
+  
+  v->v.list[i] = e;
+}
+
 /* delete an element in the vector. Size is reduced  by 1 */
 void coVectorErase(co v, long i)
 {

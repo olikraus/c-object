@@ -31,8 +31,13 @@
 #define DATA_VECTOR_POS 10
 
 
-const char *a2l_file_name = NULL;
-const char *s19_file_name = NULL;
+#define SW_PAIR_MAX 4
+
+const char *a2l_file_name_list[SW_PAIR_MAX];		// assumes, that global variables are initialized with 0
+const char *s19_file_name_list[SW_PAIR_MAX];		// assumes, that global variables are initialized with 0
+
+
+int sw_pair_cnt = 0;
 int is_verbose = 0;
 int is_ascii_characteristic_list = 0;
 int is_characteristic_address_list = 0;
@@ -650,9 +655,15 @@ int parse_args(int argc, char **argv)
     else if ( strcmp(*argv, "-a2l" ) == 0 )
     {
       argv++;
+	  
       if ( *argv != NULL )
       {
-        a2l_file_name = *argv;
+		if ( sw_pair_cnt+1 < SW_PAIR_MAX )
+		{
+			if ( a2l_file_name_list[sw_pair_cnt] != NULL )
+				sw_pair_cnt++;
+			a2l_file_name_list[sw_pair_cnt] = *argv;
+		}
         argv++;
       }
     }
@@ -661,7 +672,12 @@ int parse_args(int argc, char **argv)
       argv++;
       if ( *argv != NULL )
       {
-        s19_file_name = *argv;
+		if ( sw_pair_cnt+1 < SW_PAIR_MAX )
+		{
+			if ( s19_file_name_list[sw_pair_cnt] != NULL )
+				sw_pair_cnt++;
+			s19_file_name_list[sw_pair_cnt] = *argv;
+		}
         argv++;
       }
     }
@@ -670,6 +686,10 @@ int parse_args(int argc, char **argv)
       argv++;
     }
   }
+  
+  if ( a2l_file_name_list[sw_pair_cnt] != NULL )
+	sw_pair_cnt++;
+  
   return 1;
 }
 
@@ -686,24 +706,24 @@ co getSWObject(const char *a2l, const char *s19)
   t0 = getEpochMilliseconds();  
   
   /* read a2l file */
-  fp = fopen(a2l_file_name, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
+  fp = fopen(a2l, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
   if ( fp == NULL )
-    return perror(a2l_file_name), coDelete(sw_object), NULL;
+    return perror(a2l), coDelete(sw_object), NULL;
   //setvbuf(fp, filebuf, _IOFBF, FILEBUF_SIZE);
-  if ( is_verbose ) printf("Reading A2L '%s'\n", a2l_file_name);
+  if ( is_verbose ) printf("Reading A2L '%s'\n", a2l);
   coVectorAdd(sw_object, coReadA2LByFP(fp));
   t1 = getEpochMilliseconds();
   if ( is_verbose ) printf("Reading A2L done, milliseconds=%lld\n", t1-t0);
   fclose(fp);
   
   /* read the s19 file */
-  if ( s19_file_name != NULL )
+  if ( s19 != NULL )
   {
 	  /* read s19 file */
-	  fp = fopen(s19_file_name, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
+	  fp = fopen(s19, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
 	  if ( fp == NULL )
-		return perror(s19_file_name), coDelete(sw_object), NULL;
-	  if ( is_verbose ) printf("Reading S19 '%s'\n", s19_file_name);
+		return perror(s19), coDelete(sw_object), NULL;
+	  if ( is_verbose ) printf("Reading S19 '%s'\n", s19);
 	  t1 = getEpochMilliseconds();
 	  coVectorAdd(sw_object, coReadS19ByFP(fp));
 	  t2 = getEpochMilliseconds();
@@ -731,34 +751,112 @@ co getSWObject(const char *a2l, const char *s19)
   return sw_object;
 }
 
+co getSWList(void)
+{
+	int i;
+	co sw_list;
+	co sw_object;
+
+	sw_list = coNewVector(CO_FREE_VALS);
+	if ( sw_list == NULL )
+		return NULL;  
+
+	for( i = 0; i < sw_pair_cnt; i++ )
+	{
+		sw_object = getSWObject(a2l_file_name_list[i], s19_file_name_list[i]);
+		if ( sw_object == NULL )
+			return coDelete(sw_list), NULL;
+		coVectorAdd(sw_list, sw_object);
+	}
+	return sw_list;
+}
+
+/*
+	returns a map
+		key: CHARACTERISTIC name
+		value: Vector of length coVectorSize(sw_list)
+		
+	The value vector contains references to the CHARACTERISTIC entries of the corresponding sw_object
+	This reference can be NULL, if the CHARACTERISTIC is not present in that sw_object
+	
+*/
+co getAllCharacteristicMap(cco sw_list)
+{
+  long i, j, k;
+  cco sw_object;
+  cco characteristic_vector;
+  cco characteristic_rec;
+  const char *key;
+  co all_characteristic_map = coNewMap(CO_FREE_VALS); 	// key is neither strdup'd nor free'd, because it is taken from the CHARACTERISTIC record
+  co all_map_value_vector;
+  if ( all_characteristic_map == NULL )
+	  return NULL;
+  for( i = 0; i < coVectorSize(sw_list); i++ )
+  {
+	  sw_object = coVectorGet(sw_list, i);
+	  characteristic_vector = coVectorGet(sw_object, CHARACTERISTIC_VECTOR_POS);
+	  for( j = 0; j < coVectorSize(characteristic_vector); j++ )
+	  {
+		  characteristic_rec = coVectorGet(characteristic_vector, j);
+		  key = coStrGet(coVectorGet(characteristic_rec, 1));		// CHARACTERISTIC Name
+		  all_map_value_vector = (co)coMapGet(all_characteristic_map, key);
+		  if ( all_map_value_vector == NULL )
+		  {
+			  // a new key was found, create the key value pair for that new key
+			  all_map_value_vector = coNewVector(CO_NONE);		// don't free the elements, they belong to the sw objects
+			  if ( all_map_value_vector == NULL )
+				return coDelete(all_characteristic_map), NULL;
+			  for( k = 0; k < coVectorSize(sw_list); k++ )
+				if ( coVectorAdd(all_map_value_vector, NULL) < 0 )		// prefill the value vector with NULL pointer
+  				  return coDelete(all_characteristic_map), NULL;
+			  if ( coMapAdd( all_characteristic_map, key, all_map_value_vector ) == 0 )
+  				  return coDelete(all_characteristic_map), NULL;				  
+		  }
+		  coVectorSet(all_map_value_vector, i, characteristic_rec);
+	  }
+  }
+  return all_characteristic_map;
+}
+
 
 int main(int argc, char **argv)
 {
-  co sw_object;
+	
+  long i;
+  co sw_list;
+  cco sw_object;
+  co all_characteristic_map;
   
   parse_args(argc, argv);
 
-  sw_object = getSWObject(a2l_file_name, s19_file_name);
-  if ( sw_object == NULL )
-	  return 0;
+  sw_list = getSWList();
   
-  if ( is_verbose ) 
+  for( i = 0; i < coVectorSize(sw_list); i++ )
   {
-	  printf("COMPU_METHOD cnt=%ld\n", coMapSize(coVectorGet(sw_object, COMPU_METHOD_MAP_POS)));
-	  printf("COMPU_VTAB cnt=%ld\n", coMapSize(coVectorGet(sw_object, COMPU_VTAB_MAP_POS)));
-	  printf("RECORD_LAYOUT cnt=%ld\n", coMapSize(coVectorGet(sw_object, RECORD_LAYOUT_MAP_POS)));
-	  printf("CHARACTERISTIC Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, CHARACTERISTIC_VECTOR_POS)));
-	  printf("CHARACTERISTIC Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, CHARACTERISTIC_NAME_MAP_POS)));
-	  printf("AXIS_PTS Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, AXIS_PTS_VECTOR_POS)));
-	  printf("AXIS_PTS Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, AXIS_PTS_NAME_MAP_POS)));
-	  printf("Address Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, ADDRESS_MAP_POS)));
-  }
-  if ( is_characteristic_address_list )
-	showAddressList(sw_object);
-  if ( is_ascii_characteristic_list )
-	showAllASCIICharacteristic(sw_object);
+	  sw_object = coVectorGet(sw_list, i);
   
-  coDelete(sw_object);     // delete tables first, because they will refer to a2l
+	  if ( is_verbose ) 
+	  {
+		  printf("%s:\n", a2l_file_name_list[i]);
+		  printf("  COMPU_METHOD cnt=%ld\n", coMapSize(coVectorGet(sw_object, COMPU_METHOD_MAP_POS)));
+		  printf("  COMPU_VTAB cnt=%ld\n", coMapSize(coVectorGet(sw_object, COMPU_VTAB_MAP_POS)));
+		  printf("  RECORD_LAYOUT cnt=%ld\n", coMapSize(coVectorGet(sw_object, RECORD_LAYOUT_MAP_POS)));
+		  printf("  CHARACTERISTIC Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, CHARACTERISTIC_VECTOR_POS)));
+		  printf("  CHARACTERISTIC Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, CHARACTERISTIC_NAME_MAP_POS)));
+		  printf("  AXIS_PTS Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, AXIS_PTS_VECTOR_POS)));
+		  printf("  AXIS_PTS Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, AXIS_PTS_NAME_MAP_POS)));
+		  printf("  Address Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, ADDRESS_MAP_POS)));
+	  }
+	  if ( is_characteristic_address_list )
+		showAddressList(sw_object);
+	  if ( is_ascii_characteristic_list )
+		showAllASCIICharacteristic(sw_object);
+  }  
+  
+  all_characteristic_map = getAllCharacteristicMap(sw_list);	
+  
+  coDelete(all_characteristic_map); // delete this before sw_list (ok, wouldn't make a difference, but still)
+  coDelete(sw_list);     // delete all software objects
 }
   
   
