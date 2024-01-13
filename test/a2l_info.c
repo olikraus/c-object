@@ -18,7 +18,7 @@
 #include <assert.h>
 #include <sys/time.h>
 
-#define USE_PTHREAD
+//#define USE_PTHREAD
 
 #ifdef USE_PTHREAD
 #include <pthread.h>
@@ -769,8 +769,9 @@ co getSWList(void)
 
 	for( i = 0; i < sw_pair_cnt; i++ )
 	{
-		if ( sw_object_list[i] != NULL )
-			coVectorAdd(sw_list, sw_object_list[i]);		
+ 		if ( sw_object_list[i] != NULL )
+			coVectorAdd(sw_list, sw_object_list[i]);
+                sw_object_list[i] = NULL; // clear the reference so that -fsanitize=address reports correct values
 	}
 	
 	return sw_list;

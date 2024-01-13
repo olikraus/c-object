@@ -1,8 +1,9 @@
 
-# CFLAGS = -g -DCO_USE_ZLIB -Wall -fsanitize=address -I./co
-CFLAGS = -g -DCO_USE_ZLIB -Wall -I./co
+CFLAGS = -g -DCO_USE_ZLIB -Wall -fsanitize=address -I./co
+# CFLAGS = -g -DCO_USE_ZLIB -Wall -I./co
 # CFLAGS = -O4 -DCO_USE_ZLIB -Wall -I./co
-LDFLAGS = -lz -lpthread
+# LDFLAGS = -lz -lpthread
+LDFLAGS = -lz
 
 
 COSRC = $(shell ls ./co/*.c)
