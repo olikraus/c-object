@@ -185,9 +185,9 @@ unsigned char *getMemoryArea(cco sw_object, size_t address, size_t length)
 
 void getCharacteristicValue(cco sw_object, cco characteristic_rec)
 {
-  const char *name = coStrGet(coVectorGet(characteristic_rec, 1));
-  const char *desc = coStrGet(coVectorGet(characteristic_rec, 2));
-  const char *address = coStrGet(coVectorGet(characteristic_rec, 4));
+  //const char *name = coStrGet(coVectorGet(characteristic_rec, 1));
+  //const char *desc = coStrGet(coVectorGet(characteristic_rec, 2));
+  //const char *address = coStrGet(coVectorGet(characteristic_rec, 4));
   const char *compu_method  = coStrGet(coVectorGet(characteristic_rec, 7));
   
   cco cm_rec = coMapGet(coVectorGet(sw_object, COMPU_METHOD_POS), compu_method);
@@ -196,8 +196,8 @@ void getCharacteristicValue(cco sw_object, cco characteristic_rec)
     const char *cm_type = coStrGet(coVectorGet(cm_rec, 3));
     if ( strcmp(cm_type, "TAB_VERB") == 0 )
     {
-      long compu_tab_ref_idx = getVectorIndexByString(cm_rec, "COMPU_TAB_REF");
-      const char *compu_tab_ref_name = coStrGet(coVectorGet(cm_rec, compu_tab_ref_idx));
+      //long compu_tab_ref_idx = getVectorIndexByString(cm_rec, "COMPU_TAB_REF");
+      //const char *compu_tab_ref_name = coStrGet(coVectorGet(cm_rec, compu_tab_ref_idx));
     }
     else if ( strcmp(cm_type, "RAT_FUNC") == 0 )
     {

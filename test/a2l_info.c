@@ -9,15 +9,16 @@
   
 */
 
+// uncomment the following define to disable multi-threading
+#define USE_PTHREAD
+
+
 #include "co.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <sys/time.h>
-
-#define USE_PTHREAD
-
 #ifdef USE_PTHREAD
 #include <pthread.h>
 #endif /* USE_PTHREAD */
@@ -35,7 +36,7 @@
 #define DATA_VECTOR_POS 10
 
 
-#define SW_PAIR_MAX 4
+#define SW_PAIR_MAX 16
 
 const char *a2l_file_name_list[SW_PAIR_MAX];		// assumes, that global variables are initialized with 0
 const char *s19_file_name_list[SW_PAIR_MAX];		// assumes, that global variables are initialized with 0
@@ -1067,8 +1068,10 @@ int main(int argc, char **argv)
 	  showAllCharacteristicDifferenceMap(all_characteristic_map, sw_list);
 	  coDelete(all_characteristic_map); // delete this before sw_list (ok, wouldn't make a difference, but still)
   }
-  
-  coDelete(sw_list);     // delete all software objects
+
+#ifndef NDEBUG  
+  coDelete(sw_list);     // delete all co objects, this is time consuming, so don't do this for the final release
+#endif
 }
   
   
