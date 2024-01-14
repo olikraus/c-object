@@ -7,8 +7,6 @@
 
   CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
   
-  There is a little PTHREAD support..
-  
 */
 
 #include "co.h"
@@ -18,7 +16,7 @@
 #include <assert.h>
 #include <sys/time.h>
 
-//#define USE_PTHREAD
+#define USE_PTHREAD
 
 #ifdef USE_PTHREAD
 #include <pthread.h>
@@ -656,6 +654,27 @@ void showAllASCIICharacteristic(cco sw_object)
 	}
 }
 
+co getS19Object(const char *s19)
+{
+  FILE *fp;
+  long long int t1, t2;
+  co o;  
+  fp = fopen(s19, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
+  if ( fp == NULL )
+        return perror(s19), NULL;
+  if ( is_verbose ) printf("Reading S19 '%s'\n", s19);
+  t1 = getEpochMilliseconds();
+  o = coReadS19ByFP(fp);
+  t2 = getEpochMilliseconds();
+  if ( is_verbose ) printf("Reading S19 '%s' done, milliseconds=%lld\n", s19, t2-t1);
+  fclose(fp);	  
+  return o;
+}
+
+void *getS19Thread( void *ptr )
+{
+  return (void *)getS19Object((const char *)ptr);
+}
 
 
 co getSWObject(const char *a2l, const char *s19)
@@ -663,6 +682,20 @@ co getSWObject(const char *a2l, const char *s19)
   FILE *fp;
   long long int t0, t1, t2;
   co sw_object = createSWObject();
+  co s19_object = NULL;  // s19 object, it will be added to sw_object later
+  
+#ifdef USE_PTHREAD
+  pthread_t s19_thread;
+  int s19_thread_create_result;
+
+  if ( s19 != NULL )    // if s19 is required, then read this in parallel to the a2l
+  {
+    s19_thread_create_result = pthread_create( &s19_thread, NULL, getS19Thread, (void*)(s19));
+    if ( s19_thread_create_result != 0 )
+            return coDelete(sw_object), NULL;  
+  }
+#endif  
+  
   assert( sw_object != NULL );
   if ( a2l == NULL )
     return coDelete(sw_object), NULL;
@@ -673,26 +706,28 @@ co getSWObject(const char *a2l, const char *s19)
   fp = fopen(a2l, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
   if ( fp == NULL )
     return perror(a2l), coDelete(sw_object), NULL;
-  //setvbuf(fp, filebuf, _IOFBF, FILEBUF_SIZE);
   if ( is_verbose ) printf("Reading A2L '%s'\n", a2l);
   coVectorAdd(sw_object, coReadA2LByFP(fp));
   t1 = getEpochMilliseconds();
   if ( is_verbose ) printf("Reading A2L '%s' done, milliseconds=%lld\n", a2l, t1-t0);
   fclose(fp);
-  
-  /* read the s19 file */
+
   if ( s19 != NULL )
   {
-	  /* read s19 file */
-	  fp = fopen(s19, "rb");  // we need to read binary so that the CR/LF conversion is suppressed on windows
-	  if ( fp == NULL )
-		return perror(s19), coDelete(sw_object), NULL;
-	  if ( is_verbose ) printf("Reading S19 '%s'\n", s19);
-	  t1 = getEpochMilliseconds();
-	  coVectorAdd(sw_object, coReadS19ByFP(fp));
-	  t2 = getEpochMilliseconds();
-	  if ( is_verbose ) printf("Reading S19 '%s' done, milliseconds=%lld\n", s19, t2-t1);
-	  fclose(fp);	  
+#ifdef USE_PTHREAD
+    // With pthread, wait for the parallel s19 data
+    pthread_join( s19_thread, (void **)&s19_object);
+#else
+    // Without pthread, just read the s19 file right now
+    s19_object = getS19Object(s19);
+#endif
+  }
+  
+  /* attach the s19 object to the sw_object */
+  if ( s19_object != NULL )
+  {
+          assert(coVectorSize(sw_object) == DATA_MAP_POS);
+	  coVectorAdd(sw_object, s19_object);
 	  coVectorAdd(sw_object, coNewVectorByMap(coVectorGet(sw_object, DATA_MAP_POS)));	// build the sorted vector from the data map file
 	  if ( is_verbose ) 
 	  {
@@ -702,7 +737,9 @@ co getSWObject(const char *a2l, const char *s19)
   }
   else
   {
-	  coVectorAdd(sw_object, coNewMap(CO_NONE));	// add dummy entry
+          // s19 not available, add some dummy entries
+	  coVectorAdd(sw_object, coNewMap(CO_NONE));	// add dummy entry for the s19 data
+	  coVectorAdd(sw_object, coNewVector(CO_NONE));  // add a dummy vector to s19 data
   }
 
   /* build the remaining index tables */
@@ -739,16 +776,7 @@ co getSWList(void)
 	if ( sw_list == NULL )
 		return NULL;  
 
-	/*
-	for( i = 0; i < sw_pair_cnt; i++ )
-	{
-		sw_object = getSWObject(a2l_file_name_list[i], s19_file_name_list[i]);
-		if ( sw_object == NULL )
-			return coDelete(sw_list), NULL;
-		coVectorAdd(sw_list, sw_object);
-	}
-	*/
-
+        // build sw objects for each a2l/s19 pair and store them into the sw_object_list array
 	for( i = 0; i < sw_pair_cnt; i++ )
 	{
 		index[i] = i;
@@ -758,7 +786,7 @@ co getSWList(void)
 		if ( create_result != 0 )
 			return coDelete(sw_list), NULL; // maybe we should delete the results from the threads...
 #else
-		getSWListThread( (void*)(index+i) );
+		getSWListThread( (void*)(index+i) );  // without pthread: construct the sw object directly
 #endif
 	}
 	
@@ -767,6 +795,7 @@ co getSWList(void)
 		pthread_join( threads[i], NULL);
 #endif
 
+        // add the previously constructed sw objects to the sw object list c-object vector
 	for( i = 0; i < sw_pair_cnt; i++ )
 	{
  		if ( sw_object_list[i] != NULL )
@@ -920,7 +949,7 @@ void help(void)
   puts("-v            Verbose output");
   puts("-ascii        Output all ASCII Characteristics");
   puts("-addrlist     Output all characteristics and axis_pts sorted by memory address");  
-  puts("-diff         A2L S19 difference analysis");
+  puts("-diff         A2L S19 difference analysis (requires multipe a2l/s19 pairs)");
 }
 
 int parse_args(int argc, char **argv)
