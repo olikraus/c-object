@@ -50,6 +50,7 @@ int sw_pair_cnt = 0;
 int is_verbose = 0;
 int is_ascii_characteristic_list = 0;
 int is_characteristic_address_list = 0;
+int is_function_list = 0;
 int is_diff = 0;
 
 uint64_t getEpochMilliseconds(void)
@@ -869,19 +870,41 @@ co getSWList(void)
 	return sw_list;
 }
 
+#define FUNCTION_PATH_MAX (1024*4)
+
 const char *getFullFunctionName(cco sw_object, cco function)
 {
+	static char buf[FUNCTION_PATH_MAX];
 	const char *name;
 	cco m =	coVectorGet(sw_object, PARENT_FUNCTION_MAP_POS);
-	cco parent_function;
+	cco f = function;
+	const char *name_list[32];
+	int cnt = 0;
 
 	assert( coIsVector(function) );
-	for(;;)
+	while( cnt < 32 )
 	{
-		name = coStrGet(coVectorGet(function, 1));
-		parent_function = coMapGet(m, name);
-		// TODO
+		name = coStrGet(coVectorGet(f, 1));
+		name_list[cnt] = name;
+		cnt++;
+		f = coMapGet(m, name);
+		if ( f == NULL )
+			break;
 	}
+	
+	buf[0] = '\0';
+	while( cnt > 0 )
+	{
+		size_t buflen = strlen(buf);
+		cnt--;
+		if ( buflen + strlen(name_list[cnt]) + 2 >= FUNCTION_PATH_MAX )
+		{
+			sprintf(buf, ".../%s", name_list[cnt]);
+			break;
+		}
+		sprintf(buf+buflen, "/%s", name_list[cnt]);
+	}
+	return buf;
 }
 
 /*
@@ -945,6 +968,7 @@ int showAllCharacteristicDifferenceMapCB(cco o, long idx, const char *key, cco v
 	cco first;
 	cco second;
 	char *mem_info = NULL;
+	const char *function_path_name = NULL;
 	
 	assert(sw_list != NULL);
 	for( i = 0; i < coVectorSize(value_vector); i++ )
@@ -956,15 +980,25 @@ int showAllCharacteristicDifferenceMapCB(cco o, long idx, const char *key, cco v
 		}
 		else
 		{
+			cco first_sw_object = coVectorGet(sw_list, i);
+			assert(first_sw_object != NULL);
+			if ( function_path_name == NULL )
+			{
+				cco m = coVectorGet(first_sw_object, BELONGS_TO_FUNCTION_MAP_POS);
+				cco function = coMapGet(m, key);
+				if ( function != NULL )
+				{
+					function_path_name = getFullFunctionName(first_sw_object, function);
+				}
+			}
+			
 			for( j = i + 1; j < coVectorSize(value_vector); j++ )
 			{
 				second = coVectorGet(value_vector, j);
 				if ( second != NULL )
 				{
 					// first and second are not NULL
-					cco first_sw_object = coVectorGet(sw_list, i);
 					cco second_sw_object = coVectorGet(sw_list, j);
-					assert(first_sw_object != NULL);
 					assert(second_sw_object != NULL);
 					long long int first_address;
 					long long int second_address;
@@ -1003,7 +1037,10 @@ int showAllCharacteristicDifferenceMapCB(cco o, long idx, const char *key, cco v
 	if ( nullCnt == 0 && mem_info == NULL )
 		return 1; // exit, if there are no dfferences
 	
-	printf("%-99s ", key);
+	if ( function_path_name == NULL )
+		function_path_name = "";
+	
+	printf("%-79s %-99s ", function_path_name, key);
 	for( i = 0; i < coVectorSize(value_vector); i++ )
 		if ( coVectorGet(value_vector, i) == NULL )
 			printf(" _");
@@ -1015,9 +1052,19 @@ int showAllCharacteristicDifferenceMapCB(cco o, long idx, const char *key, cco v
 
 void showAllCharacteristicDifferenceMap(cco all_characteristic_map, cco sw_list)
 {
+	printf("%-79s %-99s %s\n", "Function Path", "Characteristic", "Difference");
 	coMapForEach(all_characteristic_map, showAllCharacteristicDifferenceMapCB, (void *)sw_list);
 }
 
+void showFunctionList(cco sw_object)
+{
+	cco v = coVectorGet(sw_object, FUNCTION_VECTOR_POS);
+	long i;
+	for( i = 0; i < coVectorSize(v); i++ )
+	{
+		puts(getFullFunctionName(sw_object, coVectorGet(v, i)));
+	}
+}
 
 void help(void)
 {
@@ -1027,7 +1074,9 @@ void help(void)
   puts("-v            Verbose output");
   puts("-ascii        Output all ASCII Characteristics");
   puts("-addrlist     Output all characteristics and axis_pts sorted by memory address");  
+  puts("-fnlist       Output all function names");
   puts("-diff         A2L S19 difference analysis (requires multipe a2l/s19 pairs)");
+  
 }
 
 int parse_args(int argc, char **argv)
@@ -1052,6 +1101,11 @@ int parse_args(int argc, char **argv)
     else if ( strcmp(*argv, "-addrlist" ) == 0 )
     {
 	  is_characteristic_address_list = 1;
+      argv++;
+    }
+    else if ( strcmp(*argv, "-fnlist" ) == 0 )
+    {
+	  is_function_list = 1;
       argv++;
     }
     else if ( strcmp(*argv, "-diff" ) == 0 )
@@ -1141,6 +1195,8 @@ int main(int argc, char **argv)
 		showAddressList(sw_object);
 	  if ( is_ascii_characteristic_list )
 		showAllASCIICharacteristic(sw_object);
+	  if ( is_function_list )
+		showFunctionList(sw_object);
   }  
   
   if ( is_diff )
