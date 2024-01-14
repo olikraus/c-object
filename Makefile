@@ -15,7 +15,12 @@ debug: CFLAGS = -g -DCO_USE_ZLIB -Wall -I./co
 sanitize: CFLAGS = -g -DCO_USE_ZLIB -Wall -fsanitize=address -I./co
 release: CFLAGS = -O4 -DNDEBUG -DCO_USE_ZLIB -Wall -I./co
 
+ifeq ($(shell uname -s),Linux)
+LDFLAGS = -lm -lz -lpthread
+else
 LDFLAGS = -Wl,-Bstatic -lm -lz -lpthread
+endif
+
 COSRC = $(shell ls ./co/*.c)
 COOBJ = $(COSRC:.c=.o)
 
