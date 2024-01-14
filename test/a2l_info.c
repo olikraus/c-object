@@ -31,9 +31,12 @@
 #define AXIS_PTS_NAME_MAP_POS 5
 #define CHARACTERISTIC_VECTOR_POS 6
 #define AXIS_PTS_VECTOR_POS 7
-#define A2L_POS 8
-#define DATA_MAP_POS 9
-#define DATA_VECTOR_POS 10
+#define FUNCTION_VECTOR_POS 8
+#define PARENT_FUNCTION_MAP_POS 9	/* key: function name, value: FUNCTION vector of the parent, SUB_FUNCTION vs FUNCTION relationship */
+#define BELONGS_TO_FUNCTION_MAP_POS 10	/* DEF_CHARACTERISTIC relationship, maybe also LIST_FUNCTION relationship, key=CHARACTERISTIC or AXIS_PTS name, value: FUNCTION co vector */
+#define A2L_POS 11
+#define DATA_MAP_POS 12
+#define DATA_VECTOR_POS 13
 
 
 #define SW_PAIR_MAX 16
@@ -69,8 +72,11 @@ co createSWObject(void)
   coVectorAdd(o, coNewMap(CO_NONE));          // CHARACTERISTIC_NAME_MAP_POS: references to CHARACTERISTIC, key = name
   coVectorAdd(o, coNewMap(CO_NONE));          // AXIS_PTS_NAME_MAP_POS: references to AXIS_PTS, key = name
   coVectorAdd(o, coNewVector(CO_NONE));          // CHARACTERISTIC_VECTOR_POS: references to CHARACTERISTIC
-  coVectorAdd(o, coNewVector(CO_NONE));          // AXIS_PTS_VECTOR_POS: references to AXIS_PTS
-  if ( coVectorSize(o) != 8 )
+  coVectorAdd(o, coNewVector(CO_NONE));          // AXIS_PTS_VECTOR_POS: references to AXIS_PTS  
+  coVectorAdd(o, coNewVector(CO_NONE));          // FUNCTION_VECTOR_POS: references to FUNCTION
+  coVectorAdd(o, coNewMap(CO_NONE));          // PARENT_FUNCTION_MAP_POS: reference to parent FUNCTION vector, key = name of the (sub-) function, value = parent FUNCTION co vector
+  coVectorAdd(o, coNewMap(CO_NONE));          // BELONGS_TO_FUNCTION_MAP_POS: references from DEF_CHARACTERISTIC to FUNCTION co vector, key = name of the CHARACTERISTIC (or AXIS_PTS), value = parent FUNCTION co vector
+  if ( coVectorSize(o) != 11 )
     return NULL;
   return o;
 }
@@ -92,7 +98,19 @@ void showRecordLayout(cco o)
       sw_object[1]: Map with all COMPU_VTAB records
         
 */
-void build_index_tables(cco sw_object, cco a2l)
+struct build_index_struct
+{
+	const char *function_name;
+	cco function_object;
+};
+
+void build_index_init(struct build_index_struct *bis)
+{
+	bis->function_name = NULL;
+	bis->function_object = NULL;
+}
+
+void build_index_tables(cco sw_object, cco a2l, struct build_index_struct *bis)
 {
   long i, cnt;
   cco element;
@@ -109,19 +127,19 @@ void build_index_tables(cco sw_object, cco a2l)
         coStrGet(coVectorGet(a2l, 1)), 
         a2l);
     }
-    if ( strcmp( coStrGet(element), "COMPU_VTAB" ) == 0 )
+    else if ( strcmp( coStrGet(element), "COMPU_VTAB" ) == 0 )
     {
       coMapAdd((co)coVectorGet(sw_object, COMPU_VTAB_MAP_POS), 
         coStrGet(coVectorGet(a2l, 1)), 
         a2l);
     }
-    if ( strcmp( coStrGet(element), "RECORD_LAYOUT" ) == 0 )
+    else if ( strcmp( coStrGet(element), "RECORD_LAYOUT" ) == 0 )
     {
       coMapAdd((co)coVectorGet(sw_object, RECORD_LAYOUT_MAP_POS), 
         coStrGet(coVectorGet(a2l, 1)),
         a2l);
     }
-    if ( strcmp( coStrGet(element), "CHARACTERISTIC" ) == 0 )
+    else if ( strcmp( coStrGet(element), "CHARACTERISTIC" ) == 0 )
     {
 	  const char *characteristic_name = coStrGet(coVectorGet(a2l, 1));
 	  const char *characteristic_address = coStrGet(coVectorGet(a2l, 4));
@@ -131,7 +149,7 @@ void build_index_tables(cco sw_object, cco a2l)
 		
       coMapAdd((co)coVectorGet(sw_object, ADDRESS_MAP_POS), characteristic_address, a2l);
     }
-    if ( strcmp( coStrGet(element), "AXIS_PTS" ) == 0 )
+    else if ( strcmp( coStrGet(element), "AXIS_PTS" ) == 0 )
     {
 	  const char *axis_pts_name = coStrGet(coVectorGet(a2l, 1));
 	  const char *axis_pts_address = coStrGet(coVectorGet(a2l, 3));
@@ -141,13 +159,55 @@ void build_index_tables(cco sw_object, cco a2l)
 		
       coMapAdd((co)coVectorGet(sw_object, ADDRESS_MAP_POS), axis_pts_address, a2l);
     }
+    else if ( strcmp( coStrGet(element), "FUNCTION" ) == 0 )
+	{
+		bis->function_name = coStrGet(element);	// we are inside a function, remember the function name
+		bis->function_object = a2l;
+		coVectorAdd((co)coVectorGet(sw_object, FUNCTION_VECTOR_POS), a2l);
+	}
+    else if ( strcmp( coStrGet(element), "SUB_FUNCTION" ) == 0 )
+	{
+	  if ( bis->function_object != NULL )
+	  {
+		  for( i = 1; i < cnt; i++ )
+		  {
+			element = coVectorGet(a2l, i);
+			if ( coIsStr(element) )
+			{
+				// the sub function might already exist in the map, but this shouldn't happen because a function should have only one parent
+				coMapAdd((co)coVectorGet(sw_object, PARENT_FUNCTION_MAP_POS), coStrGet(element), bis->function_object);
+			}
+		  }
+		  return; 	// no need to continue to the loop below, because there are no further sub elements
+	  }
+	}	
+    else if ( strcmp( coStrGet(element), "DEF_CHARACTERISTIC" ) == 0 )
+	{
+	  if ( bis->function_object != NULL )
+	  {
+		  for( i = 1; i < cnt; i++ )
+		  {
+			element = coVectorGet(a2l, i);
+			if ( coIsStr(element) )
+			{
+				// the DEF_CHARACTERISTIC might already exist in the map, but this shouldn't happen because there should be only one function possible as per A2L
+				coMapAdd((co)coVectorGet(sw_object, BELONGS_TO_FUNCTION_MAP_POS), coStrGet(element), bis->function_object);
+			}
+		  }
+		  return; 	// no need to continue to the loop below, because there are no further sub elements
+	  }
+	}
+	
   }
+  
+  /* generic loop over the element */
+  
   for( i = 1; i < cnt; i++ )
   {
     element = coVectorGet(a2l, i);
     if ( coIsVector(element) )
     {
-      build_index_tables(sw_object, element);
+      build_index_tables(sw_object, element, bis);
     }
   }  
 }
@@ -684,6 +744,7 @@ co getSWObject(const char *a2l, const char *s19)
   long long int t0, t1, t2;
   co sw_object = createSWObject();
   co s19_object = NULL;  // s19 object, it will be added to sw_object later
+  struct build_index_struct bis;	// local data for tbe build index procedure (to make it MT safe)
   
 #ifdef USE_PTHREAD
   pthread_t s19_thread;
@@ -746,7 +807,8 @@ co getSWObject(const char *a2l, const char *s19)
   /* build the remaining index tables */
   if ( is_verbose ) printf("Building A2L index tables '%s'\n", a2l);
   t1 = getEpochMilliseconds();
-  build_index_tables(sw_object, coVectorGet(sw_object, A2L_POS));
+  build_index_init(&bis);
+  build_index_tables(sw_object, coVectorGet(sw_object, A2L_POS), &bis);
   t2 = getEpochMilliseconds();  
   if ( is_verbose ) printf("Building A2L index tables '%s' done, milliseconds=%lld\n", a2l, t2-t1);
 
@@ -805,6 +867,21 @@ co getSWList(void)
 	}
 	
 	return sw_list;
+}
+
+const char *getFullFunctionName(cco sw_object, cco function)
+{
+	const char *name;
+	cco m =	coVectorGet(sw_object, PARENT_FUNCTION_MAP_POS);
+	cco parent_function;
+
+	assert( coIsVector(function) );
+	for(;;)
+	{
+		name = coStrGet(coVectorGet(function, 1));
+		parent_function = coMapGet(m, name);
+		// TODO
+	}
 }
 
 /*
@@ -1055,6 +1132,10 @@ int main(int argc, char **argv)
 		  printf("  AXIS_PTS Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, AXIS_PTS_VECTOR_POS)));
 		  printf("  AXIS_PTS Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, AXIS_PTS_NAME_MAP_POS)));
 		  printf("  Address Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, ADDRESS_MAP_POS)));
+		  printf("  Function Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, FUNCTION_VECTOR_POS)));
+		  printf("  Parent Function Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, PARENT_FUNCTION_MAP_POS)));
+		  printf("  Belongs to Function Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, BELONGS_TO_FUNCTION_MAP_POS)));
+		  
 	  }
 	  if ( is_characteristic_address_list )
 		showAddressList(sw_object);
