@@ -308,7 +308,7 @@ long getCharacteristicMeasurementAxisPTSDataMultiplicator(cco cma_rec)
 			if ( strcmp( coStrGet(o), "MATRIX_DIM" ) == 0 )
 			{
 				i++;
-				while( matrix_dim_idx < 10 )
+				while( matrix_dim_idx < 10 && i < cnt)
 				{
 					o = coVectorGet(cma_rec, i);
 					if ( !coIsStr(o) )
