@@ -52,6 +52,7 @@ int is_ascii_characteristic_list = 0;
 int is_characteristic_address_list = 0;
 int is_function_list = 0;
 int is_diff = 0;
+int is_jsondiff = 0;
 
 uint64_t getEpochMilliseconds(void)
 {
@@ -1066,6 +1067,42 @@ void showFunctionList(cco sw_object)
 	}
 }
 
+void outJSON(const char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+}
+
+int showJSONLabelDifferenceCB(cco o, long idx, const char *key, cco value_vector, void *data)
+{
+	//cco sw_list = (cco)data;
+	
+	if ( idx > 0 )
+		outJSON(",\n");
+	outJSON("\"%s\"", key);
+	return 1;
+}
+
+void showJSONDifference(cco all_characteristic_map, cco sw_list)
+{
+	int i;
+	outJSON("{\n");
+	outJSON("\"software\":[\n");
+	for( i = 0; i < sw_pair_cnt; i++ )
+	{
+		outJSON("{\"a2l\":\"%s\", \"data\":\"%s\"}%s\n", 
+				a2l_file_name_list[i], s19_file_name_list[i], i+1<sw_pair_cnt?",":"");
+	}
+	outJSON("],\n");
+	outJSON("\"labels\":[\n");
+	coMapForEach(all_characteristic_map, showJSONLabelDifferenceCB, (void *)sw_list);
+	
+	outJSON("]\n");
+	outJSON("}\n");
+}
+
 void help(void)
 {
   puts("-h            This help text");
@@ -1076,6 +1113,7 @@ void help(void)
   puts("-addrlist     Output all characteristics and axis_pts sorted by memory address");  
   puts("-fnlist       Output all function names");
   puts("-diff         A2L S19 difference analysis (requires multipe a2l/s19 pairs)");
+  puts("-jsondiff     Similar to -diff, but use JSON format (requires multipe a2l/s19 pairs)");
   
 }
 
@@ -1111,6 +1149,11 @@ int parse_args(int argc, char **argv)
     else if ( strcmp(*argv, "-diff" ) == 0 )
     {
 	  is_diff = 1;
+      argv++;
+    }
+    else if ( strcmp(*argv, "-jsondiff" ) == 0 )
+    {
+	  is_jsondiff = 1;
       argv++;
     }
 	
@@ -1199,10 +1242,14 @@ int main(int argc, char **argv)
 		showFunctionList(sw_object);
   }  
   
-  if ( is_diff )
+  if ( is_diff || is_jsondiff )
   {
 	  all_characteristic_map = getAllCharacteristicDifferenceMap(sw_list);	
-	  showAllCharacteristicDifferenceMap(all_characteristic_map, sw_list);
+	  if ( is_diff )
+		showAllCharacteristicDifferenceMap(all_characteristic_map, sw_list);
+	  if ( is_jsondiff )
+		showJSONDifference(all_characteristic_map, sw_list);
+
 	  coDelete(all_characteristic_map); // delete this before sw_list (ok, wouldn't make a difference, but still)
   }
 
