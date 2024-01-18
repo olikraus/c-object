@@ -961,6 +961,102 @@ co getAllCharacteristicDifferenceMap(cco sw_list)
   return all_characteristic_map;
 }
 
+/*
+	return values:
+		0	all characteristics in the list are equal
+		1	characteristic contains unsupported record
+		2	characteristic differ in record size
+		3 	characteristic differ in data values
+
+		128 	some characteristic are not present
+		128+1	characteristic contains unsupported record + some characteristic are not present
+		128+2	characteristic differ in record size + some characteristic are not present
+		128+3 	characteristic differ in data values + some characteristic are not present
+		
+*/
+int getCharacteristicDifference(cco sw_list, cco characteristic_list)
+{
+	long i, j;
+	int nullCnt = 0; 	// number of NULL records in the value_vector 
+	cco first;
+	cco second;
+	int result = 0;
+	const char *function_path_name = NULL;
+	const char *key;
+	static char first_funtion_path_name[FUNCTION_PATH_MAX];
+	static char second_funtion_path_name[FUNCTION_PATH_MAX];
+	char *mem_info;
+
+	for( i = 0; i < coVectorSize(characteristic_list); i++ )	// loop over all characteristic records for this label
+	{
+		first = coVectorGet(characteristic_list, i);			// "first" will be a link to the characteristic record
+		if ( first == NULL )
+		{
+			nullCnt++;
+		}
+		else
+		{
+			// each element in sw_list corresponds to an element in characteristic_list.
+			// coVectorGet(characteristic_list, i) is a characteristic which belongs to software in coVectorGet(sw_list, i);
+			cco first_sw_object = coVectorGet(sw_list, i);	
+			key = coStrGet(coVectorGet(first_sw_object, 1));
+			assert(first_sw_object != NULL);
+			if ( function_path_name == NULL )
+			{
+				cco m = coVectorGet(first_sw_object, BELONGS_TO_FUNCTION_MAP_POS);
+				cco function = coMapGet(m, key); // 
+				if ( function != NULL )
+				{
+					function_path_name = getFullFunctionName(first_sw_object, function);
+					strncpy(first_funtion_path_name, function_path_name, FUNCTION_PATH_MAX);
+				}
+			}
+			
+			for( j = i + 1; j < coVectorSize(characteristic_list); j++ )
+			{
+				second = coVectorGet(characteristic_list, j);
+				if ( second != NULL )
+				{
+					// first and second are not NULL
+					cco second_sw_object = coVectorGet(sw_list, j);
+					assert(second_sw_object != NULL);
+					long long int first_address;
+					long long int second_address;
+					long first_size;
+					long second_size;
+					int first_is_supported = getCharacteristicAxisPtsMemoryArea(first_sw_object, first, &first_address, &first_size);
+					int second_is_supported = getCharacteristicAxisPtsMemoryArea(second_sw_object, second, &second_address, &second_size);
+					
+					if ( first_is_supported == 0 || second_is_supported == 0 )
+					{
+						mem_info = "record layout not supported";
+						break;
+					}
+					else if ( first_size != second_size )
+					{
+						mem_info = "record size different";
+						break;
+					}
+					else
+					{
+						unsigned char *first_mem = getMemoryArea(first_sw_object, first_address, first_size);
+						unsigned char *second_mem = getMemoryArea(second_sw_object, second_address, second_size);
+						
+						if ( first_mem != NULL && second_mem != NULL )
+						{
+							if ( memcmp(first_mem, second_mem, first_size) != 0 )
+							{
+								mem_info = "data difference";
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+}
+
 int showAllCharacteristicDifferenceMapCB(cco o, long idx, const char *key, cco value_vector, void *data)
 {
 	cco sw_list = (cco)data;
@@ -972,16 +1068,18 @@ int showAllCharacteristicDifferenceMapCB(cco o, long idx, const char *key, cco v
 	const char *function_path_name = NULL;
 	
 	assert(sw_list != NULL);
-	for( i = 0; i < coVectorSize(value_vector); i++ )
+	for( i = 0; i < coVectorSize(value_vector); i++ )	// loop over all characteristic records for this label
 	{
-		first = coVectorGet(value_vector, i);
+		first = coVectorGet(value_vector, i);			// "first" will be a link to the characteristic record
 		if ( first == NULL )
 		{
 			nullCnt++;
 		}
 		else
 		{
-			cco first_sw_object = coVectorGet(sw_list, i);
+			// each element in sw_list corresponds to an element in value_vector.
+			// coVectorGet(value_vector, i) is a characteristic which belongs to software in coVectorGet(sw_list, i);
+			cco first_sw_object = coVectorGet(sw_list, i);	
 			assert(first_sw_object != NULL);
 			if ( function_path_name == NULL )
 			{
@@ -1081,7 +1179,10 @@ int showJSONLabelDifferenceCB(cco o, long idx, const char *key, cco value_vector
 	
 	if ( idx > 0 )
 		outJSON(",\n");
+	outJSON("{");
 	outJSON("\"%s\"", key);
+	outJSON("}");
+	
 	return 1;
 }
 
