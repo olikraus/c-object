@@ -1757,7 +1757,11 @@ static int coMapForEachJSONTraverseCB(cco o, long idx, const char *key, cco valu
 
 static void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp)
 {
-  if ( coIsStr(o) )
+  if ( o == NULL )
+  {
+    fprintf(fp, "null");	 
+  }
+  else if ( coIsStr(o) )
   {
     fputc('\"', fp);
     writeString(coStrGet(o), isUTF8, fp);
