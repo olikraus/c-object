@@ -962,6 +962,8 @@ co getAllCharacteristicDifferenceMap(cco sw_list)
 }
 
 /*
+	Calculate the difference between multiple characteristic records across different sw releases
+
 	return values:
 		0	all characteristics in the list are equal
 		1	characteristic contains unsupported record in any release
@@ -970,14 +972,18 @@ co getAllCharacteristicDifferenceMap(cco sw_list)
 		8 	some characteristic are not present in the release
 		16	belongs to different function across releases
 	
+	sw_list:				list of sw releases, size of sw_list match the size of the characteristic_list
+	characteristic_name:	The name of the characteristic, which has to be checked. The name should be equal to all the characteristic names of 
+			the characteristics in characteristic_list
+	characteristic_list: 	A list of characteristic records. The size must be equal to the number of releases in sw_list.
+			The name of each of the characteristic records must be equal to characteristic_name
 	
 */
 int getCharacteristicDifference(cco sw_list, const char *characteristic_name, cco characteristic_list)
 {
 	long i, j;
-	int nullCnt = 0; 	// number of NULL records in the value_vector 
-	cco first;
-	cco second;
+	cco first;		// first characteristic record
+	cco second;		// second characteristic record
 	int result = 0;
 	//cco first_function = NULL;
 	//cco second_function = NULL;
@@ -987,7 +993,7 @@ int getCharacteristicDifference(cco sw_list, const char *characteristic_name, cc
 		first = coVectorGet(characteristic_list, i);			// "first" will be a link to the characteristic record
 		if ( first == NULL )
 		{
-			nullCnt++;
+			result |= 8;
 		}
 		else
 		{
@@ -997,58 +1003,60 @@ int getCharacteristicDifference(cco sw_list, const char *characteristic_name, cc
 			//key = coStrGet(coVectorGet(first_sw_object, 1));
 			//assert(first_sw_object != NULL);  // check whether the release is really present... this assert doesn't make much sense
 			// get the functon record for that characteristic 
+			long long int first_address;
+			long first_size;
+			int first_is_supported = getCharacteristicAxisPtsMemoryArea(first_sw_object, first, &first_address, &first_size);
 			cco first_function = coMapGet(coVectorGet(first_sw_object, BELONGS_TO_FUNCTION_MAP_POS), characteristic_name); 
-			
-			
-			for( j = i + 1; j < coVectorSize(characteristic_list); j++ )
+
+			if ( first_is_supported == 0 )
 			{
-				second = coVectorGet(characteristic_list, j);
-				if ( second != NULL )
+				result |= 1;	// record layout not supported
+			}
+			else
+			{
+				for( j = i + 1; j < coVectorSize(characteristic_list); j++ )
 				{
-					// first and second are not NULL
-					cco second_sw_object = coVectorGet(sw_list, j);
-					//assert(second_sw_object != NULL);
-					cco second_function = coMapGet(coVectorGet(second_sw_object, BELONGS_TO_FUNCTION_MAP_POS), characteristic_name); 
-					
-					long long int first_address;
-					long long int second_address;
-					long first_size;
-					long second_size;
-					int first_is_supported = getCharacteristicAxisPtsMemoryArea(first_sw_object, first, &first_address, &first_size);
-					int second_is_supported = getCharacteristicAxisPtsMemoryArea(second_sw_object, second, &second_address, &second_size);
-					
-					if ( strcmp(coStrGet(coVectorGet(first_function,1)), coStrGet(coVectorGet(second_function,1))) != 0 )
+					second = coVectorGet(characteristic_list, j);
+					if ( second != NULL )
 					{
-						result |= 16;	// record layout not supported
-					}
-					
-					if ( first_is_supported == 0 || second_is_supported == 0 )
-					{
-						result |= 1;	// record layout not supported
-						break;
-					}
-					else if ( first_size != second_size )
-					{
-						result |= 2; 	// record size different
-						break;
-					}
-					else
-					{
-						unsigned char *first_mem = getMemoryArea(first_sw_object, first_address, first_size);
-						unsigned char *second_mem = getMemoryArea(second_sw_object, second_address, second_size);
+						// first and second are not NULL
+						cco second_sw_object = coVectorGet(sw_list, j);
+						//assert(second_sw_object != NULL);
+						cco second_function = coMapGet(coVectorGet(second_sw_object, BELONGS_TO_FUNCTION_MAP_POS), characteristic_name); 
 						
-						if ( first_mem != NULL && second_mem != NULL )
+						long long int second_address;
+						long second_size;
+						int second_is_supported = getCharacteristicAxisPtsMemoryArea(second_sw_object, second, &second_address, &second_size);
+						
+						if ( strcmp(coStrGet(coVectorGet(first_function,1)), coStrGet(coVectorGet(second_function,1))) != 0 )
 						{
-							if ( memcmp(first_mem, second_mem, first_size) != 0 )
+							result |= 16;	// record layout not supported
+						}
+						
+						if ( second_is_supported == 0 )
+						{
+							result |= 1;	// record layout not supported
+						}
+						else if ( first_size != second_size )
+						{
+							result |= 2; 	// record size different
+						}
+						else
+						{
+							unsigned char *first_mem = getMemoryArea(first_sw_object, first_address, first_size);
+							unsigned char *second_mem = getMemoryArea(second_sw_object, second_address, second_size);
+							
+							if ( first_mem != NULL && second_mem != NULL )
 							{
-								result |= 4; // data difference
+								if ( memcmp(first_mem, second_mem, first_size) != 0 )
+								{
+									result |= 4; // data difference
+								}
 							}
 						}
-					}
-					
-					
-				}
-			}
+					} // if ( second != NULL )
+				} // for
+			} // if ( first_is_supported == 0 )
 		}
 	}
 	return result;
@@ -1142,7 +1150,17 @@ int showAllCharacteristicDifferenceMapCB(cco o, long idx, const char *key, cco v
 			printf(" _");
 		else
 			printf(" x");
-	printf(" %s\n", mem_info==NULL?"":mem_info);
+	printf(" %s", mem_info==NULL?"":mem_info);
+	
+	{
+		int d = getCharacteristicDifference(sw_list, key, value_vector);
+		if ( d & 1 ) printf(" 'unsupported'");
+		if ( d & 2 ) printf(" 'size difference'");
+		if ( d & 4 ) printf(" 'value difference'");
+		if ( d & 8 ) printf(" 'added/removed'");
+		if ( d & 16 ) printf(" 'function difference'");
+	}
+	printf("\n");
 	return 1;
 }
 
@@ -1172,17 +1190,53 @@ void outJSON(const char *fmt, ...)
 
 int showJSONLabelDifferenceCB(cco o, long idx, const char *key, cco value_vector, void *data)
 {
-	//cco sw_list = (cco)data;
+	static char presence[SW_PAIR_MAX+1];
+	static int is_first = 1;
+	cco sw_list = (cco)data;
+	long i;
+	int d = getCharacteristicDifference(sw_list, key, value_vector);
 	
-	if ( idx > 0 )
-		outJSON(",\n");
-	outJSON("{");
-	outJSON("\"%s\"", key);
-	outJSON("}");
-	
+	if ( d != 0 )
+	{
+		if ( is_first != 0 )
+		{
+			is_first = 0;
+		}
+		else
+		{
+			outJSON(",\n");
+		}
+		
+		/*
+		if ( d & 1 ) printf(" 'unsupported'");
+		if ( d & 2 ) printf(" 'size difference'");
+		if ( d & 4 ) printf(" 'value difference'");
+		if ( d & 8 ) printf(" 'added/removed'");
+		if ( d & 16 ) printf(" 'function difference'");
+		*/
+
+
+		for( i = 0; i < coVectorSize(value_vector); i++ )
+			if ( coVectorGet(value_vector, i) == NULL )
+				presence[i] = '_';
+			else
+				presence[i] = 'x';
+		presence[i] = '\0';
+		
+		outJSON("{");
+		outJSON("\"n\":\"%s\", ", key);
+		outJSON("\"d\":%d,", d);
+		outJSON("\"p\":\"%s\"", presence);
+		outJSON("}");
+	}
 	return 1;
 }
 
+/*
+	all_characteristic_map	a map constructed with getAllCharacteristicDifferenceMap(sw_list).
+					key: characteristic name, value: vector with either null or a reference to the characteristic record. Size of this vector must be the size of sw_list
+	sw_list	list of multiple sw objects
+*/
 void showJSONDifference(cco all_characteristic_map, cco sw_list)
 {
 	int i;
