@@ -29,15 +29,16 @@
 #define ADDRESS_MAP_POS 3
 #define CHARACTERISTIC_NAME_MAP_POS 4
 #define AXIS_PTS_NAME_MAP_POS 5
-#define CHARACTERISTIC_VECTOR_POS 6
-#define AXIS_PTS_VECTOR_POS 7
-#define FUNCTION_VECTOR_POS 8
-#define PARENT_FUNCTION_MAP_POS 9	/* key: function name, value: FUNCTION vector of the parent, SUB_FUNCTION vs FUNCTION relationship */
-#define BELONGS_TO_FUNCTION_MAP_POS 10	/* DEF_CHARACTERISTIC relationship, maybe also LIST_FUNCTION relationship, key=CHARACTERISTIC or AXIS_PTS name, value: FUNCTION co vector */
-#define A2L_POS 11
-#define DATA_MAP_POS 12
-#define DATA_VECTOR_POS 13
-
+#define FUNCTION_NAME_MAP_POS 6		/* key=FUNCTION name, value=FUNCTION record */
+#define CHARACTERISTIC_VECTOR_POS 7
+#define AXIS_PTS_VECTOR_POS 8
+#define FUNCTION_VECTOR_POS 9		/* references to FUNCTION */
+#define PARENT_FUNCTION_MAP_POS 10	/* key: function name, value: FUNCTION vector of the parent, SUB_FUNCTION vs FUNCTION relationship */
+#define BELONGS_TO_FUNCTION_MAP_POS 11	/* DEF_CHARACTERISTIC relationship, maybe also LIST_FUNCTION relationship, key=CHARACTERISTIC or AXIS_PTS name, value: FUNCTION co vector */
+#define FUNCTION_DEF_CHARACTERISTIC_MAP_POS 12  /* opposite of BELONGS_TO_FUNCTION_MAP_POS: key=FUNCTION name, value: map with key=CHARACTERISTIC or AXIS_PTS name, value reference to CHARACTERISTIC or AXIS_PTS */
+#define A2L_POS 13
+#define DATA_MAP_POS 14
+#define DATA_VECTOR_POS 15
 
 #define SW_PAIR_MAX 16
 
@@ -52,7 +53,7 @@ int is_ascii_characteristic_list = 0;
 int is_characteristic_address_list = 0;
 int is_function_list = 0;
 int is_diff = 0;
-int is_jsondiff = 0;
+int is_characteristicjsondiff = 0;
 
 uint64_t getEpochMilliseconds(void)
 {
@@ -73,12 +74,14 @@ co createSWObject(void)
   coVectorAdd(o, coNewMap(CO_NONE));          // ADDRESS_MAP_POS: references to CHARACTERISTIC & AXIS_PTS, key = address
   coVectorAdd(o, coNewMap(CO_NONE));          // CHARACTERISTIC_NAME_MAP_POS: references to CHARACTERISTIC, key = name
   coVectorAdd(o, coNewMap(CO_NONE));          // AXIS_PTS_NAME_MAP_POS: references to AXIS_PTS, key = name
+  coVectorAdd(o, coNewMap(CO_NONE));          // FUNCTION_NAME_MAP_POS: references to FUNCTION, key = name
   coVectorAdd(o, coNewVector(CO_NONE));          // CHARACTERISTIC_VECTOR_POS: references to CHARACTERISTIC
   coVectorAdd(o, coNewVector(CO_NONE));          // AXIS_PTS_VECTOR_POS: references to AXIS_PTS  
   coVectorAdd(o, coNewVector(CO_NONE));          // FUNCTION_VECTOR_POS: references to FUNCTION
   coVectorAdd(o, coNewMap(CO_NONE));          // PARENT_FUNCTION_MAP_POS: reference to parent FUNCTION vector, key = name of the (sub-) function, value = parent FUNCTION co vector
-  coVectorAdd(o, coNewMap(CO_NONE));          // BELONGS_TO_FUNCTION_MAP_POS: references from DEF_CHARACTERISTIC to FUNCTION co vector, key = name of the CHARACTERISTIC (or AXIS_PTS), value = parent FUNCTION co vector
-  if ( coVectorSize(o) != 11 )
+  coVectorAdd(o, coNewMap(CO_NONE));  // BELONGS_TO_FUNCTION_MAP_POS: references from DEF_CHARACTERISTIC to FUNCTION co vector, key = name of the CHARACTERISTIC (or AXIS_PTS), value = parent FUNCTION co vector
+  coVectorAdd(o, coNewMap(CO_FREE_VALS));  // FUNCTION_DEF_CHARACTERISTIC_MAP_POS:
+  if ( coVectorSize(o) != 13 )
     return NULL;
   return o;
 }
@@ -89,11 +92,11 @@ void showRecordLayout(cco o)
 }
 
 /*
-  bild index tables for varios record types of the a2l
+  build index tables for varios record types of the a2l
   
-  COMPU_METHOD
-  COMPU_VTAB
-
+  idea is to loop over the a2l tree and collect/store all required information.
+  
+  
   Arg:
     sw_object: Vector with the desired index tables
       sw_object[0]: Map with all COMPU_METHOD records
@@ -106,13 +109,13 @@ struct build_index_struct
 	cco function_object;
 };
 
-void build_index_init(struct build_index_struct *bis)
+void buildIndexInit(struct build_index_struct *bis)
 {
 	bis->function_name = NULL;
 	bis->function_object = NULL;
 }
 
-void build_index_tables(cco sw_object, cco a2l, struct build_index_struct *bis)
+void buildIndexTables(cco sw_object, cco a2l, struct build_index_struct *bis)
 {
   long i, cnt;
   cco element;
@@ -163,9 +166,14 @@ void build_index_tables(cco sw_object, cco a2l, struct build_index_struct *bis)
     }
     else if ( strcmp( coStrGet(element), "FUNCTION" ) == 0 )
 	{
-		bis->function_name = coStrGet(element);	// we are inside a function, remember the function name
+		bis->function_name = coStrGet(coVectorGet(a2l, 1));	// we are inside a function, remember the function name
 		bis->function_object = a2l;
 		coVectorAdd((co)coVectorGet(sw_object, FUNCTION_VECTOR_POS), a2l);
+
+		coMapAdd((co)coVectorGet(sw_object, FUNCTION_NAME_MAP_POS), bis->function_name, a2l);
+		
+		
+		
 	}
     else if ( strcmp( coStrGet(element), "SUB_FUNCTION" ) == 0 )
 	{
@@ -209,10 +217,86 @@ void build_index_tables(cco sw_object, cco a2l, struct build_index_struct *bis)
     element = coVectorGet(a2l, i);
     if ( coIsVector(element) )
     {
-      build_index_tables(sw_object, element, bis);
+      buildIndexTables(sw_object, element, bis);
     }
   }  
 }
+
+static int buildFunctionDefCharacteristicMapCB(cco o, long idx, const char *key, cco function, void *data)
+{
+	/* key is the characteristic or axis_pts name */
+	/* get the sw release itself */
+	cco sw_object = (cco)data;
+	
+	/* get the inner map of the FUNCTION_DEF_CHARACTERISTIC map. This inner map will be expanded */
+	const char *function_name = coStrGet(coVectorGet(function, 1));
+	cco function_map = coVectorGet(sw_object, FUNCTION_DEF_CHARACTERISTIC_MAP_POS);
+	co map = (co)coMapGet(function_map, function_name);	// should not be NULL
+
+	/* for the search below, get the NAME to record maps */
+	cco characteristic_map = coVectorGet(sw_object, CHARACTERISTIC_NAME_MAP_POS);
+	cco axis_pts_map = coVectorGet(sw_object, AXIS_PTS_NAME_MAP_POS);
+	
+	/* try to see, whether the key is a CHARACTERISTIC */
+	cco characteristic_rec = coMapGet(characteristic_map, key);	// might be NULL if key is not a CHARACTERISTIC
+	
+	assert(map != NULL);	// this should not be NULL, because it was added before in step 1
+
+	if ( characteristic_rec != NULL )	// if we found a CHARACTERISTIC, then add the record to the DEF_CHARACTERISTIC inner map of FUNCTION_DEF_CHARACTERISTIC_MAP_POS
+	{
+		coMapAdd(map, key, characteristic_rec);
+	}
+	else	// otherwise it is an AXIS_PTS
+	{
+		cco axis_pts_rec = coMapGet(axis_pts_map, key);	// might be NULL
+		if ( axis_pts_rec != NULL )
+		{
+			coMapAdd(map, key, axis_pts_rec);
+		}
+		else
+		{
+			assert(0);		// this is an error, the key should be either a CHARACTERISTIC or a AXIS_PTS
+		}
+	}
+	return 1;		// all good, continue
+}
+
+/* 
+	calculate FUNCTION_DEF_CHARACTERISTIC_MAP_POS 
+	This must be called after call to buildIndexTables()
+	
+*/
+void buildFunctionDefCharacteristicMap(cco sw_object)
+{
+	long i, cnt;
+	co function_map;		// this will be filled with data
+	co function_vector;
+	cco function_rec;
+	
+	function_map = (co)coVectorGet(sw_object, FUNCTION_DEF_CHARACTERISTIC_MAP_POS);
+	
+	// Step 1: loop over FUNCTION_VECTOR_POS and fill FUNCTION_DEF_CHARACTERISTIC_MAP_POS with all functions (key=function name, value=map to the CHARACTERISTIC/AXIS_PTS)
+	
+	function_vector = (co)coVectorGet(sw_object, FUNCTION_VECTOR_POS);
+	cnt = coVectorSize(function_vector);
+	for( i = 0; i < cnt; i++ )
+	{
+		function_rec = coVectorGet(function_vector, i);
+		// function_map key=funciton name, value=map with ...
+		//			... key=CHARACTERISTIC or AXIS_PTS name, value reference to CHARACTERISTIC or AXIS_PTS
+		coMapAdd(function_map, coStrGet(coVectorGet(function_rec, 1)), coNewMap(CO_NONE));
+	}
+	
+	
+	// Step 2: loop over BELONGS_TO_FUNCTION_MAP_POS: 
+	//		Step 2.1 take the function name from the value, search in the above map for the function
+	//		Step 2.2 search for the CHARACTERISTIC / AXIS_PTS record in CHARACTERISTIC_NAME_MAP_POS / AXIS_PTS_NAME_MAP_POS
+	//		Step 2.3 append the CHARACTERISTIC / AXIS_PTS record to FUNCTION_VECTOR_POS key=CHARACTERISTIC / AXIS_PTS, value = CHARACTERISTIC / AXIS_PTS record
+	
+	coMapForEach(coVectorGet(sw_object, BELONGS_TO_FUNCTION_MAP_POS), buildFunctionDefCharacteristicMapCB, (void *)sw_object);
+}
+
+
 
 #ifdef NOT_USED
 void dfs_characteristic(cco a2l)
@@ -809,8 +893,9 @@ co getSWObject(const char *a2l, const char *s19)
   /* build the remaining index tables */
   if ( is_verbose ) printf("Building A2L index tables '%s'\n", a2l);
   t1 = getEpochMilliseconds();
-  build_index_init(&bis);
-  build_index_tables(sw_object, coVectorGet(sw_object, A2L_POS), &bis);
+  buildIndexInit(&bis);
+  buildIndexTables(sw_object, coVectorGet(sw_object, A2L_POS), &bis);
+  buildFunctionDefCharacteristicMap(sw_object); 	// build FUNCTION_DEF_CHARACTERISTIC_MAP_POS, based on the results from buildIndexTables()
   t2 = getEpochMilliseconds();  
   if ( is_verbose ) printf("Building A2L index tables '%s' done, milliseconds=%lld\n", a2l, t2-t1);
 
@@ -931,10 +1016,10 @@ co getAllCharacteristicDifferenceMap(cco sw_list)
 
   if ( all_characteristic_map == NULL )
 	  return NULL;
-  for( i = 0; i < coVectorSize(sw_list); i++ )
+  for( i = 0; i < coVectorSize(sw_list); i++ )	// loop over all sw release, which are provided in "sw_list"
   {
-	  sw_object = coVectorGet(sw_list, i);
-	  characteristic_vector = coVectorGet(sw_object, CHARACTERISTIC_VECTOR_POS);
+	  sw_object = coVectorGet(sw_list, i);		// get the current sw release for the outer loop body
+	  characteristic_vector = coVectorGet(sw_object, CHARACTERISTIC_VECTOR_POS);	// get the vector with all characteristic values for the current sw release
 	  for( j = 0; j < coVectorSize(characteristic_vector); j++ )
 	  {
 		  characteristic_rec = coVectorGet(characteristic_vector, j);
@@ -959,6 +1044,91 @@ co getAllCharacteristicDifferenceMap(cco sw_list)
   if ( is_verbose )
 	  printf("Build CHARACTERISTIC difference, milliseconds=%lld\n", t1-t0);
   return all_characteristic_map;
+}
+
+co getFunctionCharacteristicDifferenceMap(cco sw_list, const char *function)
+{
+	return NULL;
+}
+
+static int getAllFunctionDifferenceMapCBCB(cco o, long idx, const char *key, cco characteristic_rec, void *data)
+{
+	/* characteristic_rec is ignored */
+	co all_def_characteristic_map = (co)(data);
+	coMapAdd(all_def_characteristic_map, key, NULL);	
+	return 1;
+}
+
+static int getAllFunctionDifferenceMapCB(cco o, long idx, const char *key, cco all_def_characteristic_map, void *data)
+{
+	cco sw_object = (cco)data;
+	cco fn_def_char_map = coVectorGet(sw_object, FUNCTION_DEF_CHARACTERISTIC_MAP_POS);
+	cco sw_obj_def_characteristic_map = coMapGet(fn_def_char_map, key);	// does the key (=function name) exist in the sw object specific function list?
+	if ( sw_obj_def_characteristic_map != NULL ) // yes, the key (=function name) exists
+	{
+		// merge all keys from that map into the all_def_characteristic_map map
+		coMapForEach(sw_obj_def_characteristic_map, getAllFunctionDifferenceMapCBCB, (void *)all_def_characteristic_map); // returns 0 as soon as the callback function returns 0
+	}
+	return 1;
+}
+
+/*
+	returns a map which has the same structure as FUNCTION_DEF_CHARACTERISTIC_MAP_POS, but is considers all functions from all sw releases in the sw list
+	
+	returns a map of a map
+		outer map: key = function name, value = inner map
+		inner map: key = characteristic name / axis pts name, value = NULL
+*/
+co getAllFunctionDifferenceMap(cco sw_list)
+{
+	long i, sw_list_cnt;
+	long j, function_cnt;
+	cco sw_object;
+	
+	cco function_vector;
+	cco function_rec;
+	const char *function_name;
+	co all_function_def_characteristic_map = coNewMap(CO_FREE_VALS); 	// key is neither strdup'd nor free'd, because it is taken from the FUNCTION record
+	
+	// step 1: build a map with all function names from all releases in sw_list
+	
+	sw_list_cnt = coVectorSize(sw_list);
+	for( i = 0; i < sw_list_cnt; i++ )	// loop over all sw release, which are provided in "sw_list"
+	{
+		sw_object = coVectorGet(sw_list, i);		// get the current sw release for the outer loop body
+
+
+		// Step 1: loop over FUNCTION_VECTOR_POS and fill all_function_def_characteristic_map with all functions (key=function name, value=map to the CHARACTERISTIC/AXIS_PTS)
+		
+		function_vector = coVectorGet(sw_object, FUNCTION_VECTOR_POS);
+		function_cnt = coVectorSize(function_vector);
+		for( j = 0; j < function_cnt; j++ )
+		{
+			function_rec = coVectorGet(function_vector, j);
+			// function_map key=funciton name, value=map with ...
+			//			... key=CHARACTERISTIC or AXIS_PTS name, value reference to CHARACTERISTIC or AXIS_PTS
+			function_name = coStrGet(coVectorGet(function_rec, 1));
+			if ( coMapGet(all_function_def_characteristic_map, function_name) == NULL )
+			{
+				coMapAdd(all_function_def_characteristic_map, function_name, coNewMap(CO_NONE));
+			}
+		}
+	}
+	
+	// step 2: fill the key of inner map with all the names from the FUNCTION_DEF_CHARACTERISTIC_MAP_POS inner map. 
+
+	for( i = 0; i < sw_list_cnt; i++ )	// loop over all sw release, which are provided in "sw_list"
+	{
+		sw_object = coVectorGet(sw_list, i);		// get the current sw release for the outer loop body
+		
+		// loop over all_function_def_characteristic_map, which has been constructed above
+		
+		coMapForEach(all_function_def_characteristic_map, getAllFunctionDifferenceMapCB, (void *)sw_object); // returns 0 as soon as the callback function returns 0
+
+		
+	}
+	
+	return NULL;
 }
 
 /*
@@ -1173,10 +1343,21 @@ void showAllCharacteristicDifferenceMap(cco all_characteristic_map, cco sw_list)
 void showFunctionList(cco sw_object)
 {
 	cco v = coVectorGet(sw_object, FUNCTION_VECTOR_POS);
-	long i;
+	cco fndef_map = coVectorGet(sw_object, FUNCTION_DEF_CHARACTERISTIC_MAP_POS);
+	cco def_characteristic_map;
+	long i, def_cnt, def_sum;
+	def_sum = 0;
 	for( i = 0; i < coVectorSize(v); i++ )
 	{
-		puts(getFullFunctionName(sw_object, coVectorGet(v, i)));
+		def_cnt = 0;
+		def_characteristic_map = coMapGet(fndef_map, coStrGet(coVectorGet(coVectorGet(v, i), 1)));
+		if ( def_characteristic_map != NULL )
+		{
+			
+			def_cnt = coMapSize(def_characteristic_map);
+			def_sum += def_cnt;
+		}			
+		printf("%05ld %s def-cnt=%ld (%ld)\n", i, getFullFunctionName(sw_object, coVectorGet(v, i)), def_cnt, def_sum);
 	}
 }
 
@@ -1188,7 +1369,7 @@ void outJSON(const char *fmt, ...)
 	va_end(ap);
 }
 
-int showJSONLabelDifferenceCB(cco o, long idx, const char *key, cco value_vector, void *data)
+int showCharacteristicJSONDifferenceCB(cco o, long idx, const char *key, cco value_vector, void *data)
 {
 	static char presence[SW_PAIR_MAX+1];
 	static int is_first = 1;
@@ -1237,7 +1418,7 @@ int showJSONLabelDifferenceCB(cco o, long idx, const char *key, cco value_vector
 					key: characteristic name, value: vector with either null or a reference to the characteristic record. Size of this vector must be the size of sw_list
 	sw_list	list of multiple sw objects
 */
-void showJSONDifference(cco all_characteristic_map, cco sw_list)
+void showCharacteristicJSONDifference(cco all_characteristic_map, cco sw_list)
 {
 	int i;
 	outJSON("{\n");
@@ -1249,7 +1430,7 @@ void showJSONDifference(cco all_characteristic_map, cco sw_list)
 	}
 	outJSON("],\n");
 	outJSON("\"labels\":[\n");
-	coMapForEach(all_characteristic_map, showJSONLabelDifferenceCB, (void *)sw_list);
+	coMapForEach(all_characteristic_map, showCharacteristicJSONDifferenceCB, (void *)sw_list);
 	
 	outJSON("]\n");
 	outJSON("}\n");
@@ -1265,7 +1446,7 @@ void help(void)
   puts("-addrlist     Output all characteristics and axis_pts sorted by memory address");  
   puts("-fnlist       Output all function names");
   puts("-diff         A2L S19 difference analysis (requires multipe a2l/s19 pairs)");
-  puts("-jsondiff     Similar to -diff, but use JSON format (requires multipe a2l/s19 pairs)");
+  puts("-cjsondiff     Similar to -diff, but use JSON format (requires multipe a2l/s19 pairs)");
   
 }
 
@@ -1303,9 +1484,9 @@ int parse_args(int argc, char **argv)
 	  is_diff = 1;
       argv++;
     }
-    else if ( strcmp(*argv, "-jsondiff" ) == 0 )
+    else if ( strcmp(*argv, "-cjsondiff" ) == 0 )
     {
-	  is_jsondiff = 1;
+	  is_characteristicjsondiff = 1;
       argv++;
     }
 	
@@ -1361,6 +1542,7 @@ int main(int argc, char **argv)
   co sw_list;
   cco sw_object = NULL;
   co all_characteristic_map = NULL;
+  co all_function_def_characteristic_map = NULL;
   
   parse_args(argc, argv);
 
@@ -1381,7 +1563,9 @@ int main(int argc, char **argv)
 		  printf("  AXIS_PTS Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, AXIS_PTS_VECTOR_POS)));
 		  printf("  AXIS_PTS Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, AXIS_PTS_NAME_MAP_POS)));
 		  printf("  Address Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, ADDRESS_MAP_POS)));
-		  printf("  Function Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, FUNCTION_VECTOR_POS)));
+		  printf("  FUNCTION Vector cnt=%ld\n", coVectorSize(coVectorGet(sw_object, FUNCTION_VECTOR_POS)));
+		  printf("  FUNCTION Name Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, FUNCTION_NAME_MAP_POS)));
+		  printf("  FUNCTION CHARACTERISTIC/AXIS_PTS Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, FUNCTION_DEF_CHARACTERISTIC_MAP_POS)));
 		  printf("  Parent Function Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, PARENT_FUNCTION_MAP_POS)));
 		  printf("  Belongs to Function Map cnt=%ld\n", coMapSize(coVectorGet(sw_object, BELONGS_TO_FUNCTION_MAP_POS)));
 		  
@@ -1394,15 +1578,19 @@ int main(int argc, char **argv)
 		showFunctionList(sw_object);
   }  
   
-  if ( is_diff || is_jsondiff )
+  if ( is_diff || is_characteristicjsondiff )
   {
 	  all_characteristic_map = getAllCharacteristicDifferenceMap(sw_list);	
+	  all_function_def_characteristic_map = getAllFunctionDifferenceMap(sw_list);  // TODO: show the content of the characteristics, based on the function name
 	  if ( is_diff )
 		showAllCharacteristicDifferenceMap(all_characteristic_map, sw_list);
-	  if ( is_jsondiff )
-		showJSONDifference(all_characteristic_map, sw_list);
+	  if ( is_characteristicjsondiff )
+		showCharacteristicJSONDifference(all_characteristic_map, sw_list);
 
+#ifndef NDEBUG  
 	  coDelete(all_characteristic_map); // delete this before sw_list (ok, wouldn't make a difference, but still)
+	  coDelete(all_function_def_characteristic_map);
+#endif
   }
 
 #ifndef NDEBUG  

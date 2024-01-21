@@ -136,6 +136,7 @@ static int display_info(const char *fpath, const struct stat *sb, int tflag, str
 
 int main(int argc, char *argv[])
 {
+	FILE *jsonOutputFP;
 	/*
 		FTW_MOUNT			don't cross mounts
 		FTW_PHYS			don't follow sym links
@@ -145,22 +146,34 @@ int main(int argc, char *argv[])
    int flags = FTW_MOUNT | FTW_PHYS | FTW_DEPTH | FTW_ACTIONRETVAL;
    //int flags = FTW_MOUNT | FTW_PHYS  | FTW_ACTIONRETVAL;
    
+   if ( argc < 3)
+   {
+	   puts("a2l_search path jsonfile");
+	   exit(EXIT_FAILURE);
+   }
+   
    all_dir_list = coNewVector(CO_FREE_VALS);
 	a2l_list = coNewVector(CO_FREE_VALS);
 	s19_list = coNewVector(CO_FREE_VALS);
 	hex_list = coNewVector(CO_FREE_VALS);
 
-   if (nftw((argc < 2) ? "." : argv[1], display_info, 20, flags)
-	   == -1)
+   if (nftw(argv[1], display_info, 20, flags) == -1)
    {
-	   perror("nftw");
+	   perror(argv[1]);
 	   exit(EXIT_FAILURE);
    }
    
    printf("total pairs found: %ld\n", total_pairs_found);
    printf("max level: %d\n", max_level);
 
-   coWriteJSON(all_dir_list, /* isCompact= */ 0, /* isUTF8= */ 1, stdout);   
+   jsonOutputFP = fopen(argv[2], "rb");
+   if ( jsonOutputFP == NULL )
+   {
+	   perror(argv[2]);
+	   exit(EXIT_FAILURE);
+   }
+   coWriteJSON(all_dir_list, /* isCompact= */ 0, /* isUTF8= */ 1, jsonOutputFP);
+   fclose(jsonOutputFP);
 
    exit(EXIT_SUCCESS);
 }

@@ -30,8 +30,9 @@ sanitize: all
 
 release: all
 	strip a2l_info.exe
+	strip a2l_search.exe
 
-all: co_test co_a2l a2l_info file_search
+all: co_test co_a2l a2l_info a2l_search
 	
 co_test: $(COOBJ) ./test/co_test.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
@@ -42,9 +43,9 @@ co_a2l: $(COOBJ) ./test/co_a2l.o
 a2l_info: $(COOBJ) ./test/a2l_info.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
 
-file_search:  $(COOBJ) ./test/file_search.o
+a2l_search:  $(COOBJ) ./test/a2l_search.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
 
 clean:
-	-rm $(COOBJ) ./test/co_test.o ./test/co_a2l.o ./test/a2l_info.o co_test co_a2l a2l_info
+	-rm $(COOBJ) ./test/co_test.o ./test/co_a2l.o ./test/a2l_info.o ./test/a2l_search.o co_test co_a2l a2l_info
 	
