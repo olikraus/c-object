@@ -1390,6 +1390,8 @@ void showFunctionDifferenceList(cco all_function_def_characteristic_map, cco sw_
 	int i, cnt;
 	int difference_number;
 	int is_other_function;
+	long function_version_index;
+	const char *function_version_string;
 	char exists[SW_PAIR_MAX];
 	
 	characteristic_axis_pts_list = coNewVector(CO_NONE);
@@ -1403,6 +1405,25 @@ void showFunctionDifferenceList(cco all_function_def_characteristic_map, cco sw_
 		do {
 			function_name = coMapLoopKey(&function_iterator); 
 			printf("%s: ", function_name);
+			
+			for( i = 0; i < cnt; i++ )
+			{
+				sw_object = coVectorGet(sw_list, i);
+				function_version_string = "";
+				function_name_map = coVectorGet(sw_object, FUNCTION_NAME_MAP_POS);
+				function_rec = coMapGet(function_name_map, function_name);
+				if ( function_rec != NULL )
+				{
+					function_version_index = getVectorIndexByString(function_rec, "FUNCTION_VERSION");
+					if ( function_version_index >= 0 )
+					{
+						function_version_string = coStrGet(coVectorGet(function_rec, function_version_index+1));
+					}
+				}
+				printf("<%s> ", function_version_string);
+			}
+			
+			
 			for( i = 0; i < cnt; i++ )
 			{
 				sw_object = coVectorGet(sw_list, i);
@@ -1415,8 +1436,14 @@ void showFunctionDifferenceList(cco all_function_def_characteristic_map, cco sw_
 				else
 				{
 					printf("[%s] ", coStrGet(coVectorGet(function_rec, 2)));	// output description, which should include the version number
+					
+
 				}
 			}
+			
+			
+			
+			
 			printf("\n");
 
 			characteristic_map = coMapLoopValue(&function_iterator);
