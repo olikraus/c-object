@@ -54,6 +54,7 @@ int is_characteristic_address_list = 0;
 int is_function_list = 0;
 int is_diff = 0;
 int is_characteristicjsondiff = 0;
+int is_fndiff = 0;
 
 uint64_t getEpochMilliseconds(void)
 {
@@ -1081,6 +1082,7 @@ static int getAllFunctionDifferenceMapCB(cco o, long idx, const char *key, cco a
 */
 co getAllFunctionDifferenceMap(cco sw_list)
 {
+    long long int t0, t1;
 	long i, sw_list_cnt;
 	long j, function_cnt;
 	cco sw_object;
@@ -1091,6 +1093,8 @@ co getAllFunctionDifferenceMap(cco sw_list)
 	co all_function_def_characteristic_map = coNewMap(CO_FREE_VALS); 	// key is neither strdup'd nor free'd, because it is taken from the FUNCTION record
 	
 	// step 1: build a map with all function names from all releases in sw_list
+
+    t0 = getEpochMilliseconds();  
 	
 	sw_list_cnt = coVectorSize(sw_list);
 	for( i = 0; i < sw_list_cnt; i++ )	// loop over all sw release, which are provided in "sw_list"
@@ -1124,32 +1128,37 @@ co getAllFunctionDifferenceMap(cco sw_list)
 		// loop over all_function_def_characteristic_map, which has been constructed above
 		
 		coMapForEach(all_function_def_characteristic_map, getAllFunctionDifferenceMapCB, (void *)sw_object); // returns 0 as soon as the callback function returns 0
-
-		
 	}
+
+    t1 = getEpochMilliseconds();  
+    if ( is_verbose )
+	  printf("Build FUNCTION - CHARACTERISTIC difference, milliseconds=%lld\n", t1-t0);
 	
-	return NULL;
+	return all_function_def_characteristic_map;
 }
 
 /*
 	Calculate the difference between multiple characteristic records across different sw releases
 
 	return values:
-		0	all characteristics in the list are equal
-		1	characteristic contains unsupported record in any release
-		2	characteristic differ in record size between releases 
-		4 	characteristic differ in data values between releases
-		8 	some characteristic are not present in the release
+		0	all characteristics/axis pts in the list are equal
+		1	characteristic/axis pts contains unsupported record in any release
+		2	characteristic/axis pts differ in record size between releases 
+		4 	characteristic/axis pts differ in data values between releases
+		8 	some characteristic/axis pts are not present in the release
 		16	belongs to different function across releases
 	
 	sw_list:				list of sw releases, size of sw_list match the size of the characteristic_list
-	characteristic_name:	The name of the characteristic, which has to be checked. The name should be equal to all the characteristic names of 
-			the characteristics in characteristic_list
-	characteristic_list: 	A list of characteristic records. The size must be equal to the number of releases in sw_list.
+	characteristic_name:	The name of the characteristic/axis pts, which has to be checked. The name should be equal to all the names of 
+			the characteristics/axis pts in characteristic_list
+	characteristic_list: 	A list of characteristic/axis pts records. The size must be equal to the number of releases in sw_list.
 			The name of each of the characteristic records must be equal to characteristic_name
+			
+			
+	TODO: Update this funciton to support axis_pts records inside characteristic_list --> DONE
 	
 */
-int getCharacteristicDifference(cco sw_list, const char *characteristic_name, cco characteristic_list)
+int getCharacteristicAxisPtsDifference(cco sw_list, const char *characteristic_name, cco characteristic_list)
 {
 	long i, j;
 	cco first;		// first characteristic record
@@ -1323,7 +1332,7 @@ int showAllCharacteristicDifferenceMapCB(cco o, long idx, const char *key, cco v
 	printf(" %s", mem_info==NULL?"":mem_info);
 	
 	{
-		int d = getCharacteristicDifference(sw_list, key, value_vector);
+		int d = getCharacteristicAxisPtsDifference(sw_list, key, value_vector);
 		if ( d & 1 ) printf(" 'unsupported'");
 		if ( d & 2 ) printf(" 'size difference'");
 		if ( d & 4 ) printf(" 'value difference'");
@@ -1361,6 +1370,115 @@ void showFunctionList(cco sw_object)
 	}
 }
 
+void showFunctionDifferenceList(cco all_function_def_characteristic_map, cco sw_list)
+{
+	coMapIterator function_iterator;
+	coMapIterator characteristic_iterator;
+	cco characteristic_map;
+	const char *characteristic_axis_pts_name;
+	const char *function_name;
+	cco sw_object;
+	cco belongs_to_function_map;
+	cco belongs_to_function_rec;
+	cco function_name_map;
+	cco function_rec;
+	cco characteristic_name_map;
+	cco characteristic_rec;
+	cco axis_pts_name_map;
+	cco axis_pts_rec;
+	co characteristic_axis_pts_list;
+	int i, cnt;
+	int difference_number;
+	int is_other_function;
+	char exists[SW_PAIR_MAX];
+	
+	characteristic_axis_pts_list = coNewVector(CO_NONE);
+	
+	assert(coIsMap(all_function_def_characteristic_map));
+	assert(coIsVector(sw_list));
+	
+	cnt = coVectorSize(sw_list);
+	if ( coMapLoopFirst(&function_iterator, all_function_def_characteristic_map) )
+	{
+		do {
+			function_name = coMapLoopKey(&function_iterator); 
+			printf("%s: ", function_name);
+			for( i = 0; i < cnt; i++ )
+			{
+				sw_object = coVectorGet(sw_list, i);
+				function_name_map = coVectorGet(sw_object, FUNCTION_NAME_MAP_POS);
+				function_rec = coMapGet(function_name_map, function_name);
+				if ( function_rec == NULL )
+				{
+					printf("[] ");
+				}
+				else
+				{
+					printf("[%s] ", coStrGet(coVectorGet(function_rec, 2)));	// output description, which should include the version number
+				}
+			}
+			printf("\n");
+
+			characteristic_map = coMapLoopValue(&function_iterator);
+			
+			if ( coMapLoopFirst(&characteristic_iterator, characteristic_map) )
+			{
+				do {
+					characteristic_axis_pts_name = coMapLoopKey(&characteristic_iterator);
+					
+					coVectorClear(characteristic_axis_pts_list);
+					for( i = 0; i < cnt; i++ )
+					{
+						sw_object = coVectorGet(sw_list, i);
+						is_other_function = 0;
+						belongs_to_function_map = coVectorGet(sw_object, BELONGS_TO_FUNCTION_MAP_POS);
+						belongs_to_function_rec = coMapGet(belongs_to_function_map, characteristic_axis_pts_name);
+						if ( belongs_to_function_rec == NULL )
+							is_other_function = 1;
+						else if ( strcmp(function_name, coStrGet(coVectorGet(belongs_to_function_rec, 1))) != 0 )
+							is_other_function = 1;
+						characteristic_name_map = coVectorGet(sw_object, CHARACTERISTIC_NAME_MAP_POS);
+						axis_pts_name_map = coVectorGet(sw_object, AXIS_PTS_NAME_MAP_POS);
+						characteristic_rec = coMapGet(characteristic_name_map, characteristic_axis_pts_name);
+						axis_pts_rec = coMapGet(axis_pts_name_map, characteristic_axis_pts_name);
+						if ( characteristic_rec != NULL )
+						{
+							if ( is_other_function )
+								exists[i] = 'c';
+							else
+								exists[i] = 'C';
+							coVectorAdd(characteristic_axis_pts_list, characteristic_rec);
+						}
+						else if ( axis_pts_rec != NULL )
+						{
+							if ( is_other_function )
+								exists[i] = 'a';
+							else
+								exists[i] = 'A';
+							coVectorAdd(characteristic_axis_pts_list, axis_pts_rec);
+						}
+						else
+						{
+							exists[i] = '_';
+						}
+					}
+					exists[i] = '\0';
+					
+					difference_number = getCharacteristicAxisPtsDifference(sw_list, characteristic_axis_pts_name, characteristic_axis_pts_list);   
+
+					if ( difference_number > 0 )
+						printf("  %s %3d %s\n", exists, difference_number, coMapLoopKey(&characteristic_iterator));
+					
+					
+				} while( coMapLoopNext(&characteristic_iterator) );
+			}	
+			
+			
+		} while( coMapLoopNext(&function_iterator) );
+	}	
+	coDelete(characteristic_axis_pts_list);
+}
+
 void outJSON(const char *fmt, ...)
 {
 	va_list ap;
@@ -1375,7 +1493,7 @@ int showCharacteristicJSONDifferenceCB(cco o, long idx, const char *key, cco val
 	static int is_first = 1;
 	cco sw_list = (cco)data;
 	long i;
-	int d = getCharacteristicDifference(sw_list, key, value_vector);
+	int d = getCharacteristicAxisPtsDifference(sw_list, key, value_vector);
 	
 	if ( d != 0 )
 	{
@@ -1446,6 +1564,7 @@ void help(void)
   puts("-addrlist     Output all characteristics and axis_pts sorted by memory address");  
   puts("-fnlist       Output all function names");
   puts("-diff         A2L S19 difference analysis (requires multipe a2l/s19 pairs)");
+  puts("-fndiff       A2L S19 difference analysis (requires multipe a2l/s19 pairs)");
   puts("-cjsondiff     Similar to -diff, but use JSON format (requires multipe a2l/s19 pairs)");
   
 }
@@ -1482,6 +1601,11 @@ int parse_args(int argc, char **argv)
     else if ( strcmp(*argv, "-diff" ) == 0 )
     {
 	  is_diff = 1;
+      argv++;
+    }
+    else if ( strcmp(*argv, "-fndiff" ) == 0 )
+    {
+	  is_fndiff = 1;
       argv++;
     }
     else if ( strcmp(*argv, "-cjsondiff" ) == 0 )
@@ -1578,7 +1702,7 @@ int main(int argc, char **argv)
 		showFunctionList(sw_object);
   }  
   
-  if ( is_diff || is_characteristicjsondiff )
+  if ( is_diff || is_characteristicjsondiff || is_fndiff )
   {
 	  all_characteristic_map = getAllCharacteristicDifferenceMap(sw_list);	
 	  all_function_def_characteristic_map = getAllFunctionDifferenceMap(sw_list);  // TODO: show the content of the characteristics, based on the function name
@@ -1586,6 +1710,10 @@ int main(int argc, char **argv)
 		showAllCharacteristicDifferenceMap(all_characteristic_map, sw_list);
 	  if ( is_characteristicjsondiff )
 		showCharacteristicJSONDifference(all_characteristic_map, sw_list);
+	  if ( is_fndiff ) 
+		showFunctionDifferenceList(all_function_def_characteristic_map, sw_list);
+
+	
 
 #ifndef NDEBUG  
 	  coDelete(all_characteristic_map); // delete this before sw_list (ok, wouldn't make a difference, but still)

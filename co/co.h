@@ -104,7 +104,7 @@
 #endif
 */
 typedef struct coStruct *co;
-typedef const struct coStruct *  cco;
+typedef const struct coStruct *cco;
 typedef struct coFnStruct *coFn;
 
 typedef int (*coInitFn)(co o, void *data);
@@ -193,7 +193,7 @@ co coNewMap(unsigned flags);
 
 /* object type test procedures */
 
-#define coGetType(o) ((o)->fn)
+#define coGetType(o)  ((o==NULL)?0:((o)->fn))
 
 #define coIsVector(o) (coGetType(o)==coVectorType)
 #define coIsStr(o) (coGetType(o)==coStrType)
@@ -234,7 +234,7 @@ int coVectorAppendVector(co v, cco src);  // append elements from src to vector 
 cco coVectorGet(cco o, long idx);           // return object at specific position from the vector
 void coVectorSet(co v, long i, cco e);		// replace an element within the vector
 void coVectorErase(co v, long i);  // delete and remove element at the specified position
-void coVectorClear(co o);    // delete all elements and clear the array
+void coVectorClear(co o);    // first if flags are not CO_NONE delete all elements and second clear the array to size 0
 int coVectorEmpty(cco o);               // return 1 if the vector is empty, return 0 otherwise
 long coVectorSize(cco o);                // return the number of elements in the vector
 
@@ -256,6 +256,32 @@ long coMapSize(cco o);  // O(n) !!
 
 typedef int (*coMapForEachCB)(cco o, long idx, const char *key, cco value, void *data);
 int coMapForEach(cco o, coMapForEachCB cb, void *data); // returns 0 as soon as the callback function returns 0
+
+
+#define CO_AVL_STACK_MAX_DEPTH 32
+struct coMapIteratorStruct
+{
+	struct co_avl_node_struct *node[CO_AVL_STACK_MAX_DEPTH];
+	struct co_avl_node_struct *current_node;
+	int depth;
+};
+typedef struct coMapIteratorStruct coMapIterator;
+#define coMapLoopKey(iter) ((iter)->current_node->key)
+#define coMapLoopValue(iter) ((cco)((iter)->current_node->value))
+int coMapLoopFirst(coMapIterator *iter, cco o);
+int coMapLoopNext(coMapIterator *iter);
+
+/*
+coMapIterator iter;
+if ( coMapLoopFirst(&iter, o) )
+{
+	do {
+		coMapLoopKey(&iter);  // return the key of the current key/value pair (const char *)
+		coMapLoopValue(&iter);	// return the value of the current key/value pair (cco)
+	} while( coMapLoopNext(&iter) );
+}
+*/
+
 
 /* file / string reader interface */
 

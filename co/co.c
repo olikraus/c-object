@@ -1057,6 +1057,54 @@ int coMapForEach(cco o, coMapForEachCB cb, void *data)
   return avl_for_each(o, o->m.root, cb, &cnt, data);
 }
 
+static int avl_loop_sub(coMapIterator *iter)
+{
+	while( iter->depth > 0 || iter->current_node != avl_nnil )
+	{
+		if ( iter->current_node != avl_nnil )
+		{
+			iter->node[iter->depth] = iter->current_node;
+			iter->current_node = iter->current_node->kid[0];
+			iter->depth++;
+			assert( iter->depth < CO_AVL_STACK_MAX_DEPTH );
+		}
+		else
+		{
+			iter->depth--;
+			iter->current_node = iter->node[iter->depth];
+			return 1;	// process current_node
+		}
+	}
+	return 0;
+}
+
+int coMapLoopFirst(coMapIterator *iter, cco o)
+{
+	//puts("coMapLoopFirst");
+	assert(coIsMap(o));
+	iter->depth = 0;
+	iter->current_node = o->m.root;
+	return avl_loop_sub(iter);	
+}
+
+int coMapLoopNext(coMapIterator *iter)
+{
+	iter->current_node = iter->current_node->kid[1];
+	return avl_loop_sub(iter);
+}
+
+/*
+coMapIterator iter;
+if ( coMapLoopFirst(&iter, o) )
+{
+	do {
+		coMapLoopKey(&iter);  // return the key of the current key/value pair (const char *)
+		coMapLoopValue(&iter);	// return the value of the current key/value pair (cco)
+	} while( coMapLoopNext(&iter) );
+}
+*/
+
+
 /*===================================================================*/
 /* Publlic Utility Functions */
 /*===================================================================*/

@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <assert.h>
 
 struct avl_node_struct 
 {
@@ -207,6 +208,87 @@ int avl_for_each(struct avl_node_struct *n, avl_visit_fn visitCB, size_t *idx, v
   return 1;
 }
 
+#define AVL_STACK_MAX_DEPTH 32
+struct avl_loop_iterator_struct
+{
+	struct avl_node_struct *node[AVL_STACK_MAX_DEPTH];
+	struct avl_node_struct *current_node;
+	int depth;
+};
+
+void avl_oldloop_first(struct avl_loop_iterator_struct *iter, struct avl_node_struct *n)
+{
+	iter->depth = 0;
+	iter->current_node = n;
+}
+
+int avl_oldloop_next(struct avl_loop_iterator_struct *iter, avl_visit_fn visitCB, void *data)
+{
+	size_t idx = 0;
+	if ( iter->current_node == avl_nnil )
+		return 0;
+
+	while( iter->depth > 0 || iter->current_node != avl_nnil )
+	{
+		if ( iter->current_node != avl_nnil )
+		{
+			iter->node[iter->depth] = iter->current_node;
+			iter->current_node = iter->current_node->kid[0];
+			iter->depth++;
+		}
+		else
+		{
+			iter->depth--;
+			iter->current_node = iter->node[iter->depth];
+			visitCB(idx, iter->current_node, data); idx++;
+			iter->current_node = iter->current_node->kid[1];
+		}
+	}
+	return 1;
+}
+
+int avl_loop_sub(struct avl_loop_iterator_struct *iter)
+{
+	while( iter->depth > 0 || iter->current_node != avl_nnil )
+	{
+		if ( iter->current_node != avl_nnil )
+		{
+			iter->node[iter->depth] = iter->current_node;
+			iter->current_node = iter->current_node->kid[0];
+			iter->depth++;
+			assert( iter->depth < AVL_STACK_MAX_DEPTH);
+		}
+		else
+		{
+			iter->depth--;
+			iter->current_node = iter->node[iter->depth];
+			return 1;	// process current_node
+		}
+	}
+	return 0;
+}
+
+int avl_loop_start(struct avl_loop_iterator_struct *iter, struct avl_node_struct *n)
+{
+	iter->depth = 0;
+	iter->current_node = n;
+	return avl_loop_sub(iter);
+}
+
+int avl_loop_next(struct avl_loop_iterator_struct *iter)
+{
+	iter->current_node = iter->current_node->kid[1];
+	return avl_loop_sub(iter);
+}
+
+/*
+if ( avl_loop_start(&iter, root ) )
+	do
+	{
+		iter.current_node
+	} while( avl_loop_next(&iter) );
+*/
+
 /*
   after calling avl_delete_all the "n" argument is illegal and points to avl_nnil
 */
@@ -250,7 +332,34 @@ void show_all(struct avl_node_struct *root)
 {
   size_t idx = 0;
   avl_for_each(root, show_node, &idx, NULL);
+  puts("");
 }
+
+
+void show_all_2(struct avl_node_struct *root)
+{
+	struct avl_loop_iterator_struct iter;
+	avl_oldloop_first(&iter, root);
+	avl_oldloop_next(&iter, show_node, NULL);
+	puts("");
+}
+
+void show_all_3(struct avl_node_struct *root)
+{
+	long idx = 0;
+	struct avl_loop_iterator_struct iter;
+	if ( avl_loop_start(&iter, root ) )
+	{
+		do
+		{
+			show_node(idx++, iter.current_node, NULL);
+		} while( avl_loop_next(&iter) );
+	}
+	puts("");
+}
+
+
+
 
 
 void show_trunks(struct trunk *p)
@@ -337,9 +446,11 @@ int main(void)
 
 	puts("Tree is:");
 	show_tree(root, 0, 0);
-        show_all(root);
+	show_all(root);
+	show_all_2(root);
+	show_all_3(root);
 
-        printf("\nSize: %lu", avl_get_size(root));
+	printf("\nSize: %lu", avl_get_size(root));
         
 	puts("\nQuerying values:");
 	for (x = 0; x < MAX_VAL; x++) {
