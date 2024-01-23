@@ -1763,13 +1763,13 @@ static void writeString(const char *s, int isUTF8, FILE *fp)
       fputc('\\', fp);
       fputc('b', fp);
     }
-    else if ( *s < 32 )
+    else if ( *(unsigned char *)s < 32 )
     {
-      fprintf(fp, "\\u%04x", *s);
+      fprintf(fp, "\\u%04x", *(unsigned char *)s);
     }
-    else if ( isUTF8 == 0 &&  *s >= 128 )
+    else if ( isUTF8 == 0 &&  *(unsigned char *)s >= 128 )
     {
-      fprintf(fp, "\\u%04x", *s);
+      fprintf(fp, "\\u%04x", *(unsigned char *)s);
     }    
     else
     {

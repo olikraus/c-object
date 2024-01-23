@@ -28,6 +28,80 @@ co hex_list = NULL;
 #define MAX_PATH_LEN (4*1024)
 
 
+const char *get_utf8_string_from_unicode(long c)
+{
+	static char b[8];
+	
+	/* c is a unicode char */
+
+	if (c<0x80) 
+	{
+		b[0] = ((c>>0)  & 0x7F) | 0x00;
+		b[1] = '\0';
+	}
+	else if (c<0x0800)
+	{
+		b[0] = ((c>>6)  & 0x1F) | 0xC0;
+		b[1] = ((c>>0)  & 0x3F) | 0x80;
+		b[2] = '\0';
+	}
+	else if (c<0x010000)
+	{
+		b[0] = ((c>>12) & 0x0F) | 0xE0;
+		b[1] = ((c>>6)  & 0x3F) | 0x80;
+		b[2] = ((c>>0)  & 0x3F) | 0x80;
+		b[3] = '\0';
+	}
+	else if (c<0x110000)
+	{
+		b[0] = ((c>>18) & 0x07) | 0xF0;
+		b[1] = ((c>>12) & 0x3F) | 0x80;
+		b[2] = ((c>>6)  & 0x3F) | 0x80;
+		b[3] = ((c>>0)  & 0x3F) | 0x80;
+		b[4] = '\0';
+	}
+	else
+	{
+		b[0] = '\0';
+	}
+	return b;		// b is a STATIC char array
+}
+
+/*
+	simple convert from windows codes to UTF-8
+	unlike strncpy, this procedure will add a '\0'. Moreover n doesn't restrict the target, but just tells the number of source chars
+*/
+char *copyAndUnicodeConvert(char *d, const char *s, size_t n)
+{
+	//strncpy(t, s, n);
+	
+	size_t cnt = 0;
+	const char *u;
+	char *t = d;
+	if ( s == NULL )
+	{
+		t[0] = '\0';
+	}
+	else
+	{
+		while( *s != '\0' && cnt < n )
+		{
+			u = get_utf8_string_from_unicode((long)*(unsigned char *)s);
+			while( *u != '\0' )
+			{
+				*t = *u;
+				t++;
+				u++;
+			}
+			s++;
+			cnt++;
+		}
+		*t = '\0';
+	}
+	return d;
+}
+
+
 
 static int display_info(const char *fpath, const struct stat *sb, int tflag, struct FTW *ftwbuf)
 {
@@ -36,6 +110,7 @@ static int display_info(const char *fpath, const struct stat *sb, int tflag, str
 	//static char a2l_name[MAX_FILENAME];
 	//static char s19_name[MAX_FILENAME];
 	static char dir_path[MAX_PATH_LEN];
+	static char file_name[MAX_PATH_LEN];
 	
 
 
@@ -100,32 +175,41 @@ static int display_info(const char *fpath, const struct stat *sb, int tflag, str
 		size_t len = strlen(fpath + ftwbuf->base);
 		if ( strcasecmp(fpath + ftwbuf->base + len - 4, ".a2l") == 0 )
 		{
-			coVectorAdd(a2l_list, coNewStr(CO_STRDUP, fpath + ftwbuf->base));
+			// coVectorAdd(a2l_list, coNewStr(CO_STRDUP, fpath + ftwbuf->base));
+			coVectorAdd(a2l_list, coNewStr(CO_STRDUP, copyAndUnicodeConvert(file_name, fpath + ftwbuf->base, MAX_PATH_LEN)));
 			if ( dir_path[0] == '\0' )
 			{
-				strncpy(dir_path, fpath, ftwbuf->base);
-				dir_path[ftwbuf->base] = '\0';
+				// strncpy(dir_path, fpath, ftwbuf->base);
+				// dir_path[ftwbuf->base] = '\0';
+				copyAndUnicodeConvert(dir_path, fpath, ftwbuf->base);
+
+				
 			}
 		}
-		if ( strcasecmp(fpath + ftwbuf->base + len - 4, ".s19") == 0 )
+		else if ( strcasecmp(fpath + ftwbuf->base + len - 4, ".s19") == 0 )
 		{
-			coVectorAdd(s19_list, coNewStr(CO_STRDUP, fpath + ftwbuf->base));
+			// coVectorAdd(s19_list, coNewStr(CO_STRDUP, fpath + ftwbuf->base));
+			coVectorAdd(s19_list, coNewStr(CO_STRDUP, copyAndUnicodeConvert(file_name, fpath + ftwbuf->base, MAX_PATH_LEN)));
 			if ( dir_path[0] == '\0' )
 			{
-				strncpy(dir_path, fpath, ftwbuf->base);
-				dir_path[ftwbuf->base] = '\0';
+				// strncpy(dir_path, fpath, ftwbuf->base);
+				// dir_path[ftwbuf->base] = '\0';
+				copyAndUnicodeConvert(dir_path, fpath, ftwbuf->base);
 			}
 		}
-		if ( strcasecmp(fpath + ftwbuf->base + len - 4, ".hex") == 0 )
+		else if ( strcasecmp(fpath + ftwbuf->base + len - 4, ".hex") == 0 )
 		{
-			coVectorAdd(hex_list, coNewStr(CO_STRDUP, fpath + ftwbuf->base));
+			// coVectorAdd(hex_list, coNewStr(CO_STRDUP, fpath + ftwbuf->base));
+			coVectorAdd(hex_list, coNewStr(CO_STRDUP, copyAndUnicodeConvert(file_name, fpath + ftwbuf->base, MAX_PATH_LEN)));
 			if ( dir_path[0] == '\0' )
 			{
-				strncpy(dir_path, fpath, ftwbuf->base);
-				dir_path[ftwbuf->base] = '\0';
+				// strncpy(dir_path, fpath, ftwbuf->base);
+				// dir_path[ftwbuf->base] = '\0';
+				copyAndUnicodeConvert(dir_path, fpath, ftwbuf->base);
 			}
 		}
 	}
+	
 	else if ( tflag == FTW_D ) // directory 
 	{
 		
@@ -166,7 +250,7 @@ int main(int argc, char *argv[])
    printf("total pairs found: %ld\n", total_pairs_found);
    printf("max level: %d\n", max_level);
 
-   jsonOutputFP = fopen(argv[2], "rb");
+   jsonOutputFP = fopen(argv[2], "wb");
    if ( jsonOutputFP == NULL )
    {
 	   perror(argv[2]);
