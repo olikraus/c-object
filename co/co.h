@@ -257,8 +257,9 @@ long coMapSize(cco o);  // O(n) !!
 typedef int (*coMapForEachCB)(cco o, long idx, const char *key, cco value, void *data);
 int coMapForEach(cco o, coMapForEachCB cb, void *data); // returns 0 as soon as the callback function returns 0
 
-
-#define CO_AVL_STACK_MAX_DEPTH 32
+/* https://stackoverflow.com/questions/30769383/finding-the-minimum-and-maximum-height-in-a-avl-tree-given-a-number-of-nodes */
+/* --> floor(1.44*log2(n+2)-.328), with n=2^31 (long), this is 45 */
+#define CO_AVL_STACK_MAX_DEPTH 45
 struct coMapIteratorStruct
 {
 	struct co_avl_node_struct *node[CO_AVL_STACK_MAX_DEPTH];
