@@ -1399,13 +1399,16 @@ void showFunctionDifferenceList(cco all_function_def_characteristic_map, cco sw_
 	assert(coIsMap(all_function_def_characteristic_map));
 	assert(coIsVector(sw_list));
 	
-	cnt = coVectorSize(sw_list);
+	cnt = coVectorSize(sw_list);	// number of a2l/s19 pairs = number of sw releases, which should be compared
+	
+	// outer loop over all functions
 	if ( coMapLoopFirst(&function_iterator, all_function_def_characteristic_map) )
 	{
 		do {
 			function_name = coMapLoopKey(&function_iterator); 
 			printf("%s: ", function_name);
-			
+
+			// output the function version from each a2l, the function version is optional and might be empty
 			for( i = 0; i < cnt; i++ )
 			{
 				sw_object = coVectorGet(sw_list, i);
@@ -1423,7 +1426,7 @@ void showFunctionDifferenceList(cco all_function_def_characteristic_map, cco sw_
 				printf("<%s> ", function_version_string);
 			}
 			
-			
+			// output the description of the function from each a2l
 			for( i = 0; i < cnt; i++ )
 			{
 				sw_object = coVectorGet(sw_list, i);
@@ -1436,23 +1439,26 @@ void showFunctionDifferenceList(cco all_function_def_characteristic_map, cco sw_
 				else
 				{
 					printf("[%s] ", coStrGet(coVectorGet(function_rec, 2)));	// output description, which should include the version number
-					
-
 				}
 			}
-			
-			
-			
-			
 			printf("\n");
 
+			// the outer loop goes over all_function_def_characteristic_map: the value is a map with the characteristics and axis_pts names
 			characteristic_map = coMapLoopValue(&function_iterator);
 			
+			// inner loop over all characteristic and axis_pts names of that function
 			if ( coMapLoopFirst(&characteristic_iterator, characteristic_map) )
 			{
 				do {
 					characteristic_axis_pts_name = coMapLoopKey(&characteristic_iterator);
 					
+					// in the third nested loop: compare the characteristic/axis_pts records and values from s19
+					// as a preparation, construct two arrays:
+					// 	1) A vector with the characteristic/axis_pts records
+					//	2) A string with some hints regarding the characteristic/axis_pts
+					//			lower case: the characteristic/axis_pts existis, but actually belongs to a different function
+					//			upper case: the characteristic/axis_pts belongs to this function
+					//			underscore: the characteristic/axis_pts doesn't exist in this sw release
 					coVectorClear(characteristic_axis_pts_list);
 					for( i = 0; i < cnt; i++ )
 					{
@@ -1490,17 +1496,16 @@ void showFunctionDifferenceList(cco all_function_def_characteristic_map, cco sw_
 						}
 					}
 					exists[i] = '\0';
-					
+
+					// with the above created list of characteristic/axis_pts records, get a hint regarding the diff
 					difference_number = getCharacteristicAxisPtsDifference(sw_list, characteristic_axis_pts_name, characteristic_axis_pts_list);   
 
+					// finally output all the above calculated information
 					if ( difference_number > 0 )
 						printf("  %s %3d %s\n", exists, difference_number, coMapLoopKey(&characteristic_iterator));
 					
-					
 				} while( coMapLoopNext(&characteristic_iterator) );
 			}	
-			
-			
 		} while( coMapLoopNext(&function_iterator) );
 	}	
 	coDelete(characteristic_axis_pts_list);
