@@ -55,6 +55,9 @@ int is_function_list = 0;
 int is_diff = 0;
 int is_characteristicjsondiff = 0;
 int is_fndiff = 0;
+int is_functionjsondiff = 0;
+
+FILE *json_fp;
 
 uint64_t getEpochMilliseconds(void)
 {
@@ -1370,6 +1373,8 @@ void showFunctionList(cco sw_object)
 	}
 }
 
+/*=================================================================================================*/
+
 void showFunctionDifferenceList(cco all_function_def_characteristic_map, cco sw_list)
 {
 	coMapIterator function_iterator;
@@ -1511,13 +1516,63 @@ void showFunctionDifferenceList(cco all_function_def_characteristic_map, cco sw_
 	coDelete(characteristic_axis_pts_list);
 }
 
+/*=================================================================================================*/
+
 void outJSON(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	vprintf(fmt, ap);
+	vfprintf(json_fp, fmt, ap);
 	va_end(ap);
 }
+
+void outJSONStr(const char *s)
+{
+	FILE *fp = json_fp;
+	fputc('"', fp);
+	while( *s != '\0' )
+	{
+		if ( *s == '\"' || *s == '/' || *s == '\\' )
+		{
+		  fputc('\\', fp);
+		  fputc(*s, fp);
+		}
+		else if ( *s == '\n' )
+		{
+		  fputc('\\', fp);
+		  fputc('n', fp);
+		}
+		else if ( *s == '\r' )
+		{
+		  fputc('\\', fp);
+		  fputc('r', fp);
+		}
+		else if ( *s == '\t' )
+		{
+		  fputc('\\', fp);
+		  fputc('t', fp);
+		}
+		else if ( *s == '\f' )
+		{
+		  fputc('\\', fp);
+		  fputc('f', fp);
+		}
+		else if ( *s == '\b' )
+		{
+		  fputc('\\', fp);
+		  fputc('b', fp);
+		}
+		else
+		{
+		  fputc(*s, fp);
+		}
+		s++;
+	}
+	fputc('"', fp);
+}
+
+/*=================================================================================================*/
+/* -cjsondiff */
 
 int showCharacteristicJSONDifferenceCB(cco o, long idx, const char *key, cco value_vector, void *data)
 {
@@ -1586,6 +1641,210 @@ void showCharacteristicJSONDifference(cco all_characteristic_map, cco sw_list)
 	outJSON("}\n");
 }
 
+/*=================================================================================================*/
+/* -fnjsondiff */
+
+
+void showFunctionJSONDifference(cco all_function_def_characteristic_map, cco sw_list)
+{
+	coMapIterator function_iterator;
+	coMapIterator characteristic_iterator;
+	cco characteristic_map;
+	const char *characteristic_axis_pts_name;
+	const char *function_name;
+	cco sw_object;
+	cco belongs_to_function_map;
+	cco belongs_to_function_rec;
+	cco function_name_map;
+	cco function_rec;
+	cco characteristic_name_map;
+	cco characteristic_rec;
+	cco axis_pts_name_map;
+	cco axis_pts_rec;
+	co characteristic_axis_pts_list;
+	int i, cnt;
+	int difference_number;
+	int is_other_function;
+	long function_version_index;
+	const char *function_version_string;
+	char exists[SW_PAIR_MAX];
+	int is_first_function = 1;
+	int is_first_characteristic = 1;
+	
+	characteristic_axis_pts_list = coNewVector(CO_NONE);
+	
+	assert(coIsMap(all_function_def_characteristic_map));
+	assert(coIsVector(sw_list));
+	
+	cnt = coVectorSize(sw_list);	// number of a2l/s19 pairs = number of sw releases, which should be compared
+
+
+	outJSON("{\n");
+	outJSON(" \"software\":[\n");
+	for( i = 0; i < cnt; i++ )
+	{
+		outJSON("  {\"a2l\":\"%s\", \"data\":\"%s\"}%s\n", 
+				a2l_file_name_list[i], s19_file_name_list[i], i+1<sw_pair_cnt?",":"");
+	}
+	outJSON(" ],\n");
+	outJSON(" \"functions\":[");	
+	// outer loop over all functions
+	if ( coMapLoopFirst(&function_iterator, all_function_def_characteristic_map) )
+	{
+		do {
+			if ( is_first_function )
+			{
+				is_first_function = 0;
+				outJSON("\n");
+			}
+			else
+			{
+				outJSON(",\n");
+			}
+
+			outJSON("  [");
+			function_name = coMapLoopKey(&function_iterator); 
+			outJSONStr(function_name);
+			outJSON(",\n");
+
+			// output the function version from each a2l, the function version is optional and might be empty
+			outJSON("   [");
+			for( i = 0; i < cnt; i++ )
+			{
+				if ( i != 0 )
+					outJSON(", ");
+				sw_object = coVectorGet(sw_list, i);
+				function_version_string = "";
+				function_name_map = coVectorGet(sw_object, FUNCTION_NAME_MAP_POS);
+				function_rec = coMapGet(function_name_map, function_name);
+				if ( function_rec != NULL )
+				{
+					function_version_index = getVectorIndexByString(function_rec, "FUNCTION_VERSION");
+					if ( function_version_index >= 0 )
+					{
+						function_version_string = coStrGet(coVectorGet(function_rec, function_version_index+1));
+					}
+				}
+				outJSONStr(function_version_string);
+			}
+			outJSON("],\n");
+			
+			// output the description of the function from each a2l
+			outJSON("   [");
+			for( i = 0; i < cnt; i++ )
+			{
+				if ( i != 0 )
+					outJSON(", ");
+				sw_object = coVectorGet(sw_list, i);
+				function_name_map = coVectorGet(sw_object, FUNCTION_NAME_MAP_POS);
+				function_rec = coMapGet(function_name_map, function_name);
+				if ( function_rec == NULL )
+				{
+					outJSONStr("");
+				}
+				else
+				{
+					outJSONStr("");
+					//outJSONStr(coStrGet(coVectorGet(function_rec, 2))); // output description, which should include the version number
+				}
+			}
+			outJSON("],\n");
+
+			// the outer loop goes over all_function_def_characteristic_map: the value is a map with the characteristics and axis_pts names
+			characteristic_map = coMapLoopValue(&function_iterator);
+			
+			// inner loop over all characteristic and axis_pts names of that function
+			outJSON("   [");
+			is_first_characteristic = 1;
+			if ( coMapLoopFirst(&characteristic_iterator, characteristic_map) )
+			{
+				do {
+					characteristic_axis_pts_name = coMapLoopKey(&characteristic_iterator);
+					
+					// in the third nested loop: compare the characteristic/axis_pts records and values from s19
+					// as a preparation, construct two arrays:
+					// 	1) A vector with the characteristic/axis_pts records
+					//	2) A string with some hints regarding the characteristic/axis_pts
+					//			lower case: the characteristic/axis_pts existis, but actually belongs to a different function
+					//			upper case: the characteristic/axis_pts belongs to this function
+					//			underscore: the characteristic/axis_pts doesn't exist in this sw release
+					coVectorClear(characteristic_axis_pts_list);
+					for( i = 0; i < cnt; i++ )
+					{
+						sw_object = coVectorGet(sw_list, i);
+						is_other_function = 0;
+						belongs_to_function_map = coVectorGet(sw_object, BELONGS_TO_FUNCTION_MAP_POS);
+						belongs_to_function_rec = coMapGet(belongs_to_function_map, characteristic_axis_pts_name);
+						if ( belongs_to_function_rec == NULL )
+							is_other_function = 1;
+						else if ( strcmp(function_name, coStrGet(coVectorGet(belongs_to_function_rec, 1))) != 0 )
+							is_other_function = 1;
+						characteristic_name_map = coVectorGet(sw_object, CHARACTERISTIC_NAME_MAP_POS);
+						axis_pts_name_map = coVectorGet(sw_object, AXIS_PTS_NAME_MAP_POS);
+						characteristic_rec = coMapGet(characteristic_name_map, characteristic_axis_pts_name);
+						axis_pts_rec = coMapGet(axis_pts_name_map, characteristic_axis_pts_name);
+						if ( characteristic_rec != NULL )
+						{
+							if ( is_other_function )
+								exists[i] = 'c';
+							else
+								exists[i] = 'C';
+							coVectorAdd(characteristic_axis_pts_list, characteristic_rec);
+						}
+						else if ( axis_pts_rec != NULL )
+						{
+							if ( is_other_function )
+								exists[i] = 'a';
+							else
+								exists[i] = 'A';
+							coVectorAdd(characteristic_axis_pts_list, axis_pts_rec);
+						}
+						else
+						{
+							exists[i] = '_';
+						}
+					}
+					exists[i] = '\0';
+
+					// with the above created list of characteristic/axis_pts records, get a hint regarding the diff
+					difference_number = getCharacteristicAxisPtsDifference(sw_list, characteristic_axis_pts_name, characteristic_axis_pts_list);   
+
+					// finally output all the above calculated information
+					if ( difference_number > 0 )
+					{
+						if ( is_first_characteristic )
+						{
+							is_first_characteristic = 0;
+							outJSON("\n");
+						}
+						else
+						{
+							outJSON(",\n");
+						}
+						outJSON("    [\"%s\", \"%s\", %d]", characteristic_axis_pts_name, exists, difference_number);
+					}
+					
+				} while( coMapLoopNext(&characteristic_iterator) );
+			}	
+			outJSON("\n");
+			outJSON("   ]");
+			outJSON("\n");
+			outJSON("  ]");
+		} while( coMapLoopNext(&function_iterator) );
+		
+		
+	}	
+
+	outJSON("\n");
+	outJSON(" ]");
+	outJSON("\n");
+	outJSON("}\n");
+	
+	coDelete(characteristic_axis_pts_list);
+}
+
+/*=================================================================================================*/
+
 void help(void)
 {
   puts("-h            This help text");
@@ -1597,7 +1856,9 @@ void help(void)
   puts("-fnlist       Output all function names");
   puts("-diff         A2L S19 difference analysis (requires multipe a2l/s19 pairs)");
   puts("-fndiff       A2L S19 difference analysis (requires multipe a2l/s19 pairs)");
-  puts("-cjsondiff     Similar to -diff, but use JSON format (requires multipe a2l/s19 pairs)");
+  puts("-cjsondiff    Similar to -diff, but use JSON format (requires multipe a2l/s19 pairs)");
+  puts("-fnjsondiff   Similar to -fndiff, but use JSON format (requires multipe a2l/s19 pairs)");
+  puts("-json <file>  Output file for '-cjsondiff' and '-fnjsondiff'");
   
 }
 
@@ -1645,7 +1906,27 @@ int parse_args(int argc, char **argv)
 	  is_characteristicjsondiff = 1;
       argv++;
     }
-	
+    else if ( strcmp(*argv, "-fnjsondiff" ) == 0 )
+    {
+	  is_functionjsondiff = 1;
+      argv++;
+    }
+	else if ( strcmp(*argv, "-json" ) == 0 )
+	{
+       argv++;
+	   if ( *argv == NULL )
+	   {
+		  fprintf(stderr, "Missing argument for -json\n");
+		  exit(1);
+	   }
+	   json_fp = fopen(*argv, "wb");
+	   if ( json_fp == NULL )
+	   {
+		  perror(*argv);
+		  exit(1);
+	   }
+	   
+	}
     else if ( strcmp(*argv, "-a2l" ) == 0 )
     {
       argv++;
@@ -1700,6 +1981,8 @@ int main(int argc, char **argv)
   co all_characteristic_map = NULL;
   co all_function_def_characteristic_map = NULL;
   
+  json_fp = stdout;
+  
   parse_args(argc, argv);
 
   sw_list = getSWList();
@@ -1734,7 +2017,7 @@ int main(int argc, char **argv)
 		showFunctionList(sw_object);
   }  
   
-  if ( is_diff || is_characteristicjsondiff || is_fndiff )
+  if ( is_diff || is_characteristicjsondiff || is_fndiff || is_functionjsondiff  )
   {
 	  all_characteristic_map = getAllCharacteristicDifferenceMap(sw_list);	
 	  all_function_def_characteristic_map = getAllFunctionDifferenceMap(sw_list);  // TODO: show the content of the characteristics, based on the function name
@@ -1744,6 +2027,8 @@ int main(int argc, char **argv)
 		showCharacteristicJSONDifference(all_characteristic_map, sw_list);
 	  if ( is_fndiff ) 
 		showFunctionDifferenceList(all_function_def_characteristic_map, sw_list);
+	  if ( is_functionjsondiff )
+		showFunctionJSONDifference(all_function_def_characteristic_map, sw_list);
 
 	
 
@@ -1753,9 +2038,15 @@ int main(int argc, char **argv)
 #endif
   }
 
+  if ( json_fp != stdout )
+	  fclose(json_fp);
+
 #ifndef NDEBUG  
   coDelete(sw_list);     // delete all co objects, this is time consuming, so don't do this for the final release
 #endif
+
+
+  return 0;
 }
   
   
