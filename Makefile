@@ -11,14 +11,15 @@
 #	release		build release version
 #
 
-debug: CFLAGS = -g -DCO_USE_ZLIB -Wall -I./co
+debug: CFLAGS = -g -DCO_USE_ZLIB -Wall -I./co 
 sanitize: CFLAGS = -g -DCO_USE_ZLIB -Wall -fsanitize=address -I./co
 release: CFLAGS = -O4 -DNDEBUG -DCO_USE_ZLIB -Wall -I./co
+gprof: CFLAGS = -g -pg -DCO_USE_ZLIB -Wall -I./co
 
 ifeq ($(shell uname -s),Linux)
 LDFLAGS = -lm -lz -lpthread
 else
-LDFLAGS = -Wl,-Bstatic -lm -lz -lpthread
+LDFLAGS = -Wl,-Bstatic -lm -lz -lpthread -pg
 endif
 
 COSRC = $(shell ls ./co/*.c)
@@ -31,6 +32,8 @@ sanitize: all
 release: all
 	strip a2l_info.exe
 	strip a2l_search.exe
+	
+gprof: all
 
 all: co_test co_a2l a2l_info a2l_search
 	
@@ -41,7 +44,7 @@ co_a2l: $(COOBJ) ./test/co_a2l.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
 
 a2l_info: $(COOBJ) ./test/a2l_info.o
-	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS) 
 
 a2l_search:  $(COOBJ) ./test/a2l_search.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)

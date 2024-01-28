@@ -10,7 +10,7 @@
 */
 
 // uncomment the following define to disable multi-threading
-#define USE_PTHREAD
+//#define USE_PTHREAD
 
 
 #include "co.h"
@@ -1744,8 +1744,8 @@ void showFunctionJSONDifference(cco all_function_def_characteristic_map, cco sw_
 				}
 				else
 				{
-					outJSONStr("");
-					//outJSONStr(coStrGet(coVectorGet(function_rec, 2))); // output description, which should include the version number
+					//outJSONStr("");
+					outJSONStr(coStrGet(coVectorGet(function_rec, 2))); // output description, which should include the version number
 				}
 			}
 			outJSON("],\n");
