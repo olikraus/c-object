@@ -2,13 +2,14 @@
 // https://stackoverflow.com/questions/2312110/efficiently-traverse-directory-tree-with-opendir-readdir-and-closedir
 
 
-//#define _XOPEN_SOURCE 500
+#define _XOPEN_SOURCE 500
 
 #include <ftw.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <assert.h>
 
 #include "co.h"
@@ -112,10 +113,8 @@ static int display_info(const char *fpath, const struct stat *sb, int tflag, str
 	static char dir_path[MAX_PATH_LEN];
 	static char file_name[MAX_PATH_LEN];
 	
-
-
-	
-	int ret = FTW_CONTINUE;
+	//int ret = FTW_CONTINUE;
+        int ret = 0;
 	/*
 		fpath: 					Full path including the current file/dir namespace
 		int ftwbuf->base:		The position within fpath, where the current file/dir starts
@@ -227,8 +226,8 @@ int main(int argc, char *argv[])
 		FTW_DEPTH			read files within a directory first 
 		FTW_ACTIONRETVAL	suppport the action return arguments for the CB 
 	*/
-   int flags = FTW_MOUNT | FTW_PHYS | FTW_DEPTH | FTW_ACTIONRETVAL;
-   //int flags = FTW_MOUNT | FTW_PHYS  | FTW_ACTIONRETVAL;
+   //int flags = FTW_MOUNT | FTW_PHYS | FTW_DEPTH | FTW_ACTIONRETVAL;
+   int flags = FTW_MOUNT | FTW_PHYS | FTW_DEPTH ;
    
    if ( argc < 3)
    {
