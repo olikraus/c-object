@@ -10,7 +10,7 @@
 */
 
 // uncomment the following define to disable multi-threading
-//#define USE_PTHREAD
+#define USE_PTHREAD
 
 
 #include "co.h"
@@ -1161,6 +1161,24 @@ co getAllFunctionDifferenceMap(cco sw_list)
 	TODO: Update this funciton to support axis_pts records inside characteristic_list --> DONE
 	
 */
+
+const char *getStringFromDifferenceNumber(int d)
+{
+	if ( d == 0 )
+		return "No characteristic/axis_pts difference";
+	if ( d & 1 )
+		return "Record/data type not supported, difference unknown";
+	if ( d & 2 )
+		return "Data type difference";
+	if ( d & 4 )
+		return "Data value difference";
+	if ( d & 8 )
+		return "Missing characteristic/axis_pts";
+	if ( d & 16 )
+		return "Moved characteristic/axis_pts";
+	return "";
+}
+
 int getCharacteristicAxisPtsDifference(cco sw_list, const char *characteristic_name, cco characteristic_list)
 {
 	long i, j;
@@ -1667,9 +1685,14 @@ void showFunctionJSONDifference(cco all_function_def_characteristic_map, cco sw_
 	int is_other_function;
 	long function_version_index;
 	const char *function_version_string;
+	const char *prev_function_version_string;
+	const char *function_desc_string;
+	const char *prev_function_desc_string;
 	char exists[SW_PAIR_MAX];
 	int is_first_function = 1;
 	int is_first_characteristic = 1;
+	int is_version_equal = 1;
+	int is_description_equal = 1;
 	
 	characteristic_axis_pts_list = coNewVector(CO_NONE);
 	
@@ -1692,6 +1715,8 @@ void showFunctionJSONDifference(cco all_function_def_characteristic_map, cco sw_
 	if ( coMapLoopFirst(&function_iterator, all_function_def_characteristic_map) )
 	{
 		do {
+			
+			
 			if ( is_first_function )
 			{
 				is_first_function = 0;
@@ -1709,6 +1734,8 @@ void showFunctionJSONDifference(cco all_function_def_characteristic_map, cco sw_
 
 			// output the function version from each a2l, the function version is optional and might be empty
 			outJSON("   [");
+			is_version_equal = 1;
+			prev_function_version_string = "";
 			for( i = 0; i < cnt; i++ )
 			{
 				if ( i != 0 )
@@ -1725,12 +1752,18 @@ void showFunctionJSONDifference(cco all_function_def_characteristic_map, cco sw_
 						function_version_string = coStrGet(coVectorGet(function_rec, function_version_index+1));
 					}
 				}
+				if ( i != 0 )
+					if ( strcmp(prev_function_version_string, function_version_string) != 0 )
+						is_version_equal = 0;
 				outJSONStr(function_version_string);
+				prev_function_version_string = function_version_string;
 			}
-			outJSON("],\n");
+			outJSON("],%d,\n", is_version_equal);
 			
 			// output the description of the function from each a2l
 			outJSON("   [");
+			is_description_equal = 1;
+			prev_function_desc_string = "";
 			for( i = 0; i < cnt; i++ )
 			{
 				if ( i != 0 )
@@ -1740,15 +1773,19 @@ void showFunctionJSONDifference(cco all_function_def_characteristic_map, cco sw_
 				function_rec = coMapGet(function_name_map, function_name);
 				if ( function_rec == NULL )
 				{
-					outJSONStr("");
+					function_desc_string = "";
 				}
 				else
 				{
-					//outJSONStr("");
-					outJSONStr(coStrGet(coVectorGet(function_rec, 2))); // output description, which should include the version number
+					function_desc_string = coStrGet(coVectorGet(function_rec, 2)); // description, which should include the version number
 				}
+				if ( i != 0 )
+					if ( strcmp(prev_function_desc_string, function_desc_string) != 0 )
+						is_description_equal = 0;
+				outJSONStr(function_desc_string); 
+				prev_function_desc_string = function_desc_string;
 			}
-			outJSON("],\n");
+			outJSON("],%d,\n", is_description_equal);
 
 			// the outer loop goes over all_function_def_characteristic_map: the value is a map with the characteristics and axis_pts names
 			characteristic_map = coMapLoopValue(&function_iterator);
@@ -1822,6 +1859,7 @@ void showFunctionJSONDifference(cco all_function_def_characteristic_map, cco sw_
 							outJSON(",\n");
 						}
 						outJSON("    [\"%s\", \"%s\", %d]", characteristic_axis_pts_name, exists, difference_number);
+						//outJSON("    [\"%s\", \"%s\", \"%s\"]", characteristic_axis_pts_name, exists, getStringFromDifferenceNumber(difference_number));
 					}
 					
 				} while( coMapLoopNext(&characteristic_iterator) );

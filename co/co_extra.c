@@ -160,6 +160,11 @@ co coA2LGetArray(coReader reader, char *buf)
   const char *t;
   co array_obj;
   co element;
+  static char zero[] = "0";
+  static char one[] = "1";
+  static char if_data[] = "IF_DATA";
+  static char measurement[] = "MEASUREMENT";
+  
   
   array_obj = coNewVector(CO_FREE_VALS);
   for(;;)
@@ -188,7 +193,24 @@ co coA2LGetArray(coReader reader, char *buf)
     }
     else
     {
-      element = coNewStr(CO_STRDUP, t);   // t is a pointer into constant memory, so do a strdup 
+	  if ( t[0] == '0' || t[0] == '1' || t[0] == 'I' || t[0] == 'M' )
+	  {
+		// do a little bit of speed improvment, by avoiding the allocation of some very common strings
+		if ( strcmp(t, zero) == 0 )
+			element = coNewStr(CO_NONE, zero);   // use a static string to avoid malloc 
+		else if ( strcmp(t, one) == 0 )
+			element = coNewStr(CO_NONE, one);   // use a static string to avoid malloc 
+		else if ( strcmp(t, if_data) == 0 )
+			element = coNewStr(CO_NONE, if_data);   // use a static string to avoid malloc 
+		else if ( strcmp(t, measurement) == 0 )
+			element = coNewStr(CO_NONE, measurement);   // use a static string to avoid malloc 
+		else
+			element = coNewStr(CO_STRDUP, t);   // t is a pointer into constant memory, so do a strdup 
+	  }
+	  else
+	  {
+		element = coNewStr(CO_STRDUP, t);   // t is a pointer into constant memory, so do a strdup 
+	  }
       if ( element == NULL )
         return NULL;
       if ( coVectorAdd(array_obj, element) < 0 )
