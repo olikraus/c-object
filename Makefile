@@ -14,12 +14,12 @@
 debug: CFLAGS = -g -DCO_USE_ZLIB -Wall -I./co 
 sanitize: CFLAGS = -g -DCO_USE_ZLIB -Wall -fsanitize=address -I./co
 release: CFLAGS = -O4 -DNDEBUG -DCO_USE_ZLIB -Wall -I./co
-gprof: CFLAGS = -g -pg -DCO_USE_ZLIB -Wall -I./co
+#gprof: CFLAGS = -g -pg -DCO_USE_ZLIB -Wall -I./co
 
 ifeq ($(shell uname -s),Linux)
 LDFLAGS = -lm -lz -lpthread
 else
-LDFLAGS = -Wl,-Bstatic -lm -lz -lpthread -pg
+LDFLAGS = -Wl,-Bstatic -lm -lz -lpthread
 endif
 
 COSRC = $(shell ls ./co/*.c)
@@ -33,7 +33,7 @@ release: all
 	strip a2l_info.exe
 	strip a2l_search.exe
 	
-gprof: all
+#gprof: all
 
 all: co_test co_a2l a2l_info a2l_search
 	
