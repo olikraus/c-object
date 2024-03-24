@@ -1,4 +1,4 @@
-# c-object
+# c-object lib
 
  * Generic objects implemented in C
  * Support for vector and map data structures
