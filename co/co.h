@@ -184,7 +184,7 @@ extern coFn coDblType;
 /* object construction */
 
 co coNewBlank();
-co coNewStr(unsigned flags, const char *s);
+co coNewStr(unsigned flags, const char *s);  // most often CO_STRDUP should be used
 co coNewDbl(double n);
 co coNewMem(void);
 co coNewVector(unsigned flags);
