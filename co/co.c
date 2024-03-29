@@ -1611,7 +1611,7 @@ co coJSONGetArray(coReader reader)
     if ( c == ']' )
       break;
     if ( c < 0 )
-      return coReaderErr(reader, "Missing ']'"), NULL;
+      return coReaderErr(reader, "Missing ']'"), coDelete(array_obj), NULL;
     
     if ( coVectorEmpty(array_obj) == 0 )          // expect a ',' after the first element
       if ( c == ',' )
@@ -1623,7 +1623,7 @@ co coJSONGetArray(coReader reader)
     element = coJSONGetValue(reader);
     
     if ( element == NULL )
-      return NULL;
+      return coDelete(array_obj), NULL;
     if ( coVectorAdd(array_obj, element) < 0 )
       return coReaderErr(reader, "Memory error inside 'array'"), coDelete(array_obj), NULL;
   }
