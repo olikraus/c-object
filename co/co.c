@@ -1029,11 +1029,22 @@ co coMapClone(cco o)
   return new_obj;
 }
 
+int coMapExists(cco o, const char *key)
+{
+  struct co_avl_node_struct *n;
+  assert(coIsMap(o));
+  n = avl_query(o->m.root, key);
+  if ( n == NULL )
+    return 0;
+  return 1;
+}
+
 /* return the value for a given key */
 cco coMapGet(cco o, const char *key)
 {
-  struct co_avl_node_struct *n = avl_query(o->m.root, key);
+  struct co_avl_node_struct *n;
   assert(coIsMap(o));
+  n = avl_query(o->m.root, key);
   if ( n == NULL )
     return NULL;
   return (cco)(n->value);  

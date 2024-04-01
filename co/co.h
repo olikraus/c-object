@@ -248,6 +248,7 @@ long coVectorPredecessorBinarySearch(cco v, const char *search_key);  // assumes
 
 /* map functions */
 int coMapAdd(co o, const char *key, cco value);    // insert object into the map, returns 0 for memory error
+int coMapExists(cco o, const char *key); // return 1 if "key" exists in the map
 cco coMapGet(cco o, const char *key);     // get object from map by key, returns NULL if key doesn't exist in the map 
 void coMapErase(co o, const char *key);   // removes object from the map
 void coMapClear(co o);   // delete all elements and clear the array         
