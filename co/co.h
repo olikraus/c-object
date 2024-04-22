@@ -26,17 +26,17 @@
 
   Example 1:
     co v = coNewVector();
-    coAdd(v, coNewStr("abc"));  // valid, return value of coNewStr is deleted by v
+    coAdd(v, coNewStr(CO_STRDUP, "abc"));  // valid, return value of coNewStr is deleted by v
   
   Example 2:
     co v = coNewVector();
-    co s = coNewStr("abc");
+    co s = coNewStr(CO_STRDUP, "abc");
     coAdd(v, s);               // valid, but s is invalid after this statement
     coAdd(v, s);                // invalid, because s is already illegal
 
   Example 3:
     co v = coNewVector();
-    co s = coNewStr("abc");
+    co s = coNewStr(CO_STRDUP, "abc");
     coAdd(v, s);               // valid, but s is invalid after this statement
     coDelete(s);                // invalid, because s will be deleted by v again
     
@@ -45,7 +45,7 @@
     co s; 
     for( i = 0; i < 10; i++ )
     {
-      s = coNewStr("abc");  // valid, s is illegal and will be overwritten
+      s = coNewStr(CO_STRDUP, "abc");  // valid, s is illegal and will be overwritten
       coAdd(v, s);               // valid, but s is invalid after this statement
     }
 
