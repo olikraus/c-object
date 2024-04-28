@@ -12,6 +12,8 @@
   -DCO_USE_ZLIB
     will enable autodetection of .gz compressed input files (this will require linking against "-lz")
 
+  28 apr 2024:  fixed coMapClone(): Removed strdup(key) because strdup() is already applied internally
+
 */
 #include "co.h"
 #include <stdlib.h>
@@ -1014,7 +1016,8 @@ int coMapEmpty(cco o)
 
 static int avl_co_map_clone_cb(cco o, long idx, const char *key, cco value, void *data)
 {
-  return coMapAdd((co)data, strdup(key), coClone((co)(value)));
+  // strdup() will be applied to key, because CO_STRDUP is active for the map
+  return coMapAdd((co)data, key, coClone((co)(value)));
 }
 
 co coMapClone(cco o)
