@@ -822,21 +822,22 @@ struct co_avl_node_struct *avl_query(struct co_avl_node_struct *root, const char
   return avl_query(root->kid[c > 0], key);
 }
 
-/* returns 0 for any allocation error */
-static int avl_insert(struct co_avl_node_struct **rootp, const char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
+/* returns NULL for any allocation error, otherwise the pointer to the internal key  */
+/* the return value is identical to the key argument if the key doesn't yet exist otherwise it is a pointer to the existing key in the tree */
+static const char *avl_insert(struct co_avl_node_struct **rootp, const char *key, void *value, avl_free_fn free_key, avl_free_fn free_value)
 {
   struct co_avl_node_struct *root = *rootp;
   int c;
 
   if ( key == NULL )
-    return 0; // illegal key
+    return NULL; // illegal key
 
   if (root == avl_nnil)
   {
-    *rootp = avl_new_node(key, value);  // value is cloned within avl_new_node()
-    if ( *rootp == avl_nnil )
-      return 0;
-    return 1;
+    *rootp = avl_new_node(key, value);  
+    if ( *rootp == avl_nnil )	// memory error
+      return NULL;
+    return key;
   }
   
   c = strcmp(key, root->key);
@@ -847,14 +848,16 @@ static int avl_insert(struct co_avl_node_struct **rootp, const char *key, void *
     if ( root->value != NULL )
       free_value(root->value);
     root->value = value;
+	key = root->key;	// return the internal key
   }
   else
   {
-    if ( avl_insert(&root->kid[c > 0], key, value, free_key, free_value) == 0 )
-      return 0;
+    key = avl_insert(&root->kid[c > 0], key, value, free_key, free_value);
+    if ( key == NULL )
+      return NULL;
     avl_adjust_balance(rootp, free_key, free_value);
   }
-  return 1;
+  return key;
 }
 
 static void avl_delete(struct co_avl_node_struct **rootp, const char *key, avl_free_fn free_key, avl_free_fn free_value)
@@ -951,7 +954,7 @@ int coMapInit(co o, void *data)
   return 1;
 }
 
-int coMapAdd(co o, const char *key, cco value)
+const char *coMapAdd(co o, const char *key, cco value)
 {
   const char *k;
   assert(coIsMap(o));
@@ -1017,7 +1020,7 @@ int coMapEmpty(cco o)
 static int avl_co_map_clone_cb(cco o, long idx, const char *key, cco value, void *data)
 {
   // strdup() will be applied to key, because CO_STRDUP is active for the map
-  return coMapAdd((co)data, key, coClone((co)(value)));
+  return coMapAdd((co)data, key, coClone((co)(value))) == NULL ? 0 : 1;
 }
 
 co coMapClone(cco o)
@@ -1041,6 +1044,17 @@ int coMapExists(cco o, const char *key)
   if ( n == NULL )
     return 0;
   return 1;
+}
+
+/* return the internal pointer to the key for a given string key, returns NULL if the key doesn't exist */
+const char *coMapGetKey(cco o, const char *key)
+{
+  struct co_avl_node_struct *n;
+  assert(coIsMap(o));
+  n = avl_query(o->m.root, key);
+  if ( n == NULL )
+    return NULL;
+  return n->key;
 }
 
 /* return the value for a given key */

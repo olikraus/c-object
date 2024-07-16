@@ -247,9 +247,11 @@ co coVectorMap(cco o, coVectorMapCB cb, void *data);
 long coVectorPredecessorBinarySearch(cco v, const char *search_key);  // assumes structre as returned by "coNewVectorByMap()"
 
 /* map functions */
-int coMapAdd(co o, const char *key, cco value);    // insert object into the map, returns 0 for memory error
+//int coMapAdd(co o, const char *key, cco value);    // insert object into the map, returns 0 for memory error
+const char *coMapAdd(co o, const char *key, cco value);	 // insert object into the map, returns NULL for memory error, otherwise the internal pointer to key
 int coMapExists(cco o, const char *key); // return 1 if "key" exists in the map
 cco coMapGet(cco o, const char *key);     // get object from map by key, returns NULL if key doesn't exist in the map 
+const char *coMapGetKey(cco o, const char *key);	// returns the internal pointer to the key string or NULL if the key doesn't exist
 void coMapErase(co o, const char *key);   // removes object from the map
 void coMapClear(co o);   // delete all elements and clear the array         
 int coMapEmpty(cco o); // return 1 if the map is empty, return 0 otherwise
