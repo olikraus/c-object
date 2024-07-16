@@ -383,3 +383,209 @@ co coReadS19ByFP(FILE *fp)
   return map;
 }
 
+/*===================================================================*/
+/* CSV Reader, https://www.rfc-editor.org/rfc/rfc4180 */
+/*===================================================================*/
+
+#define CO_CSV_FIELD_STRING_MAX (8*1024)
+
+co coGetCSVField(struct co_reader_struct *r, int separator, char *buf)
+{
+	size_t idx = 0;
+	int isQuote = 0;
+	int c;
+	
+	c = coReaderCurr(r);
+	if ( c < 0 )
+		return NULL;
+	if ( c == '\"' )
+	{
+		isQuote = 1;
+		coReaderNext(r);
+		c = coReaderCurr(r);
+	}
+	for(;;)
+	{
+		if ( c < 0 )
+		{
+			buf[idx] = '\0';
+			return coNewStr(CO_STRDUP, buf);
+		}
+		else if ( c == '\"' )
+		{
+			coReaderNext(r);
+			c = coReaderCurr(r);
+			if ( isQuote )
+			{
+				if ( c == '\"' )	// double double quote == escaped double quote
+				{
+					// storing is done at the end of the for-loop body 
+					// buf[idx++] = '\"';	// store double quote and continue
+				}
+				else // end of field, lets look for the separator
+				{
+					for(;;)
+					{
+						if ( c < 0 )
+						{
+							buf[idx] = '\0';
+							return coNewStr(CO_STRDUP, buf);
+						}
+						if ( c == separator ) 
+						{
+							buf[idx] = '\0';
+							return coNewStr(CO_STRDUP, buf);	// separator will be handled by calling function
+						}
+						if ( c == '\n' || c == '\r' ) // let the calling function handle  \n and \r
+						{
+							buf[idx] = '\0';
+							return coNewStr(CO_STRDUP, buf);
+						}
+						coReaderNext(r);
+						c = coReaderCurr(r);
+					}
+					/* we will never come here */
+				}
+			}
+			else
+			{
+				// double quote was found, but we are not in double quote mode, so just store the double quote
+				// storing is done at the end of the for-loop body 
+				//buf[idx++] = '\"';	// store double quote and continue
+			}
+		}
+		else if ( c == separator )
+		{
+			if ( isQuote )
+			{
+				// we are inside double quotes, so just store the separator (which is done at the end of the for loop)
+			}
+			else
+			{
+				// end of field found... separator will be handled by calling function
+				buf[idx] = '\0';
+				return coNewStr(CO_STRDUP, buf);
+			}
+		}
+		else if ( c == '\n' || c == '\r' ) 
+		{
+			if ( isQuote )
+			{
+				// CR/LF inside double quotes: just continue and store the CRLR sequence
+			}
+			else
+			{	// let the calling function handle  \n and \r
+				buf[idx] = '\0';
+				return coNewStr(CO_STRDUP, buf);
+			}
+		}
+
+		buf[idx++] = c;		
+		coReaderNext(r);
+		c = coReaderCurr(r);
+	}
+	/* we will never reach this statement */
+	return NULL; 	
+}
+
+
+co coGetCSVRow(struct co_reader_struct *r, int separator, char *buf)
+{
+	co rowVector = coNewVector(CO_FREE_VALS);
+	co field;
+	
+	//puts("coGetCSVRow");
+
+	for(;;)
+	{
+		field = coGetCSVField(r, separator, buf);
+		if ( field == NULL )
+		{
+			if ( coVectorSize(rowVector) == 0 ) 
+			{
+				coDelete(rowVector);
+				return NULL;
+			}
+			break;
+		}
+		
+		//printf("Field %s\n", coStrGet(field));
+		if ( coVectorAdd(rowVector, field) < 0 )
+		{
+			coDelete(field);
+			coDelete(rowVector);
+			return NULL;
+		}
+		
+		if ( coReaderCurr(r) == '\n' )
+		{
+			coReaderNext(r);
+			if ( coReaderCurr(r) == '\r' )
+				coReaderNext(r);
+			break;
+		}
+		
+		if ( coReaderCurr(r) == '\r' )
+		{
+			coReaderNext(r);
+			if ( coReaderCurr(r) == '\n' )
+				coReaderNext(r);
+			break;
+		}
+		
+		if ( coReaderCurr(r) == separator )
+		{
+			coReaderNext(r);
+			// handle the special case, where the separtor is the last char of the file.
+			// in such a case, add an empty string to the row vector
+			if ( coReaderCurr(r) < 0 )
+			{
+				field = coNewStr(CO_STRDUP, "");
+				if ( coVectorAdd(rowVector, field) < 0 )
+				{
+					coDelete(field);
+					coDelete(rowVector);
+					return NULL;
+				}
+				return rowVector;
+			}
+		}
+	}
+	return rowVector;
+}
+
+co coGetCSVFile(struct co_reader_struct *reader, int separator, char *buf)
+{
+	co fileVector = coNewVector(CO_FREE_VALS);
+	co rowVector;
+
+	//puts("coGetCSVFile");
+
+	coReaderSkipWhiteSpace(reader);
+
+	for(;;)
+	{
+		rowVector = coGetCSVRow(reader, separator, buf);
+		if ( rowVector == NULL )
+			break;
+		if ( coVectorAdd(fileVector, rowVector) < 0 )
+		{
+			coDelete(rowVector);
+			coDelete(fileVector);
+			return NULL;
+		}
+		
+	}
+	return fileVector;
+}
+
+
+co coReadCSVByFP(FILE *fp, int separator)
+{
+  struct co_reader_struct reader;
+  char buf[CO_CSV_FIELD_STRING_MAX];
+  
+  if ( coReaderInitByFP(&reader, fp) == 0 )
+    return NULL;
+  return coGetCSVFile(&reader, separator, buf);
+}
