@@ -341,6 +341,7 @@ void coReaderErr(coReader r, const char *msg);
 co coReadA2LByString(const char *json);
 co coReadA2LByFP(FILE *fp);
 co coReadS19ByFP(FILE *fp); // returns map, key=8digit addres, value=mem block
+co coReadHEXByFP(FILE *fp); // returns map, key=8digit addres, value=mem block
 co coReadCSVByFP(FILE *fp, int separator);		// returns vector, separator should be ',' or ';'
 
 
