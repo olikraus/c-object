@@ -384,6 +384,132 @@ co coReadS19ByFP(FILE *fp)
 }
 
 /*===================================================================*/
+/* HEX Reader (https://de.wikipedia.org/wiki/Intel_HEX) */
+/*===================================================================*/
+
+#define HEX_MAX_LINE_LEN 1024
+
+
+co coReadHEXByFP(FILE *fp)
+{
+  char buf[HEX_MAX_LINE_LEN];
+  unsigned char mem[HEX_MAX_LINE_LEN/2];
+  char addr_as_hex[10];
+  char *line;
+  size_t rec_address = 0x0;
+  size_t seg_address = 0x0;
+  size_t last_address = 0xffffffff; 
+  size_t address; 
+  size_t mem_cnt;
+  int rec_type;
+  int i, c;
+  struct co_reader_struct reader_struct;
+  coReader r = &reader_struct;
+  coReaderInitByFP(r, fp);
+  
+  co mo = NULL;                // memory object
+  co map = coNewMap(CO_FREE_VALS|CO_STRDUP);
+  if ( map == NULL )
+    return NULL;
+  for(;;)
+  {
+    i = 0;
+    for(;;)
+    {
+        c = coReaderCurr(r);
+        coReaderNext(r);
+        if ( c < 0 )
+        {
+          if ( i == 0 )
+                  line = NULL;
+          else	
+          {
+                  line = buf;
+                  buf[i] = '\0';
+          }
+          break;
+        }
+        
+        if ( c == '\n' || c == '\r' )
+        {
+                line = buf;
+                buf[i] = '\0';	
+                break;
+        }
+        if ( i >= HEX_MAX_LINE_LEN )
+          return puts("illegal line length in hex file"), coDelete(map), NULL;		
+        if ( c > ' ' )
+          buf[i++] = c;
+        else
+          i++;
+    }
+	
+    if ( line == NULL )
+      break;
+  
+    while( *line != ':' && *line != '\0')
+      line++;
+
+    if ( *line == '\0' )
+      continue;
+    
+    line++;
+    
+    mem_cnt = hexToUnsigned(line);
+    if ( (mem_cnt+5)*2+1 > i )         // +1 because of the ":"
+		  return puts("count mismatch in hex file"), coDelete(map), NULL;		
+    //if ( byte_cnt > 255 )
+    //  return puts("wrong byte_cnt"), coDelete(map), NULL;
+    hexToMem(line, (mem_cnt+5), mem);     // simply read all, including byte cnt and checksum
+
+    rec_address = mem[1]*256+mem[2];    
+    rec_type = mem[3];
+    if ( rec_type == 0 )
+    {
+      address = seg_address + rec_address;
+      sprintf(addr_as_hex, "%08zX", address);
+      if ( mo == NULL || last_address != address )
+      {
+            mo = coNewMem();                // create a new memory block
+            if ( coMemAdd(mo, mem, mem_cnt) == 0 )
+              return coDelete(map), NULL;
+            if ( coMapAdd(map, addr_as_hex, mo) == 0 )
+              return coDelete(map), NULL;
+      }
+      else
+      {
+            if ( coMemAdd(mo, mem, mem_cnt) == 0 )     // extend the existing memory block
+              return coDelete(map), NULL;
+      }
+      last_address = address + mem_cnt;
+    }
+    else if ( rec_type == 1 )
+    {
+      return map;
+    }
+    else if ( rec_type == 2 )
+    {
+      seg_address = (mem[4]*256+mem[5])*16;
+      return map;
+    }
+    else if ( rec_type == 3 )
+    {
+      // start address ignored
+    }
+    else if ( rec_type == 4 )
+    {
+      seg_address = (mem[4]*256+mem[5])<<16;
+    }
+    else if ( rec_type == 5 )
+    {
+      // start address ignored
+    }
+  } // for(;;)
+  return map;
+}
+
+
+/*===================================================================*/
 /* CSV Reader, https://www.rfc-editor.org/rfc/rfc4180 */
 /*===================================================================*/
 
