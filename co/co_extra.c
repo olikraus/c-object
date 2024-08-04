@@ -460,7 +460,8 @@ co coReadHEXByFP(FILE *fp)
     if ( *line == '\0' )
       continue;
     
-    line++;
+	if ( *line == ':' )
+		line++;
     
     mem_cnt = hexToUnsigned(line);
     if ( (mem_cnt+5)*2+1 > i )         // +1 because of the ":"
@@ -480,14 +481,14 @@ co coReadHEXByFP(FILE *fp)
       if ( mo == NULL || last_address != address )
       {
             mo = coNewMem();                // create a new memory block
-            if ( coMemAdd(mo, mem, mem_cnt) == 0 )
+            if ( coMemAdd(mo, mem+4, mem_cnt) == 0 )
               return coDelete(map), NULL;
             if ( coMapAdd(map, addr_as_hex, mo) == 0 )
               return coDelete(map), NULL;
       }
       else
       {
-            if ( coMemAdd(mo, mem, mem_cnt) == 0 )     // extend the existing memory block
+            if ( coMemAdd(mo, mem+4, mem_cnt) == 0 )     // extend the existing memory block
               return coDelete(map), NULL;
       }
       last_address = address + mem_cnt;
