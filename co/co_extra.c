@@ -272,6 +272,7 @@ static void hexToMem(const char *s, size_t cnt, unsigned char*mem)
   }
 }
 
+
 co coReadS19ByFP(FILE *fp)
 {
   char buf[S19_MAX_LINE_LEN];
@@ -327,12 +328,14 @@ co coReadS19ByFP(FILE *fp)
     if ( line == NULL )
       break;
   
+  
     while( *line != 'S' && *line != '\0')
       line++;
     rec_type = line[1];
+	
 	if ( rec_type >= '1' && rec_type <= '9' )
 	{
-		byte_cnt = hexToUnsigned(line+2);
+		byte_cnt = hexToUnsigned(line+2);		
 		if ( byte_cnt > 255 )
 		  return puts("wrong byte_cnt"), coDelete(map), NULL;		
 		
@@ -341,19 +344,20 @@ co coReadS19ByFP(FILE *fp)
 		  address = (size_t)hexToUnsigned(line+4);
 		  address <<= 8;
 		  address += (size_t)hexToUnsigned(line+6);
-		  if ( rec_type == '1' )
+		  mem_cnt = 0;
+		  if ( rec_type == '1' && byte_cnt >= 3 )
 		  {
 			hexToMem(line+8, byte_cnt-2, mem);     // do not read address, but include checksum
 			mem_cnt = byte_cnt - 3;
 		  }
-		  else if ( rec_type == '2' )
+		  else if ( rec_type == '2'  && byte_cnt >= 4  )
 		  {
 			address <<= 8;
 			address += (size_t)hexToUnsigned(line+8);
 			hexToMem(line+10, byte_cnt-3, mem);     // do not read address, but include checksum
 			mem_cnt = byte_cnt - 4;
 		  }
-		  else if ( rec_type == '3' )
+		  else if ( rec_type == '3'  && byte_cnt >= 5  )
 		  {
 			address <<= 8;
 			address += (size_t)hexToUnsigned(line+8);
@@ -399,11 +403,12 @@ co coReadHEXByFP(FILE *fp)
   size_t rec_address = 0x0;
   size_t seg_address = 0x0;
   size_t last_address = 0xffffffff; 
-  size_t address; 
+  size_t address = 0x0; 
   size_t mem_cnt;
   int rec_type;
   int i, c;
   struct co_reader_struct reader_struct;
+  
   coReader r = &reader_struct;
   coReaderInitByFP(r, fp);
   
@@ -444,6 +449,8 @@ co coReadHEXByFP(FILE *fp)
           i++;
     }
 	
+	//printf("line %s, i=%d\n", line, i);
+	
     if ( line == NULL )
       break;
   
@@ -467,7 +474,9 @@ co coReadHEXByFP(FILE *fp)
     if ( rec_type == 0 )
     {
       address = seg_address + rec_address;
+	  //address = rec_address;
       sprintf(addr_as_hex, "%08zX", address);
+	  //printf("%lld %llu %s\n", seg_address, address, addr_as_hex);
       if ( mo == NULL || last_address != address )
       {
             mo = coNewMem();                // create a new memory block
@@ -485,23 +494,28 @@ co coReadHEXByFP(FILE *fp)
     }
     else if ( rec_type == 1 )
     {
+	  //printf("rec_type %d, EOF\n", rec_type);
       return map;
     }
     else if ( rec_type == 2 )
     {
-      seg_address = (mem[4]*256+mem[5])*16;
+	  //printf("rec_type %d, seg_address=%lx\n", rec_type, (unsigned long)seg_address);
+      seg_address = ((size_t)mem[4]*256+(size_t)mem[5])*16;
       return map;
     }
     else if ( rec_type == 3 )
     {
+	  //printf("rec_type %d, ignored\n", rec_type);
       // start address ignored
     }
     else if ( rec_type == 4 )
     {
-      seg_address = (mem[4]*256+mem[5])<<16;
+	  //printf("rec_type %d, seg_address=%lx\n", rec_type, (unsigned long)seg_address);
+      seg_address = ((size_t)mem[4]*256+(size_t)mem[5])<<16;
     }
     else if ( rec_type == 5 )
     {
+	  //printf("rec_type %d, ignored\n", rec_type);
       // start address ignored
     }
   } // for(;;)
