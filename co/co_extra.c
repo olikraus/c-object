@@ -530,7 +530,14 @@ co coReadHEXByFP(FILE *fp)
 
 #define CO_CSV_FIELD_STRING_MAX (8*1024)
 
-co coGetCSVField(struct co_reader_struct *r, int separator, char *buf)
+cco coNewCSVStr(const char *s, co pool)
+{
+  if ( pool == NULL )
+    return coNewStr(CO_STRDUP, s);
+  return coMapAddValueKey(pool, s);
+}
+
+cco coGetCSVField(struct co_reader_struct *r, int separator, char *buf, co pool)
 {
 	size_t idx = 0;
 	int isQuote = 0;
@@ -550,7 +557,8 @@ co coGetCSVField(struct co_reader_struct *r, int separator, char *buf)
 		if ( c < 0 )
 		{
 			buf[idx] = '\0';
-			return coNewStr(CO_STRDUP, buf);
+                        return coNewCSVStr(buf, pool);
+			// return coNewStr(CO_STRDUP, buf);
 		}
 		else if ( c == '\"' )
 		{
@@ -570,17 +578,20 @@ co coGetCSVField(struct co_reader_struct *r, int separator, char *buf)
 						if ( c < 0 )
 						{
 							buf[idx] = '\0';
-							return coNewStr(CO_STRDUP, buf);
+                                                        return coNewCSVStr(buf, pool);
+							//return coNewStr(CO_STRDUP, buf);
 						}
 						if ( c == separator ) 
 						{
 							buf[idx] = '\0';
-							return coNewStr(CO_STRDUP, buf);	// separator will be handled by calling function
+                                                        return coNewCSVStr(buf, pool);
+							// return coNewStr(CO_STRDUP, buf);	// separator will be handled by calling function
 						}
 						if ( c == '\n' || c == '\r' ) // let the calling function handle  \n and \r
 						{
 							buf[idx] = '\0';
-							return coNewStr(CO_STRDUP, buf);
+                                                        return coNewCSVStr(buf, pool);
+							// return coNewStr(CO_STRDUP, buf);
 						}
 						coReaderNext(r);
 						c = coReaderCurr(r);
@@ -605,7 +616,8 @@ co coGetCSVField(struct co_reader_struct *r, int separator, char *buf)
 			{
 				// end of field found... separator will be handled by calling function
 				buf[idx] = '\0';
-				return coNewStr(CO_STRDUP, buf);
+                                return coNewCSVStr(buf, pool);
+				// return coNewStr(CO_STRDUP, buf);
 			}
 		}
 		else if ( c == '\n' || c == '\r' ) 
@@ -617,7 +629,8 @@ co coGetCSVField(struct co_reader_struct *r, int separator, char *buf)
 			else
 			{	// let the calling function handle  \n and \r
 				buf[idx] = '\0';
-				return coNewStr(CO_STRDUP, buf);
+                                return coNewCSVStr(buf, pool);
+				// return coNewStr(CO_STRDUP, buf);
 			}
 		}
 
@@ -630,16 +643,16 @@ co coGetCSVField(struct co_reader_struct *r, int separator, char *buf)
 }
 
 
-co coGetCSVRow(struct co_reader_struct *r, int separator, char *buf)
+co coGetCSVRow(struct co_reader_struct *r, int separator, char *buf, co pool)
 {
-	co rowVector = coNewVector(CO_FREE_VALS);
-	co field;
+	co rowVector = coNewVector(pool == NULL ? CO_FREE_VALS : CO_NONE);
+	cco field;
 	
 	//puts("coGetCSVRow");
 
 	for(;;)
 	{
-		field = coGetCSVField(r, separator, buf);
+		field = coGetCSVField(r, separator, buf, pool);
 		if ( field == NULL )
 		{
 			if ( coVectorSize(rowVector) == 0 ) 
@@ -653,7 +666,8 @@ co coGetCSVRow(struct co_reader_struct *r, int separator, char *buf)
 		//printf("Field %s\n", coStrGet(field));
 		if ( coVectorAdd(rowVector, field) < 0 )
 		{
-			coDelete(field);
+                        if ( pool == NULL )
+                          coDelete((co)field);
 			coDelete(rowVector);
 			return NULL;
 		}
@@ -681,10 +695,12 @@ co coGetCSVRow(struct co_reader_struct *r, int separator, char *buf)
 			// in such a case, add an empty string to the row vector
 			if ( coReaderCurr(r) < 0 )
 			{
-				field = coNewStr(CO_STRDUP, "");
+                                field = coNewCSVStr("", pool);
+				//field = coNewStr(CO_STRDUP, "");
 				if ( coVectorAdd(rowVector, field) < 0 )
 				{
-					coDelete(field);
+                                        if ( pool == NULL )
+                                          coDelete((co)field);
 					coDelete(rowVector);
 					return NULL;
 				}
@@ -695,7 +711,7 @@ co coGetCSVRow(struct co_reader_struct *r, int separator, char *buf)
 	return rowVector;
 }
 
-co coGetCSVFile(struct co_reader_struct *reader, int separator, char *buf)
+co coGetCSVFile(struct co_reader_struct *reader, int separator, char *buf, co pool)
 {
 	co fileVector = coNewVector(CO_FREE_VALS);
 	co rowVector;
@@ -706,7 +722,7 @@ co coGetCSVFile(struct co_reader_struct *reader, int separator, char *buf)
 
 	for(;;)
 	{
-		rowVector = coGetCSVRow(reader, separator, buf);
+		rowVector = coGetCSVRow(reader, separator, buf, pool);
 		if ( rowVector == NULL )
 			break;
 		if ( coVectorAdd(fileVector, rowVector) < 0 )
@@ -728,5 +744,15 @@ co coReadCSVByFP(FILE *fp, int separator)
   
   if ( coReaderInitByFP(&reader, fp) == 0 )
     return NULL;
-  return coGetCSVFile(&reader, separator, buf);
+  return coGetCSVFile(&reader, separator, buf, NULL);
+}
+
+co coReadCSVByFPWithPool(FILE *fp, int separator, co pool)
+{
+  struct co_reader_struct reader;
+  char buf[CO_CSV_FIELD_STRING_MAX];
+  
+  if ( coReaderInitByFP(&reader, fp) == 0 )
+    return NULL;
+  return coGetCSVFile(&reader, separator, buf, pool);
 }

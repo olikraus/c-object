@@ -250,6 +250,9 @@ long coVectorPredecessorBinarySearch(cco v, const char *search_key);  // assumes
 //int coMapAdd(co o, const char *key, cco value);    // insert object into the map, returns 0 for memory error
 const char *coMapAdd(co o, const char *key, cco value);	 // insert object into map, returns NULL for memory error, otherwise the internal pointer to key
 // note: if key exists, then the internal pointer to the same key string is returned, otherwise the key argument is returned
+
+cco coMapAddValueKey(co o, const char *key); // add a new entry to the map with key and also the value beeing the same key, CO_FREE_VALS must be enable for the map. The value object is returned.
+
 int coMapExists(cco o, const char *key); // return 1 if "key" exists in the map
 cco coMapGet(cco o, const char *key);     // get object from map by key, returns NULL if key doesn't exist in the map 
 const char *coMapGetKey(cco o, const char *key);	// returns the internal pointer to the key string or NULL if the key doesn't exist
@@ -344,6 +347,8 @@ co coReadA2LByFP(FILE *fp);
 co coReadS19ByFP(FILE *fp); // returns map, key=8digit addres, value=mem block
 co coReadHEXByFP(FILE *fp); // returns map, key=8digit addres, value=mem block
 co coReadCSVByFP(FILE *fp, int separator);		// returns vector, separator should be ',' or ';'
+co coReadCSVByFPWithPool(FILE *fp, int separator, co pool);     // same as coReadCSVByFP, but will allocate all strings in the pool, which must be a map with CO_FREE_VALS flag, pool can be NULL
+
 
 
 

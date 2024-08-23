@@ -975,6 +975,56 @@ const char *coMapAdd(co o, const char *key, cco value)
   );  
 }
 
+// Add a key and also store the key as a value
+// returns the value (string object) if successful 
+// the provided map must have CO_FREE_VALS enabled
+// Whether CO_STRDUP is enabled for the map, doesn't matter and will be taken care
+// the return value belongs to the map and must not be free'd somewhere else
+cco coMapAddValueKey(co o, const char *key)
+{
+  const char *k;
+  cco cv;
+  co v;
+  assert(coIsMap(o));
+  assert(key != NULL);
+  assert( (o->flags & CO_FREE_VALS) != 0 );
+  
+  cv = coMapGet(o, key);
+  if ( cv != NULL )
+    return cv;          // if the key exists, just return the string object with the key (which is also the value)
+  
+  // otherwise create a new entry in the map
+  if ( o->flags & CO_STRDUP )
+  {
+    k = strdup(key);
+    v = coNewStr(CO_NONE, k);
+    if ( avl_insert(
+      &(o->m.root), 
+      k,
+      (void *)v,
+      (o->flags & CO_STRFREE)?avl_free_key:avl_keep_key, 
+      (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
+    ) == NULL )
+      return coDelete(v), free((void *)k), NULL;
+  }
+  else
+  {
+    assert( (o->flags & CO_STRFREE) == 0 );
+    v = coNewStr(CO_STRDUP, key);
+    k = coStrGet(v);
+    if ( avl_insert(
+      &(o->m.root), 
+      k,
+      (void *)v,
+      (o->flags & CO_STRFREE)?avl_free_key:avl_keep_key, 
+      (o->flags & CO_FREE_VALS)?avl_free_value:avl_keep_value
+    ) == NULL )
+      return coDelete(v), NULL;
+  }
+  
+  return v;
+}
+
 long coMapSize(cco o)
 {
   assert(coIsMap(o));
