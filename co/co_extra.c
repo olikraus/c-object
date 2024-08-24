@@ -528,7 +528,7 @@ co coReadHEXByFP(FILE *fp)
 /* CSV Reader, https://www.rfc-editor.org/rfc/rfc4180 */
 /*===================================================================*/
 
-#define CO_CSV_FIELD_STRING_MAX (8*1024)
+#define CO_CSV_FIELD_STRING_MAX (32*1024)
 
 cco coNewCSVStr(const char *s, co pool)
 {
@@ -634,7 +634,8 @@ cco coGetCSVField(struct co_reader_struct *r, int separator, char *buf, co pool)
 			}
 		}
 
-		buf[idx++] = c;		
+                assert( idx < CO_CSV_FIELD_STRING_MAX );
+		buf[idx++] = c;
 		coReaderNext(r);
 		c = coReaderCurr(r);
 	}
@@ -762,7 +763,7 @@ co coReadCSVByFPWithPool(FILE *fp, int separator, co pool)
   struct co_reader_struct reader;
   if ( coReaderInitByFP(&reader, csvfp) == 0 )
     return NULL;
-  for {
+  for (;;) {
     rowVector = coGetCSVRow(&reader, separator);
     if ( rowVector == NULL )
       break;
