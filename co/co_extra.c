@@ -643,12 +643,12 @@ cco coGetCSVField(struct co_reader_struct *r, int separator, char *buf, co pool)
 }
 
 
-co coGetCSVRow(struct co_reader_struct *r, int separator, char *buf, co pool)
+co coGetCSVRowWithBufferAndPool(struct co_reader_struct *r, int separator, char *buf, co pool)
 {
 	co rowVector = coNewVector(pool == NULL ? CO_FREE_VALS : CO_NONE);
 	cco field;
 	
-	//puts("coGetCSVRow");
+	//puts("coGetCSVRowWithBufferAndPool");
 
 	for(;;)
 	{
@@ -722,7 +722,7 @@ co coGetCSVFile(struct co_reader_struct *reader, int separator, char *buf, co po
 
 	for(;;)
 	{
-		rowVector = coGetCSVRow(reader, separator, buf, pool);
+		rowVector = coGetCSVRowWithBufferAndPool(reader, separator, buf, pool);
 		if ( rowVector == NULL )
 			break;
 		if ( coVectorAdd(fileVector, rowVector) < 0 )
@@ -756,3 +756,26 @@ co coReadCSVByFPWithPool(FILE *fp, int separator, co pool)
     return NULL;
   return coGetCSVFile(&reader, separator, buf, pool);
 }
+
+
+/*
+  struct co_reader_struct reader;
+  if ( coReaderInitByFP(&reader, csvfp) == 0 )
+    return NULL;
+  for {
+    rowVector = coGetCSVRow(&reader, separator);
+    if ( rowVector == NULL )
+      break;
+    coPrint(rowVector); puts("");
+    coDelete(rowVector);
+  } 
+*/
+
+
+co coGetCSVRow(struct co_reader_struct *r, int separator)
+{
+  char buf[CO_CSV_FIELD_STRING_MAX];
+  coReaderSkipWhiteSpace(r);
+  return coGetCSVRowWithBufferAndPool(r, separator, buf, NULL);
+}
+

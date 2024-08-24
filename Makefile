@@ -35,7 +35,7 @@ release: all
 	
 #gprof: all
 
-all: co_test co_a2l a2l_info a2l_search csv2json hex2json
+all: co_test co_a2l a2l_info a2l_search csv2json csvprint hex2json
 	
 co_test: $(COOBJ) ./test/co_test.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
@@ -50,6 +50,9 @@ a2l_search:  $(COOBJ) ./test/a2l_search.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
 
 csv2json:  $(COOBJ) ./test/csv2json.o
+	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
+
+csvprint:  $(COOBJ) ./test/csvprint.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
 
 hex2json:  $(COOBJ) ./test/hex2json.o
