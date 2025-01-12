@@ -539,6 +539,7 @@ co coReadElfMemoryByFP(FILE *fp)
   Elf_Scn  *scn  = NULL;
   GElf_Shdr shdr;
   size_t block_addr = 0;
+  size_t last_block_addr = 0;
   char addr_as_hex[10];
   co mo = NULL;                // memory object
   co map = NULL;
@@ -577,11 +578,20 @@ co coReadElfMemoryByFP(FILE *fp)
         
         block_addr = shdr.sh_addr + data->d_off;    // calculate the address of this data in the target system, not 100% sure whether this is correct
         sprintf(addr_as_hex, "%08zX", block_addr);
-        mo = coNewMem();                // create a new memory block
-        if ( coMemAdd(mo, (unsigned char *)(data->d_buf), data->d_size) == 0 )   // data->d_size contains the size of the block, data->d_buf a ptr to the internal memory
-          return elf_end(elf), coDelete(map), NULL;
-        if ( coMapAdd(map, addr_as_hex, mo) == 0 )              // append the memory to the map
-          return elf_end(elf), coDelete(map), NULL;
+        if ( mo == NULL || last_block_addr != block_addr )
+        {
+          mo = coNewMem();                // create a new memory block
+          if ( coMemAdd(mo, (unsigned char *)(data->d_buf), data->d_size) == 0 )   // data->d_size contains the size of the block, data->d_buf a ptr to the internal memory
+            return elf_end(elf), coDelete(map), NULL;
+          if ( coMapAdd(map, addr_as_hex, mo) == 0 )              // append the memory to the map
+            return elf_end(elf), coDelete(map), NULL;
+        }
+        else
+        {
+          if ( coMemAdd(mo, (unsigned char *)(data->d_buf), data->d_size) == 0 )     // extend the existing memory block
+            return elf_end(elf), coDelete(map), NULL;
+        }
+        last_block_addr = block_addr + data->d_size;
       }
     }
   }

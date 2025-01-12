@@ -4,13 +4,13 @@
 
 int main(int argc, char **argv)
 {
-	co csvco;
+	co mem;
 	FILE *hexfp;
 	FILE *jsonfp;
 	
 	if ( argc != 3 )
 	{
-		printf("%s in.hex out.json\n", argv[0]);
+		printf("%s in.elf out.json\n", argv[0]);
 		return 1;
 	}
 	hexfp = fopen(argv[1], "rb");
@@ -27,12 +27,12 @@ int main(int argc, char **argv)
 		return 3;
 	}
 	
-	csvco = coReadHEXByFP(hexfp);
-	coWriteJSON(csvco, 0, 1, jsonfp);	
+	mem = coReadElfMemoryByFP(hexfp);
+	coWriteJSON(mem, 0, 1, jsonfp);	
 	
 	fclose(hexfp);
 	fclose(jsonfp);
-	coDelete(csvco);
+	coDelete(mem);
 	
 	return 0;
 }

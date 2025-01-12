@@ -1931,6 +1931,21 @@ static void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp)
     writeIndent(depth, fp);
     fputc('}', fp);
   }
+  else if ( coIsMem(o) )   // this will NOT generate proper JSON
+  {
+    unsigned char *ptr = (unsigned char *)coMemGet(o);
+    long cnt = coMemSize(o);
+    long i; 
+    fputc('\"', fp);
+    for( i = 0; i < cnt; i++ )
+    {
+      if ( i % 64 == 0 )
+        fputc('\n', fp);
+      fprintf(fp, "%02x", ptr[i]);
+    }
+    fputc('\n', fp);
+    fputc('\"', fp);
+  }
 }
 
 void coWriteJSON(cco o, int isCompact, int isUTF8, FILE *fp)
