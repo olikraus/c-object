@@ -346,6 +346,7 @@ co coReadA2LByString(const char *json);
 co coReadA2LByFP(FILE *fp);
 co coReadS19ByFP(FILE *fp); // returns map, key=8digit addres, value=mem block
 co coReadHEXByFP(FILE *fp); // returns map, key=8digit addres, value=mem block
+co coReadElfMemoryByFP(FILE *fp); // returns map, key=8digit addres, value=mem block, .gz is NOT supported
 co coReadCSVByFP(FILE *fp, int separator);		// returns vector, separator should be ',' or ';'
 co coReadCSVByFPWithPool(FILE *fp, int separator, co pool);     // same as coReadCSVByFP, but will allocate all strings in the pool, which must be a map with CO_FREE_VALS flag, pool can be NULL
 co coGetCSVRow(struct co_reader_struct *r, int separator);

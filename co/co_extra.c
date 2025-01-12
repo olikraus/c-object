@@ -8,13 +8,19 @@
 
   CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
   
-  Additionall function, which are not required for the core functionality
+  Additional functions, which are not required for the core functionality
 
 */
 #include "co.h"
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <libelf.h>
+#include <gelf.h>
+
 
 /*===================================================================*/
 /* A2L Parser */
@@ -523,6 +529,64 @@ co coReadHEXByFP(FILE *fp)
   return map;
 }
 
+/*===================================================================*/
+/* ELF Memory Reader */
+/*===================================================================*/
+
+co coReadElfMemoryByFP(FILE *fp)
+{
+  Elf *elf = NULL;
+  Elf_Scn  *scn  = NULL;
+  GElf_Shdr shdr;
+  size_t block_addr = 0;
+  char addr_as_hex[10];
+  co mo = NULL;                // memory object
+  co map = NULL;
+  
+  if ( elf_version( EV_CURRENT ) == EV_NONE )
+    return NULL;        // incorrect version
+  
+  elf = elf_begin( fileno(fp) , ELF_C_READ, NULL );
+
+  if ( elf == NULL )
+    return NULL;        // probably not an object/archive file
+
+  if ( elf_kind( elf ) != ELF_K_ELF )
+    return elf_end(elf), NULL;                // not an ELF file
+
+  map = coNewMap(CO_FREE_VALS|CO_STRDUP);
+  if ( map == NULL )
+    return elf_end(elf), coDelete(map), NULL;                // memory failure 
+
+  /* loop over all sections of the elf file */
+  while (( scn = elf_nextscn(elf, scn)) != NULL ) 
+  {
+    if ( gelf_getshdr( scn, &shdr ) != &shdr )
+      return elf_end(elf), coDelete(map), NULL;                // unable to get the section header
+    if ( (shdr.sh_flags & SHF_ALLOC) != 0 && shdr.sh_size > 0 )
+    {
+      /* loop over the data blocks of the section */
+      Elf_Data *data = NULL;
+      for(;;)
+      {
+        data = elf_getdata(scn , data);     // if data==NULL return first data, otherwise return next data
+        if ( data == NULL )
+          break;
+        if ( data->d_buf == NULL )
+          break;
+        
+        block_addr = shdr.sh_addr + data->d_off;    // calculate the address of this data in the target system, not 100% sure whether this is correct
+        sprintf(addr_as_hex, "%08zX", block_addr);
+        mo = coNewMem();                // create a new memory block
+        if ( coMemAdd(mo, (unsigned char *)(data->d_buf), data->d_size) == 0 )   // data->d_size contains the size of the block, data->d_buf a ptr to the internal memory
+          return elf_end(elf), coDelete(map), NULL;
+        if ( coMapAdd(map, addr_as_hex, mo) == 0 )              // append the memory to the map
+          return elf_end(elf), coDelete(map), NULL;
+      }
+    }
+  }
+  return elf_end(elf), map;
+}
 
 /*===================================================================*/
 /* CSV Reader, https://www.rfc-editor.org/rfc/rfc4180 */

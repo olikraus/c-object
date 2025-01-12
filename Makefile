@@ -17,9 +17,9 @@ release: CFLAGS = -O4 -DNDEBUG -DCO_USE_ZLIB -Wall -I./co
 #gprof: CFLAGS = -g -pg -DCO_USE_ZLIB -Wall -I./co
 
 ifeq ($(shell uname -s),Linux)
-LDFLAGS = -lm -lz -lpthread
+LDFLAGS = -lelf -lm -lz -lpthread
 else
-LDFLAGS = -Wl,-Bstatic -lm -lz -lpthread
+LDFLAGS = -Wl,-Bstatic -lelf -lm -lz -lpthread
 endif
 
 COSRC = $(shell ls ./co/*.c)
@@ -59,5 +59,5 @@ hex2json:  $(COOBJ) ./test/hex2json.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
 
 clean:
-	-rm $(COOBJ) ./test/co_test.o ./test/co_a2l.o ./test/a2l_info.o ./test/a2l_search.o ./test/csv2json.o co_test co_a2l a2l_info csv2json
+	-rm $(COOBJ) ./test/co_test.o ./test/co_a2l.o ./test/a2l_info.o ./test/a2l_search.o ./test/csv2json.o ./test/csvprint.o ./test/hex2json.o co_test co_a2l a2l_info csv2json csvprint hex2json
 	
