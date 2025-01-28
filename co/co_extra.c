@@ -578,7 +578,7 @@ co coReadElfMemoryByFP(FILE *fp)
         
         block_addr = shdr.sh_addr + data->d_off;    // calculate the address of this data in the target system, not 100% sure whether this is correct
         sprintf(addr_as_hex, "%08zX", block_addr);
-        if ( mo == NULL || last_block_addr != block_addr )
+        if ( mo == NULL || last_block_addr != block_addr )	// start a new memory block?
         {
           mo = coNewMem();                // create a new memory block
           if ( coMemAdd(mo, (unsigned char *)(data->d_buf), data->d_size) == 0 )   // data->d_size contains the size of the block, data->d_buf a ptr to the internal memory
@@ -586,15 +586,15 @@ co coReadElfMemoryByFP(FILE *fp)
           if ( coMapAdd(map, addr_as_hex, mo) == 0 )              // append the memory to the map
             return elf_end(elf), coDelete(map), NULL;
         }
-        else
+        else		// else: extend memory block
         {
           if ( coMemAdd(mo, (unsigned char *)(data->d_buf), data->d_size) == 0 )     // extend the existing memory block
             return elf_end(elf), coDelete(map), NULL;
         }
         last_block_addr = block_addr + data->d_size;
-      }
-    }
-  }
+      } // with all data blocks within a section
+    } // memory section?
+  } // with all sections
   return elf_end(elf), map;
 }
 
