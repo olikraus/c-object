@@ -17,6 +17,7 @@
 */
 #include "co.h"
 #include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
 #include <assert.h>
 
@@ -47,6 +48,13 @@ co coClone(cco o)
   if ( o == NULL )
     return NULL;
   return o->fn->clone(o);
+}
+
+long coSize(cco o)
+{
+  if ( o == NULL )
+    return 0L;
+  return o->fn->size(o);
 }
 
 /*===================================================================*/
@@ -1320,11 +1328,12 @@ static int bom_read_and_skip(FILE *fp)
 
 void coReaderErr(coReader r, const char *msg)
 {
-  //fpos_t pos;
   printf("JSON Parser error '%s', current char='%c'\n", msg, r->curr);
-  /* removed, because we can't print fpos_t
+  /* removed, because we can't print fpos_t */
+  /*
   if ( r->fp != NULL )
   {
+	fpos_t pos;
 	fgetpos(r->fp, &pos);
 	printf("JSON Parser error at file pos %lld\n", (long long int)(pos));	  
   }
@@ -1520,6 +1529,27 @@ co coJSONGetValue(coReader reader);          // forward declaration
 
 
 #define COJ_STR_BUF 1024
+
+const char *coJSONGetIdentifier(coReader reader)
+{
+  static char buf[COJ_STR_BUF+16];      // extra data for UTF-8 sequence and \0
+  size_t idx = 0;
+  int c = 0;
+  
+  for(;;)
+  {
+    c = coReaderCurr(reader);
+	if ( isalpha(c) == 0 )
+		break;
+	if ( idx < COJ_STR_BUF-1 )
+	  buf[idx++] = c;
+    coReaderNext(reader); 
+  }
+  buf[idx] = '\0';
+  coReaderSkipWhiteSpace(reader);
+  return buf;
+}
+
 char *coJSONGetStr(coReader reader)
 {  
   static char buf[COJ_STR_BUF+16];      // extra data for UTF-8 sequence and \0
@@ -1528,7 +1558,7 @@ char *coJSONGetStr(coReader reader)
   size_t idx = 0;
   int c = 0;
   if ( coReaderCurr(reader) != '\"' )
-    return coReaderErr(reader, "Internal error"), NULL;
+    return coReaderErr(reader, "Internal error, double quote missing"), NULL;
   coReaderNext(reader);   // skip initial double quote
   for(;;)
   {
@@ -1678,6 +1708,8 @@ co coJSONGetArray(coReader reader)
   int c;
   co array_obj;
   co element;
+  
+  //printf("array start\n");
   if ( coReaderCurr(reader) != '[' )
     return coReaderErr(reader, "Internal error"), NULL;
 
@@ -1701,13 +1733,15 @@ co coJSONGetArray(coReader reader)
     
     element = coJSONGetValue(reader);
     
-    if ( element == NULL )
-      return coDelete(array_obj), NULL;
+    //if ( element == NULL )
+    //   return coReaderErr(reader, "'null' element for 'array'"), coDelete(array_obj), NULL;
     if ( coVectorAdd(array_obj, element) < 0 )
       return coReaderErr(reader, "Memory error inside 'array'"), coDelete(array_obj), NULL;
   }
   coReaderNext(reader);   // skip ']'
   coReaderSkipWhiteSpace(reader);
+  assert( array_obj != NULL );
+  //printf("array end, array_obj=%p\n", array_obj);
   return array_obj;
 }
 
@@ -1722,7 +1756,7 @@ co coJSONGetMap(coReader reader)
 
   map_obj = coNewMap(CO_FREE_VALS|CO_STRFREE);  // do not duplicate keys, because they are already allocated
   if ( map_obj == NULL )
-      return coReaderErr(reader, "Memory error with map"), NULL;
+      return coReaderErr(reader, "Memory error with map create"), NULL;
     
   coReaderNext(reader);   // skip '{'
   coReaderSkipWhiteSpace(reader);  
@@ -1745,25 +1779,35 @@ co coJSONGetMap(coReader reader)
     key = coJSONGetStr(reader);         // key will contain a pointer to allocated memory
     if ( key == NULL )
       return coDelete(map_obj), NULL;
+		
     coReaderSkipWhiteSpace(reader);  
     if ( coReaderCurr(reader) != ':' )
       return coReaderErr(reader, "Missng ':'"), free(key), coDelete(map_obj), NULL;
     coReaderNext(reader);
     coReaderSkipWhiteSpace(reader);  
     
-    element = coJSONGetValue(reader);
-    if ( element == NULL )
-      return coReaderErr(reader, "Memory error with map element"), free(key), coDelete(map_obj), NULL;
+    element = coJSONGetValue(reader); // may return NULL for the "null" element
+
+	
+    // if ( element == NULL )
+    //   return coReaderErr(reader, "Memory error with map element"), free(key), coDelete(map_obj), NULL;
+	/*
+    printf("key=%s element=", key);
+	coPrint(element);
+	printf("\n");
+	*/
     if ( coMapAdd(map_obj, key, element) == 0 )
-      return coReaderErr(reader, "Memory error with map"), free(key), coDelete(map_obj), NULL;  // ToDo: do we need to close 'element' here?    
+      return coReaderErr(reader, "Memory error with map update"), free(key), coDelete(map_obj), NULL;  // ToDo: do we need to close 'element' here?    
   }
   coReaderNext(reader);   // skip '}'
   coReaderSkipWhiteSpace(reader);
+  assert( map_obj != NULL );
   return map_obj;
 }
 
 co coJSONGetValue(coReader reader)
 {
+  const char *identifier;
   int c = coReaderCurr(reader);
   if ( c == '[' )
     return coJSONGetArray(reader);
@@ -1773,7 +1817,11 @@ co coJSONGetValue(coReader reader)
     return coNewStr(CO_STRFREE, coJSONGetStr(reader));  // return value of coJSONGetStr() is a pointer to allocated memory, so don't use CO_STRDUP
   if ( (c >= '0' && c <= '9') || c == '-' || c == '+' || c == 'e' || c == 'E' || c == '.' )
     return coJSONGetDbl(reader);
-  // todo: handle true, false, null
+
+  identifier = coJSONGetIdentifier(reader);
+  if ( strcmp(identifier, "null") == 0 )
+	  return NULL;
+  // todo: handle true, false
   return NULL;
 }
 

@@ -206,6 +206,7 @@ co coNewMap(unsigned flags);
 void coPrint(const cco o);      // debug output of the provided object "o"
 void coDelete(co o);               // deletes "o" and the childs objects of "o" depending on the flags
 co coClone(cco o);              // do a deep copy of the object "o"
+long coSize(cco o);
 
 /* JSON read/write */
 
