@@ -1356,7 +1356,28 @@ static void coReaderFileNext(coReader r)
 {
   if ( r->curr < 0 )
     return;
-  r->curr = getc(r->fp); // may returen EOF, which is -1, but code below will check for <0 
+  r->curr = getc(r->fp); // may return EOF, which is -1, but code below will check for <0 
+}
+
+static void coReaderFileNext16LE(coReader r)
+{
+  if ( r->curr < 0 )
+    return;
+  r->curr = getc(r->fp); // lower byte comes first
+  if ( r->curr < 0 )
+	  return;
+  r->curr |= (getc(r->fp) << 8); // higher byte
+}
+
+static void coReaderFileNext16BE(coReader r)
+{
+  if ( r->curr < 0 )
+    return;
+  r->curr = getc(r->fp); // higher byte comes first
+  if ( r->curr < 0 )
+	  return;
+  r->curr <<= 8;
+  r->curr |= getc(r->fp); // lower byte
 }
 
 #ifdef CO_USE_ZLIB
@@ -1475,44 +1496,61 @@ int coReaderInitByFP(coReader reader, FILE *fp)
 {
   if ( reader == NULL || fp == NULL )
     return 0;  
+  reader->next_cb = coReaderFileNext;  // assign some default
   reader->reader_string = NULL;
   reader->fp = fp;
   reader->bom = bom_read_and_skip(fp);
-  reader->next_cb = coReaderFileNext;
-  reader->curr = getc(fp);
+
+    
+  if ( reader->bom == BOM_NONE )
+	reader->next_cb = coReaderFileNext;  // all good, contine with GZ test
+  else if ( reader->bom == BOM_UTF8 )
+	reader->next_cb = coReaderFileNext;
+  else if ( reader->bom == BOM_UTF16LE )
+	reader->next_cb = coReaderFileNext16LE;
+  else if ( reader->bom == BOM_UTF16BE )
+	reader->next_cb = coReaderFileNext16BE;
+  else
+	  return 0;  // unsupported BOM (like BOM_UTF32BE for example)
+
 
 #ifdef CO_USE_ZLIB
-  if ( reader->curr == 0x1f )           // GZIP IDs: 0x1f 0x8b, see https://www.rfc-editor.org/rfc/rfc1952#page-5
+  if ( reader->bom == BOM_NONE )		// check for GZIP
   {
-    fseek(fp, 0, SEEK_SET);
-    coReaderGZInit(reader);
-    reader->next_cb = coReaderGZFileNext;
-    coReaderNext(reader);               // read the first byte
-    
-    // detect and skip UTF8 BOM if present
-    if ( coReaderCurr(reader) == 0xEF ) // UTF8 BOM?
-    {
-      coReaderNext(reader);
-      if ( coReaderCurr(reader) == 0xBB )
-      {
-        coReaderNext(reader);
-        if ( coReaderCurr(reader) == 0xBF )
-        {
-          coReaderNext(reader);
-          reader->bom = BOM_UTF8;
-        }
-        else
-        {
-          reader->pos = 0;
-          coReaderNext(reader);               // read the first byte          
-        }
-      }
-      else
-      {
-        reader->pos = 0;
-        coReaderNext(reader);               // read the first byte          
-      }
-    }
+	  reader->curr = getc(fp);
+	  if ( reader->curr == 0x1f )           // GZIP IDs: 0x1f 0x8b, see https://www.rfc-editor.org/rfc/rfc1952#page-5
+	  {
+		fseek(fp, 0, SEEK_SET);
+		coReaderGZInit(reader);
+		reader->next_cb = coReaderGZFileNext;		// this is a UTF8 BOM reader!
+		coReaderNext(reader);               // read the first byte
+		
+		// detect and skip UTF8 BOM if present
+		// Warning: at the moment only UTF8 BOM is supported for gzip
+		if ( coReaderCurr(reader) == 0xEF ) // UTF8 BOM?
+		{
+		  coReaderNext(reader);
+		  if ( coReaderCurr(reader) == 0xBB )
+		  {
+			coReaderNext(reader);
+			if ( coReaderCurr(reader) == 0xBF )
+			{
+			  coReaderNext(reader);
+			  reader->bom = BOM_UTF8;
+			}
+			else
+			{
+			  reader->pos = 0;
+			  coReaderNext(reader);               // read the first byte          
+			}
+		  }
+		  else
+		  {
+			reader->pos = 0;
+			coReaderNext(reader);               // read the first byte          
+		  }
+		}
+	  }
   }
 #endif /* CO_USE_ZLIB */
   

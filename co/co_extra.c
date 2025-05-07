@@ -161,7 +161,7 @@ const char *coA2LGetToken(coReader reader, char *buf)
   return coA2LGetIdentifier(reader, -1, buf);
 }
 
-co coA2LGetArray(coReader reader, char *buf)
+co coA2LGetArray(coReader reader, char *buf, int depth)
 {
   const char *t;
   co array_obj;
@@ -171,11 +171,11 @@ co coA2LGetArray(coReader reader, char *buf)
   static char if_data[] = "IF_DATA";
   static char measurement[] = "MEASUREMENT";
   
-  
   array_obj = coNewVector(CO_FREE_VALS);
   for(;;)
   {
     t = coA2LGetToken(reader, buf);
+	//printf("%2d %p %s\n", depth, array_obj, t);
     if ( coReaderCurr(reader) < 0 ) // end of file?
     {
       break;
@@ -186,7 +186,7 @@ co coA2LGetArray(coReader reader, char *buf)
     }  
     else if ( strcmp(t, "/begin") == 0 )
     {
-      element = coA2LGetArray(reader, buf);
+      element = coA2LGetArray(reader, buf, depth+1);
       if ( element == NULL )
         return NULL;
       if ( coVectorAdd(array_obj, element) < 0 )
@@ -194,7 +194,7 @@ co coA2LGetArray(coReader reader, char *buf)
     }
     else if ( strcmp(t, "/end") == 0 )
     {
-      coA2LGetToken(reader, buf);    // read next token. this should be the same as the /begin argumnet
+      coA2LGetToken(reader, buf);    // read next token. this should be the same as the /begin argument
       break;
     }
     else
@@ -221,6 +221,8 @@ co coA2LGetArray(coReader reader, char *buf)
         return NULL;
       if ( coVectorAdd(array_obj, element) < 0 )
         return coReaderErr(reader, "Memory error inside 'array'"), coDelete(array_obj), NULL;    
+	  //if ( coVectorSize(array_obj) > 0 && coVectorSize(array_obj) % 1000 == 0 )
+	  //printf("Array %p %s with size=%ld filepos=%ld\n", array_obj, coStrGet(coVectorGet(array_obj, 0)), coVectorSize(array_obj), (long)ftell(reader->fp));
     }
   }
   return array_obj;
@@ -233,7 +235,7 @@ co coReadA2LByString(const char *json)
   
   if ( coReaderInitByString(&reader, json) == 0 )
     return NULL;
-  return coA2LGetArray(&reader, buf);
+  return coA2LGetArray(&reader, buf, 0);
 }
 
 co coReadA2LByFP(FILE *fp)
@@ -243,7 +245,7 @@ co coReadA2LByFP(FILE *fp)
   
   if ( coReaderInitByFP(&reader, fp) == 0 )
     return NULL;
-  return coA2LGetArray(&reader, buf);
+  return coA2LGetArray(&reader, buf, 0);
 }
 
 /*===================================================================*/
@@ -283,7 +285,7 @@ co coReadS19ByFP(FILE *fp)
 {
   char buf[S19_MAX_LINE_LEN];
   unsigned char mem[S19_MAX_LINE_LEN/2];
-  char addr_as_hex[10];
+  char addr_as_hex[20];		// avoid compiler warning regarding sprintf buffer overflow
   char *line;
   size_t last_address = 0xffffffff; 
   size_t address; 
