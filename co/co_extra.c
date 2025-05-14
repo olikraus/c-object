@@ -2,157 +2,175 @@
 
   co_extra.c
 
-  C Object Library 
+  C Object Library
   (c) 2024 Oliver Kraus
   https://github.com/olikraus/c-object
 
   CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
-  
+
   Additional functions, which are not required for the core functionality
 
 */
 #include "co.h"
+#include <assert.h>
+#include <fcntl.h>
+#include <gelf.h>
+#include <libelf.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
-#include <stdio.h>
-#include <fcntl.h>
 #include <unistd.h>
-#include <libelf.h>
-#include <gelf.h>
-
 
 /*===================================================================*/
 /* A2L Parser */
 /*===================================================================*/
 
-#define CO_A2L_IDENTIFIER_STRING_MAX (1024*8)
+#define CO_A2L_IDENTIFIER_STRING_MAX (1024 * 8)
 
 /*
-	buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX bytes
+        buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX
+   bytes
 */
-const char *coA2LGetString(coReader reader, char *buf)
-{
-  //static char buf[CO_A2L_STRBUF_MAX+8];                // reservere some extra space, because the overflow check is done only once in the for loop below
+const char *coA2LGetString(coReader reader, char *buf) {
+  // static char buf[CO_A2L_STRBUF_MAX+8];                // reservere some
+  // extra space, because the overflow check is done only once in the for loop
+  // below
   size_t idx = 0;
   int c = 0;
-  if ( coReaderCurr(reader) != '\"' )
+  if (coReaderCurr(reader) != '\"')
     return coReaderErr(reader, "Internal error"), NULL;
-  buf[idx++] = '\"';            // add the initial double quote
-  coReaderNext(reader);   // skip initial double quote
-  for(;;)
-  {
+  buf[idx++] = '\"'; // add the initial double quote
+  coReaderNext(reader); // skip initial double quote
+  for (;;) {
     c = coReaderCurr(reader);
-    if ( c < 0 )        // unexpected end of stream
+    if (c < 0) // unexpected end of stream
       return coReaderErr(reader, "Unexpected end of string"), NULL;
-    if ( c == '\"' )
-    {
-      buf[idx++] = c;            // add the final double quote 
-      buf[idx++] = '\0';            // terminate the string
-      coReaderNext(reader);   // skip final double quote
-      coReaderSkipWhiteSpace(reader);          
-      break;    // regular end
+    if (c == '\"') {
+      buf[idx++] = c; // add the final double quote
+      buf[idx++] = '\0'; // terminate the string
+      coReaderNext(reader); // skip final double quote
+      coReaderSkipWhiteSpace(reader);
+      break; // regular end
     }
-    if ( c == '\\' )
-    {
-      coReaderNext(reader);   // skip back slash
+    if (c == '\\') {
+      coReaderNext(reader); // skip back slash
       c = coReaderCurr(reader);
-      if ( c == 'n' ) { coReaderNext(reader); buf[idx++] = '\n'; }
-      else if ( c == 't' ) { coReaderNext(reader); buf[idx++] = '\t'; }
-      else if ( c == 'b' ) { coReaderNext(reader); buf[idx++] = '\b'; }
-      else if ( c == 'f' ) { coReaderNext(reader); buf[idx++] = '\f'; }
-      else if ( c == 'r' ) { coReaderNext(reader); buf[idx++] = '\r'; }
-      else { coReaderNext(reader); buf[idx++] = c; }     // treat escaped char as it is (this will handle both slashes) ...
+      if (c == 'n') {
+        coReaderNext(reader);
+        buf[idx++] = '\n';
+      } else if (c == 't') {
+        coReaderNext(reader);
+        buf[idx++] = '\t';
+      } else if (c == 'b') {
+        coReaderNext(reader);
+        buf[idx++] = '\b';
+      } else if (c == 'f') {
+        coReaderNext(reader);
+        buf[idx++] = '\f';
+      } else if (c == 'r') {
+        coReaderNext(reader);
+        buf[idx++] = '\r';
+      } else {
+        coReaderNext(reader);
+        buf[idx++] = c;
+      } // treat escaped char as it is (this will handle both slashes) ...
     } // escape
-    else
-    {
-      coReaderNext(reader); 
-      buf[idx++] = c;   // handle normal char
+    else {
+      coReaderNext(reader);
+      buf[idx++] = c; // handle normal char
     }
-    if ( idx+8 >= CO_A2L_IDENTIFIER_STRING_MAX ) // check whether the buffer is full
+    if (idx + 8 >=
+        CO_A2L_IDENTIFIER_STRING_MAX) // check whether the buffer is full
       return coReaderErr(reader, "String too long"), NULL;
   } // for
-  return buf;  
+  return buf;
 }
 
 /*
-	buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX bytes
+        buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX
+   bytes
 */
-const char *coA2LGetIdentifier(coReader reader, int prefix, char *buf)
-{
+const char *coA2LGetIdentifier(coReader reader, int prefix, char *buf) {
   int c;
   size_t idx = 0;
-  if ( prefix >= 0 )    // this is used by the '/' detection procedure below
+  if (prefix >= 0) // this is used by the '/' detection procedure below
     buf[idx++] = prefix;
-  for(;;)
-  {
+  for (;;) {
     c = coReaderCurr(reader);
-    if ( c <= ' ' ) break; // this includes c==-1
-    if ( c == '/' ) break;    // comment start
-    if ( c == '\"' ) break; // string start
-    if ( idx+2 >= CO_A2L_IDENTIFIER_STRING_MAX )
+    if (c <= ' ')
+      break; // this includes c==-1
+    if (c == '/')
+      break; // comment start
+    if (c == '\"')
+      break; // string start
+    if (idx + 2 >= CO_A2L_IDENTIFIER_STRING_MAX)
       return coReaderErr(reader, "Identifier too long"), NULL;
     buf[idx++] = c;
     coReaderNext(reader);
   }
   buf[idx] = '\0';
-  coReaderSkipWhiteSpace(reader);          
+  coReaderSkipWhiteSpace(reader);
   return buf;
 }
 
 /*
-	buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX bytes
+        buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX
+   bytes
 */
-const char *coA2LGetSlashPrefixedToken(coReader reader, char *buf)
-{
-  if ( coReaderCurr(reader) != '/' )
+const char *coA2LGetSlashPrefixedToken(coReader reader, char *buf) {
+  if (coReaderCurr(reader) != '/')
     return coReaderErr(reader, "Internal error"), NULL;
-  coReaderNext(reader);   // skip '/'
-  if ( coReaderCurr(reader) == '/' )   // line comment
+  coReaderNext(reader); // skip '/'
+  if (coReaderCurr(reader) == '/') // line comment
   {
-    coReaderNext(reader);   // skip second '/'
-    for(;;)
-    {
-      if ( coReaderCurr(reader) < 0 ) return "";
-      if ( coReaderCurr(reader) == '\n' || coReaderCurr(reader) == '\r' ) { coReaderSkipWhiteSpace(reader); return ""; }
+    coReaderNext(reader); // skip second '/'
+    for (;;) {
+      if (coReaderCurr(reader) < 0)
+        return "";
+      if (coReaderCurr(reader) == '\n' || coReaderCurr(reader) == '\r') {
+        coReaderSkipWhiteSpace(reader);
+        return "";
+      }
       coReaderNext(reader);
     }
   }
-  if ( coReaderCurr(reader) == '*' )   // block comment
+  if (coReaderCurr(reader) == '*') // block comment
   {
-    coReaderNext(reader);   // skip '*'
-    for(;;)
-    {
-      if ( coReaderCurr(reader) < 0 ) return "";
-      if ( coReaderCurr(reader) == '*' )
-      {
+    coReaderNext(reader); // skip '*'
+    for (;;) {
+      if (coReaderCurr(reader) < 0)
+        return "";
+      if (coReaderCurr(reader) == '*') {
         coReaderNext(reader);
-        if ( coReaderCurr(reader) == '/' ) { coReaderNext(reader); coReaderSkipWhiteSpace(reader); return ""; }
-       }
-      else coReaderNext(reader);
+        if (coReaderCurr(reader) == '/') {
+          coReaderNext(reader);
+          coReaderSkipWhiteSpace(reader);
+          return "";
+        }
+      } else
+        coReaderNext(reader);
     }
   }
-  return coA2LGetIdentifier(reader, '/', buf);       // detect /begin and /end keywords
+  return coA2LGetIdentifier(reader, '/',
+                            buf); // detect /begin and /end keywords
 }
 
 /*
-	buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX bytes
+        buf must point to a memory area of at least CO_A2L_IDENTIFIER_STRING_MAX
+   bytes
 */
-const char *coA2LGetToken(coReader reader, char *buf)
-{
+const char *coA2LGetToken(coReader reader, char *buf) {
   const char *token;
-  for(;;)
-  {
-    if ( coReaderCurr(reader) < 0 )
+  for (;;) {
+    if (coReaderCurr(reader) < 0)
       return "";
-    if ( coReaderCurr(reader) == '\"' )
+    if (coReaderCurr(reader) == '\"')
       return coA2LGetString(reader, buf);
-    if ( coReaderCurr(reader) == '/' )
-    {
+    if (coReaderCurr(reader) == '/') {
       token = coA2LGetSlashPrefixedToken(reader, buf);
-      if ( token == NULL )
+      if (token == NULL)
         return NULL;
-      if ( token[0] == '\0' )
+      if (token[0] == '\0')
         continue;
       return token;
     }
@@ -161,8 +179,7 @@ const char *coA2LGetToken(coReader reader, char *buf)
   return coA2LGetIdentifier(reader, -1, buf);
 }
 
-co coA2LGetArray(coReader reader, char *buf, int depth)
-{
+co coA2LGetArray(coReader reader, char *buf, int depth) {
   const char *t;
   co array_obj;
   co element;
@@ -170,80 +187,81 @@ co coA2LGetArray(coReader reader, char *buf, int depth)
   static char one[] = "1";
   static char if_data[] = "IF_DATA";
   static char measurement[] = "MEASUREMENT";
-  
+
   array_obj = coNewVector(CO_FREE_VALS);
-  for(;;)
-  {
+  for (;;) {
     t = coA2LGetToken(reader, buf);
-	//printf("%2d %p %s\n", depth, array_obj, t);
-    if ( coReaderCurr(reader) < 0 ) // end of file?
+    // printf("%2d %p %s\n", depth, array_obj, t);
+    if (coReaderCurr(reader) < 0) // end of file?
     {
       break;
-    } 
-    else if ( t == NULL )    // some error has happend
+    } else if (t == NULL) // some error has happend
     {
-        return coDelete(array_obj), NULL;
-    }  
-    else if ( strcmp(t, "/begin") == 0 )
-    {
-      element = coA2LGetArray(reader, buf, depth+1);
-      if ( element == NULL )
+      return coDelete(array_obj), NULL;
+    } else if (strcmp(t, "/begin") == 0) {
+      element = coA2LGetArray(reader, buf, depth + 1);
+      if (element == NULL)
         return NULL;
-      if ( coVectorAdd(array_obj, element) < 0 )
-        return coReaderErr(reader, "Memory error inside 'array'"), coDelete(array_obj), NULL;
-    }
-    else if ( strcmp(t, "/end") == 0 )
-    {
-      coA2LGetToken(reader, buf);    // read next token. this should be the same as the /begin argument
+      if (coVectorAdd(array_obj, element) < 0)
+        return coReaderErr(reader, "Memory error inside 'array'"),
+               coDelete(array_obj), NULL;
+    } else if (strcmp(t, "/end") == 0) {
+      coA2LGetToken(reader, buf); // read next token. this should be the same as
+                                  // the /begin argument
       break;
-    }
-    else
-    {
-	  if ( t[0] == '0' || t[0] == '1' || t[0] == 'I' || t[0] == 'M' )
-	  {
-		// do a little bit of speed improvment, by avoiding the allocation of some very common strings
-		if ( strcmp(t, zero) == 0 )
-			element = coNewStr(CO_NONE, zero);   // use a static string to avoid malloc 
-		else if ( strcmp(t, one) == 0 )
-			element = coNewStr(CO_NONE, one);   // use a static string to avoid malloc 
-		else if ( strcmp(t, if_data) == 0 )
-			element = coNewStr(CO_NONE, if_data);   // use a static string to avoid malloc 
-		else if ( strcmp(t, measurement) == 0 )
-			element = coNewStr(CO_NONE, measurement);   // use a static string to avoid malloc 
-		else
-			element = coNewStr(CO_STRDUP, t);   // t is a pointer into constant memory, so do a strdup 
-	  }
-	  else
-	  {
-		element = coNewStr(CO_STRDUP, t);   // t is a pointer into constant memory, so do a strdup 
-	  }
-      if ( element == NULL )
+    } else {
+      if (t[0] == '0' || t[0] == '1' || t[0] == 'I' || t[0] == 'M') {
+        // do a little bit of speed improvment, by avoiding the allocation of
+        // some very common strings
+        if (strcmp(t, zero) == 0)
+          element =
+              coNewStr(CO_NONE, zero); // use a static string to avoid malloc
+        else if (strcmp(t, one) == 0)
+          element =
+              coNewStr(CO_NONE, one); // use a static string to avoid malloc
+        else if (strcmp(t, if_data) == 0)
+          element =
+              coNewStr(CO_NONE, if_data); // use a static string to avoid malloc
+        else if (strcmp(t, measurement) == 0)
+          element = coNewStr(
+              CO_NONE, measurement); // use a static string to avoid malloc
+        else
+          element = coNewStr(
+              CO_STRDUP,
+              t); // t is a pointer into constant memory, so do a strdup
+      } else {
+        element =
+            coNewStr(CO_STRDUP,
+                     t); // t is a pointer into constant memory, so do a strdup
+      }
+      if (element == NULL)
         return NULL;
-      if ( coVectorAdd(array_obj, element) < 0 )
-        return coReaderErr(reader, "Memory error inside 'array'"), coDelete(array_obj), NULL;    
-	  //if ( coVectorSize(array_obj) > 0 && coVectorSize(array_obj) % 1000 == 0 )
-	  //printf("Array %p %s with size=%ld filepos=%ld\n", array_obj, coStrGet(coVectorGet(array_obj, 0)), coVectorSize(array_obj), (long)ftell(reader->fp));
+      if (coVectorAdd(array_obj, element) < 0)
+        return coReaderErr(reader, "Memory error inside 'array'"),
+               coDelete(array_obj), NULL;
+      // if ( coVectorSize(array_obj) > 0 && coVectorSize(array_obj) % 1000 == 0
+      // ) printf("Array %p %s with size=%ld filepos=%ld\n", array_obj,
+      // coStrGet(coVectorGet(array_obj, 0)), coVectorSize(array_obj),
+      // (long)ftell(reader->fp));
     }
   }
   return array_obj;
 }
 
-co coReadA2LByString(const char *json)
-{
+co coReadA2LByString(const char *json) {
   struct co_reader_struct reader;
   char buf[CO_A2L_IDENTIFIER_STRING_MAX];
-  
-  if ( coReaderInitByString(&reader, json) == 0 )
+
+  if (coReaderInitByString(&reader, json) == 0)
     return NULL;
   return coA2LGetArray(&reader, buf, 0);
 }
 
-co coReadA2LByFP(FILE *fp)
-{
+co coReadA2LByFP(FILE *fp) {
   struct co_reader_struct reader;
   char buf[CO_A2L_IDENTIFIER_STRING_MAX];
-  
-  if ( coReaderInitByFP(&reader, fp) == 0 )
+
+  if (coReaderInitByFP(&reader, fp) == 0)
     return NULL;
   return coA2LGetArray(&reader, buf, 0);
 }
@@ -252,144 +270,127 @@ co coReadA2LByFP(FILE *fp)
 /* S19 Reader */
 /*===================================================================*/
 
-
 #define S19_MAX_LINE_LEN 1024
 
-static unsigned hexToUnsigned(const char *s)
-{
-  /* 
+static unsigned hexToUnsigned(const char *s) {
+  /*
     A = 0x41 = 0100 0001
     a = 0x61 = 0110 0001
           0xdf  = 1101 1111
   */
   unsigned int n;
-  n = (*s < 'A')?(*s-'0'):((*s&0xdf)-'A'+10);
+  n = (*s < 'A') ? (*s - '0') : ((*s & 0xdf) - 'A' + 10);
   n *= 16;
   s++;
-  n += (*s < 'A')?(*s-'0'):((*s&0xdf)-'A'+10);
+  n += (*s < 'A') ? (*s - '0') : ((*s & 0xdf) - 'A' + 10);
   return n;
 }
 
-static void hexToMem(const char *s, size_t cnt, unsigned char*mem)
-{
-  while( cnt > 0 )
-  {
+static void hexToMem(const char *s, size_t cnt, unsigned char *mem) {
+  while (cnt > 0) {
     *mem++ = hexToUnsigned(s);
-    s+=2;
+    s += 2;
     cnt--;
   }
 }
 
-
-co coReadS19ByFP(FILE *fp)
-{
+co coReadS19ByFP(FILE *fp) {
   char buf[S19_MAX_LINE_LEN];
-  unsigned char mem[S19_MAX_LINE_LEN/2];
-  char addr_as_hex[20];		// avoid compiler warning regarding sprintf buffer overflow
+  unsigned char mem[S19_MAX_LINE_LEN / 2];
+  char addr_as_hex[20]; // avoid compiler warning regarding sprintf buffer
+                        // overflow
   char *line;
-  size_t last_address = 0xffffffff; 
-  size_t address; 
-  size_t byte_cnt; 
+  size_t last_address = 0xffffffff;
+  size_t address;
+  size_t byte_cnt;
   size_t mem_cnt;
   int rec_type;
   int i, c;
   struct co_reader_struct reader_struct;
   coReader r = &reader_struct;
   coReaderInitByFP(r, fp);
-  
-  co mo = NULL;                // memory object
-  co map = coNewMap(CO_FREE_VALS|CO_STRDUP);
-  if ( map == NULL )
+
+  co mo = NULL; // memory object
+  co map = coNewMap(CO_FREE_VALS | CO_STRDUP);
+  if (map == NULL)
     return NULL;
-  for(;;)
-  {
-	i = 0;
-	for(;;)
-	{
-		// c = getc(fp);
-		c = coReaderCurr(r);
-		coReaderNext(r);
-		if ( c < 0 )
-		{
-			if ( i == 0 )
-				line = NULL;
-			else	
-			{
-				line = buf;
-				buf[i] = '\0';
-			}
-			break;
-		}
-		
-		if ( c == '\n' )
-		{
-			line = buf;
-			buf[i] = '\0';			
-			break;
-		}
-		if ( i >= S19_MAX_LINE_LEN )
-		  return puts("illegal line length in s19 file"), coDelete(map), NULL;		
-		buf[i++] = c;
-	}
-	
-    //line = fgets(buf, S19_MAX_LINE_LEN, fp);
-    if ( line == NULL )
+  for (;;) {
+    i = 0;
+    for (;;) {
+      // c = getc(fp);
+      c = coReaderCurr(r);
+      coReaderNext(r);
+      if (c < 0) {
+        if (i == 0)
+          line = NULL;
+        else {
+          line = buf;
+          buf[i] = '\0';
+        }
+        break;
+      }
+
+      if (c == '\n') {
+        line = buf;
+        buf[i] = '\0';
+        break;
+      }
+      if (i >= S19_MAX_LINE_LEN)
+        return puts("illegal line length in s19 file"), coDelete(map), NULL;
+      buf[i++] = c;
+    }
+
+    // line = fgets(buf, S19_MAX_LINE_LEN, fp);
+    if (line == NULL)
       break;
-  
-  
-    while( *line != 'S' && *line != '\0')
+
+    while (*line != 'S' && *line != '\0')
       line++;
     rec_type = line[1];
-	
-	if ( rec_type >= '1' && rec_type <= '9' )
-	{
-		byte_cnt = hexToUnsigned(line+2);		
-		if ( byte_cnt > 255 )
-		  return puts("wrong byte_cnt"), coDelete(map), NULL;		
-		
-		if ( rec_type >= '1' && rec_type <= '3' )
-		{
-		  address = (size_t)hexToUnsigned(line+4);
-		  address <<= 8;
-		  address += (size_t)hexToUnsigned(line+6);
-		  mem_cnt = 0;
-		  if ( rec_type == '1' && byte_cnt >= 3 )
-		  {
-			hexToMem(line+8, byte_cnt-2, mem);     // do not read address, but include checksum
-			mem_cnt = byte_cnt - 3;
-		  }
-		  else if ( rec_type == '2'  && byte_cnt >= 4  )
-		  {
-			address <<= 8;
-			address += (size_t)hexToUnsigned(line+8);
-			hexToMem(line+10, byte_cnt-3, mem);     // do not read address, but include checksum
-			mem_cnt = byte_cnt - 4;
-		  }
-		  else if ( rec_type == '3'  && byte_cnt >= 5  )
-		  {
-			address <<= 8;
-			address += (size_t)hexToUnsigned(line+8);
-			address <<= 8;
-			address += (size_t)hexToUnsigned(line+10);
-			hexToMem(line+12, byte_cnt-4, mem);     // do not read address, but include checksum
-			mem_cnt = byte_cnt - 5;
-		  }      
-		  sprintf(addr_as_hex, "%08zX", address);
-		  if ( mo == NULL || last_address != address )
-		  {
-			mo = coNewMem();                // create a new memory block
-			if ( coMemAdd(mo, mem, mem_cnt) == 0 )
-			  return coDelete(map), NULL;
-			if ( coMapAdd(map, addr_as_hex, mo) == 0 )
-			  return coDelete(map), NULL;
-		  }
-		  else
-		  {
-			if ( coMemAdd(mo, mem, mem_cnt) == 0 )     // extend the existing memory block
-			  return coDelete(map), NULL;
-		  }
-		  last_address = address + mem_cnt;
-	   }
+
+    if (rec_type >= '1' && rec_type <= '9') {
+      byte_cnt = hexToUnsigned(line + 2);
+      if (byte_cnt > 255)
+        return puts("wrong byte_cnt"), coDelete(map), NULL;
+
+      if (rec_type >= '1' && rec_type <= '3') {
+        address = (size_t)hexToUnsigned(line + 4);
+        address <<= 8;
+        address += (size_t)hexToUnsigned(line + 6);
+        mem_cnt = 0;
+        if (rec_type == '1' && byte_cnt >= 3) {
+          hexToMem(line + 8, byte_cnt - 2,
+                   mem); // do not read address, but include checksum
+          mem_cnt = byte_cnt - 3;
+        } else if (rec_type == '2' && byte_cnt >= 4) {
+          address <<= 8;
+          address += (size_t)hexToUnsigned(line + 8);
+          hexToMem(line + 10, byte_cnt - 3,
+                   mem); // do not read address, but include checksum
+          mem_cnt = byte_cnt - 4;
+        } else if (rec_type == '3' && byte_cnt >= 5) {
+          address <<= 8;
+          address += (size_t)hexToUnsigned(line + 8);
+          address <<= 8;
+          address += (size_t)hexToUnsigned(line + 10);
+          hexToMem(line + 12, byte_cnt - 4,
+                   mem); // do not read address, but include checksum
+          mem_cnt = byte_cnt - 5;
+        }
+        sprintf(addr_as_hex, "%08zX", address);
+        if (mo == NULL || last_address != address) {
+          mo = coNewMem(); // create a new memory block
+          if (coMemAdd(mo, mem, mem_cnt) == 0)
+            return coDelete(map), NULL;
+          if (coMapAdd(map, addr_as_hex, mo) == 0)
+            return coDelete(map), NULL;
+        } else {
+          if (coMemAdd(mo, mem, mem_cnt) ==
+              0) // extend the existing memory block
+            return coDelete(map), NULL;
+        }
+        last_address = address + mem_cnt;
+      }
     }
   }
   return map;
@@ -401,130 +402,113 @@ co coReadS19ByFP(FILE *fp)
 
 #define HEX_MAX_LINE_LEN 1024
 
-
-co coReadHEXByFP(FILE *fp)
-{
+co coReadHEXByFP(FILE *fp) {
   char buf[HEX_MAX_LINE_LEN];
-  unsigned char mem[HEX_MAX_LINE_LEN/2];
+  unsigned char mem[HEX_MAX_LINE_LEN / 2];
   char addr_as_hex[10];
   char *line;
   size_t rec_address = 0x0;
   size_t seg_address = 0x0;
-  size_t last_address = 0xffffffff; 
-  size_t address = 0x0; 
+  size_t last_address = 0xffffffff;
+  size_t address = 0x0;
   size_t mem_cnt;
   int rec_type;
   int i, c;
   struct co_reader_struct reader_struct;
-  
+
   coReader r = &reader_struct;
   coReaderInitByFP(r, fp);
-  
-  co mo = NULL;                // memory object
-  co map = coNewMap(CO_FREE_VALS|CO_STRDUP);
-  if ( map == NULL )
+
+  co mo = NULL; // memory object
+  co map = coNewMap(CO_FREE_VALS | CO_STRDUP);
+  if (map == NULL)
     return NULL;
-  for(;;)
-  {
+  for (;;) {
     i = 0;
-    for(;;)
-    {
-        c = coReaderCurr(r);
-        coReaderNext(r);
-        if ( c < 0 )
-        {
-          if ( i == 0 )
-                  line = NULL;
-          else	
-          {
-                  line = buf;
-                  buf[i] = '\0';
-          }
-          break;
+    for (;;) {
+      c = coReaderCurr(r);
+      coReaderNext(r);
+      if (c < 0) {
+        if (i == 0)
+          line = NULL;
+        else {
+          line = buf;
+          buf[i] = '\0';
         }
-        
-        if ( c == '\n' || c == '\r' )
-        {
-                line = buf;
-                buf[i] = '\0';	
-                break;
-        }
-        if ( i >= HEX_MAX_LINE_LEN )
-          return puts("illegal line length in hex file"), coDelete(map), NULL;		
-        if ( c > ' ' )
-          buf[i++] = c;
-        else
-          i++;
+        break;
+      }
+
+      if (c == '\n' || c == '\r') {
+        line = buf;
+        buf[i] = '\0';
+        break;
+      }
+      if (i >= HEX_MAX_LINE_LEN)
+        return puts("illegal line length in hex file"), coDelete(map), NULL;
+      if (c > ' ')
+        buf[i++] = c;
+      else
+        i++;
     }
-	
-	//printf("line %s, i=%d\n", line, i);
-	
-    if ( line == NULL )
+
+    // printf("line %s, i=%d\n", line, i);
+
+    if (line == NULL)
       break;
-  
-    while( *line != ':' && *line != '\0')
+
+    while (*line != ':' && *line != '\0')
       line++;
 
-    if ( *line == '\0' )
+    if (*line == '\0')
       continue;
-    
-	if ( *line == ':' )
-		line++;
-    
-    mem_cnt = hexToUnsigned(line);
-    if ( (mem_cnt+5)*2+1 > i )         // +1 because of the ":"
-		  return puts("count mismatch in hex file"), coDelete(map), NULL;		
-    //if ( byte_cnt > 255 )
-    //  return puts("wrong byte_cnt"), coDelete(map), NULL;
-    hexToMem(line, (mem_cnt+5), mem);     // simply read all, including byte cnt and checksum
 
-    rec_address = mem[1]*256+mem[2];    
+    if (*line == ':')
+      line++;
+
+    mem_cnt = hexToUnsigned(line);
+    if ((mem_cnt + 5) * 2 + 1 > i) // +1 because of the ":"
+      return puts("count mismatch in hex file"), coDelete(map), NULL;
+    // if ( byte_cnt > 255 )
+    //   return puts("wrong byte_cnt"), coDelete(map), NULL;
+    hexToMem(line, (mem_cnt + 5),
+             mem); // simply read all, including byte cnt and checksum
+
+    rec_address = mem[1] * 256 + mem[2];
     rec_type = mem[3];
-    if ( rec_type == 0 )
-    {
+    if (rec_type == 0) {
       address = seg_address + rec_address;
-	  //address = rec_address;
+      // address = rec_address;
       sprintf(addr_as_hex, "%08zX", address);
-	  //printf("%lld %llu %s\n", seg_address, address, addr_as_hex);
-      if ( mo == NULL || last_address != address )
-      {
-            mo = coNewMem();                // create a new memory block
-            if ( coMemAdd(mo, mem+4, mem_cnt) == 0 )
-              return coDelete(map), NULL;
-            if ( coMapAdd(map, addr_as_hex, mo) == 0 )
-              return coDelete(map), NULL;
-      }
-      else
-      {
-            if ( coMemAdd(mo, mem+4, mem_cnt) == 0 )     // extend the existing memory block
-              return coDelete(map), NULL;
+      // printf("%lld %llu %s\n", seg_address, address, addr_as_hex);
+      if (mo == NULL || last_address != address) {
+        mo = coNewMem(); // create a new memory block
+        if (coMemAdd(mo, mem + 4, mem_cnt) == 0)
+          return coDelete(map), NULL;
+        if (coMapAdd(map, addr_as_hex, mo) == 0)
+          return coDelete(map), NULL;
+      } else {
+        if (coMemAdd(mo, mem + 4, mem_cnt) ==
+            0) // extend the existing memory block
+          return coDelete(map), NULL;
       }
       last_address = address + mem_cnt;
-    }
-    else if ( rec_type == 1 )
-    {
-	  //printf("rec_type %d, EOF\n", rec_type);
+    } else if (rec_type == 1) {
+      // printf("rec_type %d, EOF\n", rec_type);
       return map;
-    }
-    else if ( rec_type == 2 )
-    {
-	  //printf("rec_type %d, seg_address=%lx\n", rec_type, (unsigned long)seg_address);
-      seg_address = ((size_t)mem[4]*256+(size_t)mem[5])*16;
+    } else if (rec_type == 2) {
+      // printf("rec_type %d, seg_address=%lx\n", rec_type, (unsigned
+      // long)seg_address);
+      seg_address = ((size_t)mem[4] * 256 + (size_t)mem[5]) * 16;
       return map;
-    }
-    else if ( rec_type == 3 )
-    {
-	  //printf("rec_type %d, ignored\n", rec_type);
+    } else if (rec_type == 3) {
+      // printf("rec_type %d, ignored\n", rec_type);
       // start address ignored
-    }
-    else if ( rec_type == 4 )
-    {
-	  //printf("rec_type %d, seg_address=%lx\n", rec_type, (unsigned long)seg_address);
-      seg_address = ((size_t)mem[4]*256+(size_t)mem[5])<<16;
-    }
-    else if ( rec_type == 5 )
-    {
-	  //printf("rec_type %d, ignored\n", rec_type);
+    } else if (rec_type == 4) {
+      // printf("rec_type %d, seg_address=%lx\n", rec_type, (unsigned
+      // long)seg_address);
+      seg_address = ((size_t)mem[4] * 256 + (size_t)mem[5]) << 16;
+    } else if (rec_type == 5) {
+      // printf("rec_type %d, ignored\n", rec_type);
       // start address ignored
     }
   } // for(;;)
@@ -535,62 +519,67 @@ co coReadHEXByFP(FILE *fp)
 /* ELF Memory Reader */
 /*===================================================================*/
 
-co coReadElfMemoryByFP(FILE *fp)
-{
+co coReadElfMemoryByFP(FILE *fp) {
   Elf *elf = NULL;
-  Elf_Scn  *scn  = NULL;
+  Elf_Scn *scn = NULL;
   GElf_Shdr shdr;
   size_t block_addr = 0;
   size_t last_block_addr = 0;
   char addr_as_hex[10];
-  co mo = NULL;                // memory object
+  co mo = NULL; // memory object
   co map = NULL;
-  
-  if ( elf_version( EV_CURRENT ) == EV_NONE )
-    return NULL;        // incorrect version
-  
-  elf = elf_begin( fileno(fp) , ELF_C_READ, NULL );
 
-  if ( elf == NULL )
-    return NULL;        // probably not an object/archive file
+  if (elf_version(EV_CURRENT) == EV_NONE)
+    return NULL; // incorrect version
 
-  if ( elf_kind( elf ) != ELF_K_ELF )
-    return elf_end(elf), NULL;                // not an ELF file
+  elf = elf_begin(fileno(fp), ELF_C_READ, NULL);
 
-  map = coNewMap(CO_FREE_VALS|CO_STRDUP);
-  if ( map == NULL )
-    return elf_end(elf), coDelete(map), NULL;                // memory failure 
+  if (elf == NULL)
+    return NULL; // probably not an object/archive file
+
+  if (elf_kind(elf) != ELF_K_ELF)
+    return elf_end(elf), NULL; // not an ELF file
+
+  map = coNewMap(CO_FREE_VALS | CO_STRDUP);
+  if (map == NULL)
+    return elf_end(elf), coDelete(map), NULL; // memory failure
 
   /* loop over all sections of the elf file */
-  while (( scn = elf_nextscn(elf, scn)) != NULL ) 
-  {
-    if ( gelf_getshdr( scn, &shdr ) != &shdr )
-      return elf_end(elf), coDelete(map), NULL;                // unable to get the section header
-    if ( (shdr.sh_flags & SHF_ALLOC) != 0 && shdr.sh_size > 0 )
-    {
+  while ((scn = elf_nextscn(elf, scn)) != NULL) {
+    if (gelf_getshdr(scn, &shdr) != &shdr)
+      return elf_end(elf), coDelete(map),
+             NULL; // unable to get the section header
+    if ((shdr.sh_flags & SHF_ALLOC) != 0 && shdr.sh_size > 0) {
       /* loop over the data blocks of the section */
       Elf_Data *data = NULL;
-      for(;;)
-      {
-        data = elf_getdata(scn , data);     // if data==NULL return first data, otherwise return next data
-        if ( data == NULL )
+      for (;;) {
+        data = elf_getdata(scn, data); // if data==NULL return first data,
+                                       // otherwise return next data
+        if (data == NULL)
           break;
-        if ( data->d_buf == NULL )
+        if (data->d_buf == NULL)
           break;
-        
-        block_addr = shdr.sh_addr + data->d_off;    // calculate the address of this data in the target system, not 100% sure whether this is correct
+
+        block_addr =
+            shdr.sh_addr +
+            data->d_off; // calculate the address of this data in the target
+                         // system, not 100% sure whether this is correct
         sprintf(addr_as_hex, "%08zX", block_addr);
-        if ( mo == NULL || last_block_addr != block_addr )	// start a new memory block?
+        if (mo == NULL ||
+            last_block_addr != block_addr) // start a new memory block?
         {
-          mo = coNewMem();                // create a new memory block
-          if ( coMemAdd(mo, (unsigned char *)(data->d_buf), data->d_size) == 0 )   // data->d_size contains the size of the block, data->d_buf a ptr to the internal memory
+          mo = coNewMem(); // create a new memory block
+          if (coMemAdd(mo, (unsigned char *)(data->d_buf), data->d_size) ==
+              0) // data->d_size contains the size of the block, data->d_buf a
+                 // ptr to the internal memory
             return elf_end(elf), coDelete(map), NULL;
-          if ( coMapAdd(map, addr_as_hex, mo) == 0 )              // append the memory to the map
+          if (coMapAdd(map, addr_as_hex, mo) ==
+              0) // append the memory to the map
             return elf_end(elf), coDelete(map), NULL;
-        }
-        else		// else: extend memory block
+        } else // else: extend memory block
         {
-          if ( coMemAdd(mo, (unsigned char *)(data->d_buf), data->d_size) == 0 )     // extend the existing memory block
+          if (coMemAdd(mo, (unsigned char *)(data->d_buf), data->d_size) ==
+              0) // extend the existing memory block
             return elf_end(elf), coDelete(map), NULL;
         }
         last_block_addr = block_addr + data->d_size;
@@ -604,236 +593,200 @@ co coReadElfMemoryByFP(FILE *fp)
 /* CSV Reader, https://www.rfc-editor.org/rfc/rfc4180 */
 /*===================================================================*/
 
-#define CO_CSV_FIELD_STRING_MAX (32*1024)
+#define CO_CSV_FIELD_STRING_MAX (32 * 1024)
 
-cco coNewCSVStr(const char *s, co pool)
-{
-  if ( pool == NULL )
+cco coNewCSVStr(const char *s, co pool) {
+  if (pool == NULL)
     return coNewStr(CO_STRDUP, s);
   return coMapAddValueKey(pool, s);
 }
 
-cco coGetCSVField(struct co_reader_struct *r, int separator, char *buf, co pool)
-{
-	size_t idx = 0;
-	int isQuote = 0;
-	int c;
-	
-	c = coReaderCurr(r);
-	if ( c < 0 )
-		return NULL;
-	if ( c == '\"' )
-	{
-		isQuote = 1;
-		coReaderNext(r);
-		c = coReaderCurr(r);
-	}
-	for(;;)
-	{
-		if ( c < 0 )
-		{
-			buf[idx] = '\0';
-                        return coNewCSVStr(buf, pool);
-			// return coNewStr(CO_STRDUP, buf);
-		}
-		else if ( c == '\"' )
-		{
-			coReaderNext(r);
-			c = coReaderCurr(r);
-			if ( isQuote )
-			{
-				if ( c == '\"' )	// double double quote == escaped double quote
-				{
-					// storing is done at the end of the for-loop body 
-					// buf[idx++] = '\"';	// store double quote and continue
-				}
-				else // end of field, lets look for the separator
-				{
-					for(;;)
-					{
-						if ( c < 0 )
-						{
-							buf[idx] = '\0';
-                                                        return coNewCSVStr(buf, pool);
-							//return coNewStr(CO_STRDUP, buf);
-						}
-						if ( c == separator ) 
-						{
-							buf[idx] = '\0';
-                                                        return coNewCSVStr(buf, pool);
-							// return coNewStr(CO_STRDUP, buf);	// separator will be handled by calling function
-						}
-						if ( c == '\n' || c == '\r' ) // let the calling function handle  \n and \r
-						{
-							buf[idx] = '\0';
-                                                        return coNewCSVStr(buf, pool);
-							// return coNewStr(CO_STRDUP, buf);
-						}
-						coReaderNext(r);
-						c = coReaderCurr(r);
-					}
-					/* we will never come here */
-				}
-			}
-			else
-			{
-				// double quote was found, but we are not in double quote mode, so just store the double quote
-				// storing is done at the end of the for-loop body 
-				//buf[idx++] = '\"';	// store double quote and continue
-			}
-		}
-		else if ( c == separator )
-		{
-			if ( isQuote )
-			{
-				// we are inside double quotes, so just store the separator (which is done at the end of the for loop)
-			}
-			else
-			{
-				// end of field found... separator will be handled by calling function
-				buf[idx] = '\0';
-                                return coNewCSVStr(buf, pool);
-				// return coNewStr(CO_STRDUP, buf);
-			}
-		}
-		else if ( c == '\n' || c == '\r' ) 
-		{
-			if ( isQuote )
-			{
-				// CR/LF inside double quotes: just continue and store the CRLR sequence
-			}
-			else
-			{	// let the calling function handle  \n and \r
-				buf[idx] = '\0';
-                                return coNewCSVStr(buf, pool);
-				// return coNewStr(CO_STRDUP, buf);
-			}
-		}
+cco coGetCSVField(struct co_reader_struct *r, int separator, char *buf,
+                  co pool) {
+  size_t idx = 0;
+  int isQuote = 0;
+  int c;
 
-                assert( idx < CO_CSV_FIELD_STRING_MAX );
-		buf[idx++] = c;
-		coReaderNext(r);
-		c = coReaderCurr(r);
-	}
-	/* we will never reach this statement */
-	return NULL; 	
+  c = coReaderCurr(r);
+  if (c < 0)
+    return NULL;
+  if (c == '\"') {
+    isQuote = 1;
+    coReaderNext(r);
+    c = coReaderCurr(r);
+  }
+  for (;;) {
+    if (c < 0) {
+      buf[idx] = '\0';
+      return coNewCSVStr(buf, pool);
+      // return coNewStr(CO_STRDUP, buf);
+    } else if (c == '\"') {
+      coReaderNext(r);
+      c = coReaderCurr(r);
+      if (isQuote) {
+        if (c == '\"') // double double quote == escaped double quote
+        {
+          // storing is done at the end of the for-loop body
+          // buf[idx++] = '\"';	// store double quote and continue
+        } else // end of field, lets look for the separator
+        {
+          for (;;) {
+            if (c < 0) {
+              buf[idx] = '\0';
+              return coNewCSVStr(buf, pool);
+              // return coNewStr(CO_STRDUP, buf);
+            }
+            if (c == separator) {
+              buf[idx] = '\0';
+              return coNewCSVStr(buf, pool);
+              // return coNewStr(CO_STRDUP, buf);	// separator will be
+              // handled by calling function
+            }
+            if (c == '\n' ||
+                c == '\r') // let the calling function handle  \n and \r
+            {
+              buf[idx] = '\0';
+              return coNewCSVStr(buf, pool);
+              // return coNewStr(CO_STRDUP, buf);
+            }
+            coReaderNext(r);
+            c = coReaderCurr(r);
+          }
+          /* we will never come here */
+        }
+      } else {
+        // double quote was found, but we are not in double quote mode, so just
+        // store the double quote storing is done at the end of the for-loop
+        // body
+        // buf[idx++] = '\"';	// store double quote and continue
+      }
+    } else if (c == separator) {
+      if (isQuote) {
+        // we are inside double quotes, so just store the separator (which is
+        // done at the end of the for loop)
+      } else {
+        // end of field found... separator will be handled by calling function
+        buf[idx] = '\0';
+        return coNewCSVStr(buf, pool);
+        // return coNewStr(CO_STRDUP, buf);
+      }
+    } else if (c == '\n' || c == '\r') {
+      if (isQuote) {
+        // CR/LF inside double quotes: just continue and store the CRLR sequence
+      } else { // let the calling function handle  \n and \r
+        buf[idx] = '\0';
+        return coNewCSVStr(buf, pool);
+        // return coNewStr(CO_STRDUP, buf);
+      }
+    }
+
+    assert(idx < CO_CSV_FIELD_STRING_MAX);
+    buf[idx++] = c;
+    coReaderNext(r);
+    c = coReaderCurr(r);
+  }
+  /* we will never reach this statement */
+  return NULL;
 }
 
+co coGetCSVRowWithBufferAndPool(struct co_reader_struct *r, int separator,
+                                char *buf, co pool) {
+  co rowVector = coNewVector(pool == NULL ? CO_FREE_VALS : CO_NONE);
+  cco field;
 
-co coGetCSVRowWithBufferAndPool(struct co_reader_struct *r, int separator, char *buf, co pool)
-{
-	co rowVector = coNewVector(pool == NULL ? CO_FREE_VALS : CO_NONE);
-	cco field;
-	
-	//puts("coGetCSVRowWithBufferAndPool");
+  // puts("coGetCSVRowWithBufferAndPool");
 
-	for(;;)
-	{
-		field = coGetCSVField(r, separator, buf, pool);
-		if ( field == NULL )
-		{
-			if ( coVectorSize(rowVector) == 0 ) 
-			{
-				coDelete(rowVector);
-				return NULL;
-			}
-			break;
-		}
-		
-		//printf("Field %s\n", coStrGet(field));
-		if ( coVectorAdd(rowVector, field) < 0 )
-		{
-                        if ( pool == NULL )
-                          coDelete((co)field);
-			coDelete(rowVector);
-			return NULL;
-		}
-		
-		if ( coReaderCurr(r) == '\n' )
-		{
-			coReaderNext(r);
-			if ( coReaderCurr(r) == '\r' )
-				coReaderNext(r);
-			break;
-		}
-		
-		if ( coReaderCurr(r) == '\r' )
-		{
-			coReaderNext(r);
-			if ( coReaderCurr(r) == '\n' )
-				coReaderNext(r);
-			break;
-		}
-		
-		if ( coReaderCurr(r) == separator )
-		{
-			coReaderNext(r);
-			// handle the special case, where the separtor is the last char of the file.
-			// in such a case, add an empty string to the row vector
-			if ( coReaderCurr(r) < 0 )
-			{
-                                field = coNewCSVStr("", pool);
-				//field = coNewStr(CO_STRDUP, "");
-				if ( coVectorAdd(rowVector, field) < 0 )
-				{
-                                        if ( pool == NULL )
-                                          coDelete((co)field);
-					coDelete(rowVector);
-					return NULL;
-				}
-				return rowVector;
-			}
-		}
-	}
-	return rowVector;
+  for (;;) {
+    field = coGetCSVField(r, separator, buf, pool);
+    if (field == NULL) {
+      if (coVectorSize(rowVector) == 0) {
+        coDelete(rowVector);
+        return NULL;
+      }
+      break;
+    }
+
+    // printf("Field %s\n", coStrGet(field));
+    if (coVectorAdd(rowVector, field) < 0) {
+      if (pool == NULL)
+        coDelete((co)field);
+      coDelete(rowVector);
+      return NULL;
+    }
+
+    if (coReaderCurr(r) == '\n') {
+      coReaderNext(r);
+      if (coReaderCurr(r) == '\r')
+        coReaderNext(r);
+      break;
+    }
+
+    if (coReaderCurr(r) == '\r') {
+      coReaderNext(r);
+      if (coReaderCurr(r) == '\n')
+        coReaderNext(r);
+      break;
+    }
+
+    if (coReaderCurr(r) == separator) {
+      coReaderNext(r);
+      // handle the special case, where the separtor is the last char of the
+      // file. in such a case, add an empty string to the row vector
+      if (coReaderCurr(r) < 0) {
+        field = coNewCSVStr("", pool);
+        // field = coNewStr(CO_STRDUP, "");
+        if (coVectorAdd(rowVector, field) < 0) {
+          if (pool == NULL)
+            coDelete((co)field);
+          coDelete(rowVector);
+          return NULL;
+        }
+        return rowVector;
+      }
+    }
+  }
+  return rowVector;
 }
 
-co coGetCSVFile(struct co_reader_struct *reader, int separator, char *buf, co pool)
-{
-	co fileVector = coNewVector(CO_FREE_VALS);
-	co rowVector;
+co coGetCSVFile(struct co_reader_struct *reader, int separator, char *buf,
+                co pool) {
+  co fileVector = coNewVector(CO_FREE_VALS);
+  co rowVector;
 
-	//puts("coGetCSVFile");
+  // puts("coGetCSVFile");
 
-	coReaderSkipWhiteSpace(reader);
+  coReaderSkipWhiteSpace(reader);
 
-	for(;;)
-	{
-		rowVector = coGetCSVRowWithBufferAndPool(reader, separator, buf, pool);
-		if ( rowVector == NULL )
-			break;
-		if ( coVectorAdd(fileVector, rowVector) < 0 )
-		{
-			coDelete(rowVector);
-			coDelete(fileVector);
-			return NULL;
-		}
-		
-	}
-	return fileVector;
+  for (;;) {
+    rowVector = coGetCSVRowWithBufferAndPool(reader, separator, buf, pool);
+    if (rowVector == NULL)
+      break;
+    if (coVectorAdd(fileVector, rowVector) < 0) {
+      coDelete(rowVector);
+      coDelete(fileVector);
+      return NULL;
+    }
+  }
+  return fileVector;
 }
 
-
-co coReadCSVByFP(FILE *fp, int separator)
-{
+co coReadCSVByFP(FILE *fp, int separator) {
   struct co_reader_struct reader;
   char buf[CO_CSV_FIELD_STRING_MAX];
-  
-  if ( coReaderInitByFP(&reader, fp) == 0 )
+
+  if (coReaderInitByFP(&reader, fp) == 0)
     return NULL;
   return coGetCSVFile(&reader, separator, buf, NULL);
 }
 
-co coReadCSVByFPWithPool(FILE *fp, int separator, co pool)
-{
+co coReadCSVByFPWithPool(FILE *fp, int separator, co pool) {
   struct co_reader_struct reader;
   char buf[CO_CSV_FIELD_STRING_MAX];
-  
-  if ( coReaderInitByFP(&reader, fp) == 0 )
+
+  if (coReaderInitByFP(&reader, fp) == 0)
     return NULL;
   return coGetCSVFile(&reader, separator, buf, pool);
 }
-
 
 /*
   struct co_reader_struct reader;
@@ -845,14 +798,11 @@ co coReadCSVByFPWithPool(FILE *fp, int separator, co pool)
       break;
     coPrint(rowVector); puts("");
     coDelete(rowVector);
-  } 
+  }
 */
 
-
-co coGetCSVRow(struct co_reader_struct *r, int separator)
-{
+co coGetCSVRow(struct co_reader_struct *r, int separator) {
   char buf[CO_CSV_FIELD_STRING_MAX];
   coReaderSkipWhiteSpace(r);
   return coGetCSVRowWithBufferAndPool(r, separator, buf, NULL);
 }
-
