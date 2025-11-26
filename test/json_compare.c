@@ -18,6 +18,7 @@ co stack = NULL;
 
 int compare(cco co1, cco co2)
 {
+        /*
 	puts("stack:");
 	coPrint(stack);
 	puts("");
@@ -27,6 +28,7 @@ int compare(cco co1, cco co2)
 	puts("compare 2:");
 	coPrint(co2);
 	puts("");	
+        */
 	
 	if ( coIsVector(co1) && coIsVector(co2) )
 	{
@@ -199,12 +201,14 @@ int main(int argc, char **argv)
 		return 2;
 	}
 
+        /*
 	puts("JSON 1:");
 	coPrint(json1co);
 	puts("");
 	puts("JSON 2:");
 	coPrint(json2co);
 	puts("");
+        */
 	
 	r = compare(json1co, json2co);
 	if ( r != 0 )

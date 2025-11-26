@@ -1697,10 +1697,15 @@ co coJSONGetArray(coReader reader) {
       return coReaderErr(reader, "Missing ']'"), coDelete(array_obj), NULL;
 
     if (coVectorEmpty(array_obj) == 0) // expect a ',' after the first element
+    {
       if (c == ',') {
         coReaderNext(reader);
         coReaderSkipWhiteSpace(reader);
       }
+      else {
+        return coReaderErr(reader, "Missing ',' or ']'"), coDelete(array_obj), NULL;
+      }
+    }
 
     element = coJSONGetValue(reader);
 
