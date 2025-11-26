@@ -11,6 +11,6 @@
 
  * `csv2json`: A tool to convert csv files to JSON format
  * `json_compare`: Compre two different JSON files and output path to the first difference
-
+ * `json_format`: A simple beautifier tool for JSON
  
  
