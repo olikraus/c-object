@@ -396,7 +396,7 @@ int coStrAdd(co o, const char *s) {
       return 0;
     o->s.str = p;
     strcpy(o->s.str + o->s.len, s);
-    o->s.len += len;
+      o->s.len += len;
     return 1;
   }
   return 0; // static string, can not add another string
@@ -412,19 +412,20 @@ int coStrSet(co o, const char *s)
   assert(o->s.str != NULL);
   if (o->flags & CO_STRDUP) {
     size_t len = strlen(s);
-	if ( len <= o->s.len )
-	{
-		strcpy(o->s.str, s);
-		o->s.len = len;
-	}
-	else
-	{
-		char *p = (char *)realloc(o->s.str, len + 1);
-		if (p == NULL)
-		  return 0;
-		strcpy(o->s.str, s);
-		o->s.len = len;
-	}
+    if ( len <= o->s.len ) 
+    {
+            strcpy(o->s.str, s);
+            o->s.len = len;
+    }
+    else
+    {
+            char *p = (char *)realloc(o->s.str, len + 1);
+            if (p == NULL)
+              return 0;
+            o->s.str = p;
+            strcpy(o->s.str, s);
+            o->s.len = len;
+    }
     return 1;
   }
   return 0; // static string, can not replace the string

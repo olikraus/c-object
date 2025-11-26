@@ -11,6 +11,7 @@
 	
 */
 
+#include <string.h>
 #include "co.h"
 
 co stack = NULL;
