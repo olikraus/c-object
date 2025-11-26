@@ -31,6 +31,7 @@ int main(int argc, char **argv)
 	{
 		printf( "size=%ld\n", coSize(jsonco) );
 	}
+	
 	//coPrint(jsonco);
     
     fclose(jsonfp);
