@@ -155,7 +155,7 @@ struct coStruct {
     struct // string and memory block
     {
       char *str;
-      size_t len; // current str/mem length
+      size_t len; // current str/mem length, for strings this is the size without 0 terminator (strlen result)
       size_t memlen; // allocated memory (not used for strings)
     } s;
     struct // double
@@ -228,6 +228,7 @@ char *coStrDeleteAndGetAllocatedStringContent(
     co o); // convert a str obj to a string, return value must be free'd
 const char *coStrToString(cco o); /* obsolete, use coStrGet() */
 const char *coStrGet(cco o); /* return the internal string as a reference */
+int coStrSet(co o, const char *s); /* change the string of a string object, requires the CO_STRDUP flag */
 
 /* memory functions */
 long coMemSize(cco o);
@@ -236,6 +237,7 @@ const void *coMemGet(cco o);
 
 /* double functions */
 double coDblGet(cco o);
+void coDblSet(co o, double n);
 
 /* vector functions */
 long coVectorAdd(
@@ -246,6 +248,8 @@ cco coVectorGet(cco o,
 void coVectorSet(co v, long i, cco e); // replace an element within the vector
 void coVectorErase(
     co v, long i); // delete and remove element at the specified position
+void coVectorEraseLast(co v);
+
 void coVectorClear(co o); // first if flags are not CO_NONE delete all elements
                           // and second clear the array to size 0
 int coVectorEmpty(cco o); // return 1 if the vector is empty, return 0 otherwise
@@ -313,11 +317,10 @@ int coMapLoopNext(coMapIterator *iter);
 coMapIterator iter;
 if ( coMapLoopFirst(&iter, o) )
 {
-        do {
-                coMapLoopKey(&iter);  // return the key of the current key/value
-pair (const char *)
-                coMapLoopValue(&iter);	// return the value of the current
-key/value pair (cco) } while( coMapLoopNext(&iter) );
+	do {
+			coMapLoopKey(&iter);  // return the key of the current key/value pair (const char *)
+			coMapLoopValue(&iter);	// return the value of the current key/value pair (cco) 
+	} while( coMapLoopNext(&iter) );
 }
 */
 

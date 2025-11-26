@@ -308,6 +308,14 @@ void coVectorErase(co v, long i) {
   v->v.cnt--;
 }
 
+void coVectorEraseLast(co v)
+{
+  assert(coIsVector(v));
+  if (v->v.cnt == 0)
+    return;
+  coVectorErase(v, v->v.cnt-1);
+}
+
 static int coVectorAppendVectorCB(cco o, long idx, cco element, void *data) {
   co c = coClone(element);
   if (c == NULL)
@@ -392,6 +400,34 @@ int coStrAdd(co o, const char *s) {
     return 1;
   }
   return 0; // static string, can not add another string
+}
+
+/*
+	change the string of a string object. Only allowed for CO_STRDUP.
+	returns 0 for any memory error
+*/
+int coStrSet(co o, const char *s)
+{
+  assert(coIsStr(o));
+  assert(o->s.str != NULL);
+  if (o->flags & CO_STRDUP) {
+    size_t len = strlen(s);
+	if ( len <= o->s.len )
+	{
+		strcpy(o->s.str, s);
+		o->s.len = len;
+	}
+	else
+	{
+		char *p = (char *)realloc(o->s.str, len + 1);
+		if (p == NULL)
+		  return 0;
+		strcpy(o->s.str, s);
+		o->s.len = len;
+	}
+    return 1;
+  }
+  return 0; // static string, can not replace the string
 }
 
 long coStrSize(cco o) { return (long)o->s.len; }
@@ -576,6 +612,15 @@ double coDblGet(cco o) {
   assert(coIsDbl(o));
   return o->d.n;
 }
+
+void coDblSet(co o, double n)
+{
+  if (o == NULL)
+    return;
+  assert(coIsDbl(o));
+  o->d.n = n;
+}
+
 
 /*===================================================================*/
 /* Map */

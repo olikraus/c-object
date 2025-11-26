@@ -35,7 +35,7 @@ release: all
 	
 #gprof: all
 
-all: co_test co_a2l a2l_info a2l_search csv2json csvprint hex2json elf2json json_search
+all: co_test co_a2l a2l_info a2l_search csv2json csvprint hex2json elf2json json_search json_compare
 	
 co_test: $(COOBJ) ./test/co_test.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
@@ -64,7 +64,10 @@ elf2json:  $(COOBJ) ./test/elf2json.o
 json_search:  $(COOBJ) ./test/json_search.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
 
+json_compare:  $(COOBJ) ./test/json_compare.o
+	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
+
 clean:
-	-rm $(COOBJ) ./test/co_test.o ./test/co_a2l.o ./test/a2l_info.o ./test/a2l_search.o ./test/csv2json.o ./test/csvprint.o ./test/hex2json.o ./test/elf2json.o 
-	-rm co_test co_a2l a2l_info csv2json csvprint hex2json elf2json json_search
+	-rm $(COOBJ) ./test/co_test.o ./test/co_a2l.o ./test/a2l_info.o ./test/a2l_search.o ./test/csv2json.o ./test/csvprint.o ./test/hex2json.o ./test/elf2json.o ./test/json_compare.o
+	-rm co_test co_a2l a2l_info csv2json csvprint hex2json elf2json json_search json_compare
 	

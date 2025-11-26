@@ -13,7 +13,7 @@ int main(int argc, char **argv)
     jsonfp = fopen(argv[1], "rb");
     if ( jsonfp == NULL )
     {
-            perror(argv[2]);
+            perror(argv[1]);
             return 2;
     }
     
