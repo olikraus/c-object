@@ -2,7 +2,12 @@
 
 	json_compare
 
-	compare whether two JSON files are the same
+        (c) 2024 Oliver Kraus
+        https://github.com/olikraus/c-object
+
+        CC BY-SA 4.0  Attribution-ShareAlike 4.0 International        https://creativecommons.org/licenses/by-sa/4.0/ 
+
+	compare whether two JSON files are identical
 	
 	Errorlevel:
 		0		not identical

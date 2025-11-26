@@ -7,7 +7,8 @@
 
   https://github.com/olikraus/c-object
 
-  CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
+  CC BY-SA 4.0  Attribution-ShareAlike 4.0 International        https://creativecommons.org/licenses/by-sa/4.0/ 
+
 
   -DCO_USE_ZLIB
     will enable autodetection of .gz compressed input files (this will require
