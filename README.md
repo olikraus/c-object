@@ -1,5 +1,8 @@
 # c-object lib
 
+License: CC BY-SA 4.0, Attribution-ShareAlike 4.0 International, https://creativecommons.org/licenses/by-sa/4.0/ 
+
+
 ## Features
 
  * Generic objects implemented in C
