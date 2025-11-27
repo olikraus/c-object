@@ -16,10 +16,93 @@
 	
 */
 
+#include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include "co.h"
 
 co stack = NULL;
+
+/*  Daniel J. Bernstein hash function, https://theartincode.stanis.me/008-djb2/ */
+/*  use 5381 as initial hash value*/
+
+#define HASH_INIT 5381
+
+unsigned long djb2hash(unsigned long hash, const unsigned char *data, size_t cnt)
+{
+   for (size_t i = 0; i < cnt; i++) 
+   {
+        hash = ((hash << 5) + hash) + data[i];  // hash * 33 + data[i]
+   }	
+   return hash;
+}
+
+unsigned long coGetHash(unsigned long hash, cco o)
+{
+	if ( coIsStr(o) )
+		return djb2hash(hash, (unsigned char *)coStrGet(o), coSize(o) );
+	if ( coIsDbl(o) )
+	{
+		double n = coDblGet(o);
+		return djb2hash(hash, (unsigned char *)&n, sizeof(double) );
+	}
+	if ( coIsVector(o)  )
+	{
+		long n = coSize(o);
+		return djb2hash(hash, (unsigned char *)&n, sizeof(long) );
+	}
+	if ( coIsMap(o) )
+	{
+		coMapIterator iter;
+		if ( coMapLoopFirst(&iter, o)  )
+		{
+			do 
+			{
+				const char *key = coMapLoopKey(&iter);
+				hash = djb2hash(hash, (unsigned char *)key, strlen(key) );
+				hash = coGetHash(hash, coMapLoopValue(&iter));
+			} while( coMapLoopNext(&iter) );
+		}
+		return hash;
+	}
+	return hash;
+}
+
+int coQSortCmp(const void *a, const void *b)
+{
+	unsigned long ha = coGetHash(HASH_INIT, *(cco *)a);
+	unsigned long hb = coGetHash(HASH_INIT, *(cco *)b);
+	return ha < hb ? -1 : ha > hb;
+}
+
+void sortVector(co v)
+{
+	assert(coIsVector(v));
+	qsort(v->v.list, v->v.cnt, sizeof(co), coQSortCmp);
+}
+
+void normalize(co o)
+{
+	if ( coIsVector(o)  )
+	{
+		long i, cnt;
+		sortVector(o);
+		cnt = coSize(o);
+		for( i = 0; i < cnt; i++ )
+			normalize(o);
+	}
+	else if ( coIsMap(o) )
+	{
+		coMapIterator iter;
+		if ( coMapLoopFirst(&iter, o)  )
+		{
+			do 
+			{
+				normalize((co)coMapLoopValue(&iter));
+			} while( coMapLoopNext(&iter) );
+		}
+	}
+}
 
 int compare(cco co1, cco co2)
 {
@@ -214,7 +297,15 @@ int main(int argc, char **argv)
 	coPrint(json2co);
 	puts("");
         */
-	
+
+	/* normalizing is an optional step: it will (try to) sort all vector elements */
+	/* no doubt, there are cases where this sorting is not useful or even not acceptable */
+	/* todo: introduce commandline option for this */
+	puts("Normalize File 1");
+	normalize(json1co);
+	puts("Normalize File 2");
+	normalize(json2co);
+	puts("Compare File 1 and 2");
 	r = compare(json1co, json2co);
 	if ( r != 0 )
 	{
