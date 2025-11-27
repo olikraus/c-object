@@ -19,7 +19,7 @@ https://creativecommons.org/licenses/by-sa/4.0/
 ## Useful Tools
 
  * `csv2json`: A tool to convert csv files to JSON format
- * `json_compare`: Compre two different JSON files and output path to the first difference
+ * `json_compare`: Compare two different JSON files and output path to the first difference. For arrays the sequence of elements is ignored.
  * `json_format`: A simple beautifier tool for JSON
  
  
