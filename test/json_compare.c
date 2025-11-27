@@ -30,7 +30,8 @@ co stack = NULL;
 
 unsigned long djb2hash(unsigned long hash, const unsigned char *data, size_t cnt)
 {
-   for (size_t i = 0; i < cnt; i++) 
+  size_t i;
+   for (i = 0; i < cnt; i++) 
    {
         hash = ((hash << 5) + hash) + data[i];  // hash * 33 + data[i]
    }	
@@ -40,20 +41,30 @@ unsigned long djb2hash(unsigned long hash, const unsigned char *data, size_t cnt
 unsigned long coGetHash(unsigned long hash, cco o)
 {
 	if ( coIsStr(o) )
+        {
+                // puts("coGetHash: Str");
+                // coPrint(o); puts("");
 		return djb2hash(hash, (unsigned char *)coStrGet(o), coSize(o) );
+        }
 	if ( coIsDbl(o) )
 	{
 		double n = coDblGet(o);
+                // puts("coGetHash: Dbl");
+                // coPrint(o); puts("");
 		return djb2hash(hash, (unsigned char *)&n, sizeof(double) );
 	}
 	if ( coIsVector(o)  )
 	{
 		long n = coSize(o);
+                // puts("coGetHash: Vector");
+                // coPrint(o); puts("");
 		return djb2hash(hash, (unsigned char *)&n, sizeof(long) );
 	}
 	if ( coIsMap(o) )
 	{
 		coMapIterator iter;
+                // puts("coGetHash: Map");
+                // coPrint(o); puts("");
 		if ( coMapLoopFirst(&iter, o)  )
 		{
 			do 
@@ -89,7 +100,7 @@ void normalize(co o)
 		sortVector(o);
 		cnt = coSize(o);
 		for( i = 0; i < cnt; i++ )
-			normalize(o);
+			normalize((co)coVectorGet(o, i));
 	}
 	else if ( coIsMap(o) )
 	{
