@@ -20,6 +20,7 @@
 #include <string.h>
 #include <assert.h>
 #include "co.h"
+//#include "zlib.h"
 
 co stack = NULL;
 
@@ -30,7 +31,8 @@ co stack = NULL;
 
 unsigned long djb2hash(unsigned long hash, const unsigned char *data, size_t cnt)
 {
-  size_t i;
+	// return crc32(hash, data, cnt);
+   size_t i;
    for (i = 0; i < cnt; i++) 
    {
         hash = ((hash << 5) + hash) + data[i];  // hash * 33 + data[i]
@@ -76,6 +78,7 @@ unsigned long coGetHash(unsigned long hash, cco o)
 		}
 		return hash;
 	}
+	assert(0);
 	return hash;
 }
 
@@ -88,8 +91,14 @@ int coQSortCmp(const void *a, const void *b)
 
 void sortVector(co v)
 {
+	//long i, cnt;
 	assert(coIsVector(v));
 	qsort(v->v.list, v->v.cnt, sizeof(co), coQSortCmp);
+	/*
+	cnt = coSize(v);
+	for( i = 0; i < cnt; i++ )
+		printf("%lu\n", coGetHash(HASH_INIT, coVectorGet(v, i)));
+	*/
 }
 
 void normalize(co o)
@@ -314,8 +323,10 @@ int main(int argc, char **argv)
 	/* todo: introduce commandline option for this */
 	puts("Normalize File 1");
 	normalize(json1co);
+	// coWriteJSON(json1co, 0, 0, fopen("1.json", "w"));
 	puts("Normalize File 2");
-	normalize(json2co);
+	normalize(json2co);	
+	// coWriteJSON(json2co, 0, 0, fopen("2.json", "w"));
 	puts("Compare File 1 and 2");
 	r = compare(json1co, json2co);
 	if ( r != 0 )
