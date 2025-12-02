@@ -602,7 +602,7 @@ int coDblInit(co o, void *data) {
 
 long coDblSize(cco o) { return 1; }
 
-void coDblPrint(cco o) { printf("%.9g", o->d.n); }
+void coDblPrint(cco o) { printf("%.11g", o->d.n); }
 
 void coDblDestroy(co o) { o->d.n = 0.0; }
 
@@ -1899,7 +1899,7 @@ static void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp) {
     writeString(coStrGet(o), isUTF8, fp);
     fputc('\"', fp);
   } else if (coIsDbl(o)) {
-    fprintf(fp, "%.9g", coDblGet(o));
+    fprintf(fp, "%.11g", coDblGet(o));
   } else if (coIsVector(o)) {
     long i;
     long cnt = coVectorSize(o);
