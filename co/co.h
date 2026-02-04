@@ -241,8 +241,9 @@ void coDblSet(co o, double n);
 
 /* vector functions */
 long coVectorAdd(
-    co o, cco p); // add object at the end of the list, returns -1 for error
-int coVectorAppendVector(co v, cco src); // append elements from src to vector v
+    co o, cco p); // add object at the end of the list, returns -1 for error, 
+    // p will be moved and deleted by the vector destructor if CO_FREE_VALS is set
+int coVectorAppendVector(co v, cco src); // append elements from src to vector v, elements are cloned, this means CO_FREE_VALS should be set for v
 cco coVectorGet(cco o,
                 long idx); // return object at specific position from the vector
 void coVectorSet(co v, long i, cco e); // replace an element within the vector
@@ -385,5 +386,8 @@ co coReadCSVByFPWithPool(
               // pool, which must be a map with CO_FREE_VALS flag, pool can be
               // NULL
 co coGetCSVRow(struct co_reader_struct *r, int separator);
+
+/* co_xml.c */
+co coReadXMLByFP(FILE *fp);
 
 #endif /* CO_INCLUDE */

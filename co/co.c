@@ -328,12 +328,14 @@ static int coVectorAppendVectorCB(cco o, long idx, cco element, void *data) {
 
 /*
   append elements from src to v
-  src can be vector or map
   elements from src are cloned
+  "v" must have CO_FREE_VALS attribute, so that the cloned elements are removed
 */
 int coVectorAppendVector(co v, cco src) {
   if (v->fn == coVectorType) {
     long oldCnt = v->v.cnt;
+    
+    assert( (v->flags & CO_FREE_VALS) != 0 );   // because "clones" are added the vector must have the CO_FREE_VALS flag
 
     if (src->fn == coVectorType) {
       if (coVectorForEach(src, coVectorAppendVectorCB, v) == 0) {
