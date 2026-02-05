@@ -222,8 +222,11 @@ void coWriteJSON(cco o, int isCompact, int isUTF8,
                  FILE *fp); // isUTF8 is 0, then output char codes >=128 via \u
 
 /* string functions */
+co coNewStrWithLen(const char *s, size_t len);
+
 int coStrAdd(co o, const char *s); // concats the given string to the string
                                    // object, requires the CO_STRDUP flag
+int coStrAddWithLen(co o, const char *s, size_t len);
 char *coStrDeleteAndGetAllocatedStringContent(
     co o); // convert a str obj to a string, return value must be free'd
 const char *coStrToString(cco o); /* obsolete, use coStrGet() */
@@ -240,16 +243,14 @@ double coDblGet(cco o);
 void coDblSet(co o, double n);
 
 /* vector functions */
-long coVectorAdd(
-    co o, cco p); // add object at the end of the list, returns -1 for error, 
+long coVectorAdd(co o, cco p); // add object at the end of the list, returns -1 for error, 
     // p will be moved and deleted by the vector destructor if CO_FREE_VALS is set
 int coVectorAppendVector(co v, cco src); // append elements from src to vector v, elements are cloned, this means CO_FREE_VALS should be set for v
-cco coVectorGet(cco o,
-                long idx); // return object at specific position from the vector
+cco coVectorGet(cco o, long idx); // return object at specific position from the vector
 void coVectorSet(co v, long i, cco e); // replace an element within the vector
 void coVectorErase(
     co v, long i); // delete and remove element at the specified position
-void coVectorEraseLast(co v);
+void coVectorEraseLast(co v); // delete last element and reduce array size by 1
 
 void coVectorClear(co o); // first if flags are not CO_NONE delete all elements
                           // and second clear the array to size 0
@@ -270,6 +271,8 @@ long coVectorPredecessorBinarySearch(
 /* map functions */
 // int coMapAdd(co o, const char *key, cco value);    // insert object into the
 // map, returns 0 for memory error
+// if CO_STRDUP is set for the map, then key will be cloned
+// if CO_FREE_VALS is set then the old value will be deleted if the key already exists
 const char *
 coMapAdd(co o, const char *key,
          cco value); // insert object into map, returns NULL for memory error,
@@ -388,6 +391,6 @@ co coReadCSVByFPWithPool(
 co coGetCSVRow(struct co_reader_struct *r, int separator);
 
 /* co_xml.c */
-co coReadXMLByFP(FILE *fp);
+co coReadXMLByFP(FILE *fp, int skip_white_space);
 
 #endif /* CO_INCLUDE */

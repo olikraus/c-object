@@ -385,8 +385,23 @@ int coStrInit(co o, void *data) {
     o->s.str = s;
   o->s.len = strlen(o->s.str);
   o->s.memlen = 0; // not used for string
-
   return 1;
+}
+
+co coNewStrWithLen(const char *s, size_t len) {
+  co o = (co)malloc(sizeof(struct coStruct));
+  if (o == NULL)
+    return NULL;
+  o->fn = coStrType;
+  o->flags = CO_STRDUP|CO_STRFREE;
+  o->s.str = (char *)malloc(len+1);  // allocate one more char for the \0 terminator
+  if ( o->s.str == NULL )
+    return free(o), NULL;
+  strncpy(o->s.str, s, len);
+  o->s.str[len] = '\0';         // assign \0 terminator
+  o->s.len = len;
+  o->s.memlen = 0; // not used for string
+  return o;
 }
 
 int coStrAdd(co o, const char *s) {
@@ -404,6 +419,23 @@ int coStrAdd(co o, const char *s) {
   }
   return 0; // static string, can not add another string
 }
+
+int coStrAddWithLen(co o, const char *s, size_t len) {
+  assert(coIsStr(o));
+  assert(o->s.str != NULL);
+  if (o->flags & CO_STRDUP) {
+    char *p = (char *)realloc(o->s.str, o->s.len + len + 1);
+    if (p == NULL)
+      return 0;
+    o->s.str = p;
+    strncpy(o->s.str + o->s.len, s, len);
+    o->s.len += len;
+    o->s.str[o->s.len] = '\0';
+    return 1;
+  }
+  return 0; // static string, can not add another string
+}
+
 
 /*
 	change the string of a string object. Only allowed for CO_STRDUP.
