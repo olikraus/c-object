@@ -124,7 +124,7 @@ coFn coVectorType = &coVectorStruct;
 
 co coNewVector(unsigned flags) { return coNew(coVectorType, flags); }
 
-#define COV_EXTEND 32
+#define COV_EXTEND 64
 int coVectorInit(co o, void *data) {
   void *ptr = malloc(COV_EXTEND * sizeof(struct coStruct));
   if (ptr == NULL)

@@ -189,11 +189,11 @@ co coNewStr(unsigned flags,
             const char *s); // most often CO_STRDUP should be used
 co coNewDbl(double n);
 co coNewMem(void);
-co coNewVector(unsigned flags);
+co coNewVector(unsigned flags);	// CO_FREE_VALS
 co coNewVectorByMap(
     cco map); // constructs a vector from a map, elements of the vector is again
               // a vector with two elements, the key and the value
-co coNewMap(unsigned flags);
+co coNewMap(unsigned flags);		// CO_FREE_VALS, CO_STRDUP, CO_STRFREE
 
 /* object type test procedures */
 
@@ -244,10 +244,11 @@ void coDblSet(co o, double n);
 
 /* vector functions */
 long coVectorAdd(co o, cco p); // add object at the end of the list, returns -1 for error, 
-    // p will be moved and deleted by the vector destructor if CO_FREE_VALS is set
+    // p will be moved and deleted by the vector destructor if CO_FREE_VALS is set, 
+	// p can be NULL pointer
 int coVectorAppendVector(co v, cco src); // append elements from src to vector v, elements are cloned, this means CO_FREE_VALS should be set for v
 cco coVectorGet(cco o, long idx); // return object at specific position from the vector
-void coVectorSet(co v, long i, cco e); // replace an element within the vector
+void coVectorSet(co v, long i, cco e); // replace an element within the vector, the index must be lower than coVectorSize()
 void coVectorErase(
     co v, long i); // delete and remove element at the specified position
 void coVectorEraseLast(co v); // delete last element and reduce array size by 1
@@ -273,8 +274,7 @@ long coVectorPredecessorBinarySearch(
 // map, returns 0 for memory error
 // if CO_STRDUP is set for the map, then key will be cloned
 // if CO_FREE_VALS is set then the old value will be deleted if the key already exists
-const char *
-coMapAdd(co o, const char *key,
+const char *coMapAdd(co o, const char *key,
          cco value); // insert object into map, returns NULL for memory error,
                      // otherwise the internal pointer to key
 // note: if key exists, then the internal pointer to the same key string is
