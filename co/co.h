@@ -101,12 +101,18 @@
 #ifdef CO_USE_ZLIB
 #include "zlib.h"
 #endif /* CO_USE_ZLIB */
+
 /*
 #if defined(MSDOS) || defined(OS2) || defined(WIN32) || defined(__CYGWIN__)
 #  include <fcntl.h>
 #  include <io.h>
 #endif
 */
+
+#ifdef CO_FCGI
+#include <fcgi_stdio.h>         // include this at the end, so that stdout and FILE redefinitions are applied
+#endif /* CO_FCGI */
+
 typedef struct coStruct *co;
 typedef const struct coStruct *cco;
 typedef struct coFnStruct *coFn;

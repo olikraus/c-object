@@ -15,6 +15,10 @@ https://creativecommons.org/licenses/by-sa/4.0/
  * Support for vector and map data structures
  * JSON read and write
  * GZIP support
+ 
+## Note
+
+Use `-DCO_FCGI` if c-object lib is used in a FCGI (fastcgi) application.
 
 ## Useful Tools
 
