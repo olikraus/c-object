@@ -190,7 +190,8 @@ int coVectorForEach(cco o, coVectorForEachCB cb, void *data) {
 static int coVectorPrintCB(cco o, long i, cco e, void *data) {
   if (i > 0)
     printf(", ");
-  e->fn->print(e);
+  if ( e != NULL )  
+	e->fn->print(e);
   return 1;
 }
 void coVectorPrint(cco o) {
