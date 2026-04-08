@@ -658,6 +658,58 @@ void coDblSet(co o, double n)
   o->d.n = n;
 }
 
+/*===================================================================*/
+/* Bool */
+/*===================================================================*/
+
+int coBoolInit(co o, void *data); // optional data: const int *
+long coBoolSize(cco o);
+void coBoolPrint(cco o);
+void coBoolDestroy(co o);
+co coBoolClone(cco o);
+
+struct coFnStruct coBoolStruct = {coBoolInit, coBoolSize, coBoolPrint, coBoolDestroy,
+                                 coBoolClone};
+coFn coBoolType = &coBoolStruct;
+
+co coNewBool(int n) {
+  co o = coNewWithData(coBoolType, CO_NONE, (void *)&n);
+  if (o == NULL)
+    return NULL;
+  return o;
+}
+
+int coBoolInit(co o, void *data) {
+  o->fn = coBoolType;
+  if (data == NULL)
+    o->b.b = 0;
+  else
+    o->b.b = *(int *)data;
+  return 1;
+}
+
+long coBoolSize(cco o) { return 1; }
+
+void coBoolPrint(cco o) { printf("%s", o->b.b == 0 ? "false" : "true"); }
+
+void coBoolDestroy(co o) { o->b.b = 0; }
+
+co coBoolClone(cco o) { return coNewBool(o->b.b); }
+
+int coBoolGet(cco o) {
+  if (o == NULL)
+    return 0;
+  assert(coIsBool(o));
+  return o->b.b;
+}
+
+void coBoolSet(co o, int b)
+{
+  if (o == NULL)
+    return;
+  assert(coIsBool(o));
+  o->b.b = b;
+}
 
 /*===================================================================*/
 /* Map */
@@ -1838,9 +1890,13 @@ co coJSONGetValue(coReader reader) {
     return coJSONGetDbl(reader);
 
   identifier = coJSONGetIdentifier(reader);
+  if (strcmp(identifier, "true") == 0)
+    return coNewBool(1);
+  if (strcmp(identifier, "false") == 0)
+    return coNewBool(0);
   if (strcmp(identifier, "null") == 0)
     return NULL;
-  // todo: handle true, false
+  // what is missing?
   return NULL;
 }
 
@@ -1935,6 +1991,8 @@ static void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp) {
     fputc('\"', fp);
   } else if (coIsDbl(o)) {
     fprintf(fp, "%.11g", coDblGet(o));
+  } else if (coIsBool(o)) {
+    fprintf(fp, "%s", coBoolGet(o) == 0 ? "false" : "true" );
   } else if (coIsVector(o)) {
     long i;
     long cnt = coVectorSize(o);

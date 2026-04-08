@@ -168,6 +168,10 @@ struct coStruct {
     {
       double n;
     } d;
+    struct // bool
+    {
+      int b;
+    } b;
   };
 };
 
@@ -187,6 +191,7 @@ extern coFn coStrType;
 extern coFn coMemType;
 extern coFn coMapType;
 extern coFn coDblType;
+extern coFn coBoolType;         // only there to support json files better
 
 /* object construction */
 
@@ -200,6 +205,7 @@ co coNewVectorByMap(
     cco map); // constructs a vector from a map, elements of the vector is again
               // a vector with two elements, the key and the value
 co coNewMap(unsigned flags);		// CO_FREE_VALS, CO_STRDUP, CO_STRFREE
+co coNewBool(int n);
 
 /* object type test procedures */
 
@@ -210,6 +216,7 @@ co coNewMap(unsigned flags);		// CO_FREE_VALS, CO_STRDUP, CO_STRFREE
 #define coIsMem(o) (coGetType(o) == coMemType)
 #define coIsMap(o) (coGetType(o) == coMapType)
 #define coIsDbl(o) (coGetType(o) == coDblType)
+#define coIsBool(o) (coGetType(o) == coBoolType)
 
 /* generic object functions */
 
@@ -247,6 +254,10 @@ const void *coMemGet(cco o);
 /* double functions */
 double coDblGet(cco o);
 void coDblSet(co o, double n);
+
+/* bool functions */
+int coBoolGet(cco o);
+void coBoolSet(co o, int b);
 
 /* vector functions */
 long coVectorAdd(co o, cco p); // add object at the end of the list, returns -1 for error, 
