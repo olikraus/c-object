@@ -18,6 +18,7 @@ int main(int argc, char **argv)
     
     if ( argc != 3 )
     {
+            printf("Build %s\n", __TIMESTAMP__);
             printf("%s in.json out.json\n", argv[0]);
             return 1;
     }
