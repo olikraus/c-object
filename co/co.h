@@ -154,6 +154,12 @@ struct coStruct {
       size_t cnt;
       size_t max;
     } v;
+    struct // Int32Vector
+    {
+      int32_t *list;
+      size_t cnt;
+      size_t max;
+    } iv;
     struct // map
     {
       struct co_avl_node_struct *root;
@@ -192,6 +198,7 @@ extern coFn coMemType;
 extern coFn coMapType;
 extern coFn coDblType;
 extern coFn coBoolType;         // only there to support json files better
+extern coFn coInt32VectorType;
 
 /* object construction */
 
@@ -206,6 +213,7 @@ co coNewVectorByMap(
               // a vector with two elements, the key and the value
 co coNewMap(unsigned flags);		// CO_FREE_VALS, CO_STRDUP, CO_STRFREE
 co coNewBool(int n);
+co coNewInt32Vector(unsigned flags);
 
 /* object type test procedures */
 
@@ -217,6 +225,7 @@ co coNewBool(int n);
 #define coIsMap(o) (coGetType(o) == coMapType)
 #define coIsDbl(o) (coGetType(o) == coDblType)
 #define coIsBool(o) (coGetType(o) == coBoolType)
+#define coIsInt32Vector(o) (coGetType(o) == coInt32VectorType)
 
 /* generic object functions */
 
@@ -285,6 +294,22 @@ long coVectorPredecessorBinarySearch(
     cco v,
     const char
         *search_key); // assumes structre as returned by "coNewVectorByMap()"
+
+/* int32 vector functions */
+long coInt32VectorAdd(co o, int32_t n); 
+int coInt32VectorAppendVector(co v, cco src); 
+int32_t coInt32VectorGet(cco o, long idx);
+void coInt32VectorSet(co v, long i, int32_t n); 
+void coInt32VectorErase(co v, long i); 
+void coInt32VectorEraseLast(co v); 
+void coInt32VectorClear(co o); 
+int coInt32VectorEmpty(cco o); 
+long coInt32VectorSize(cco o); 
+
+int coInt32VectorExists(co o, int32_t n);
+long coInt32VectorFind(co o, int32_t n);
+void coInt32VectorEraseByValue(co o, int32_t n);
+co coNewInt32VectorByVector(cco o);
 
 /* map functions */
 // int coMapAdd(co o, const char *key, cco value);    // insert object into the
@@ -409,5 +434,16 @@ co coGetCSVRow(struct co_reader_struct *r, int separator);
 
 /* co_xml.c */
 co coReadXMLByFP(FILE *fp, int skip_white_space);
+
+/* co_dnf.c */
+co coConvertToInt32Vector(co o);
+int coDNFIsValid(co dnf);
+int coDNFIsEmpty(co dnf);
+int coDNFIsUniversal(co dnf);
+int coDNFUnion(co arg1, cco arg2);
+int coDNFIntersection(co arg1, cco arg2);
+co coNewDNFByIntersection(cco arg1, cco arg2);
+co coNewPSD(void);
+int coPSDExtendByDNF(co psd, cco dnf);
 
 #endif /* CO_INCLUDE */

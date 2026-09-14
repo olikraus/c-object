@@ -1221,6 +1221,255 @@ long coVectorPredecessorBinarySearch(cco v, const char *search_key) {
 }
 
 /*===================================================================*/
+/* Int32Vector Object */
+/*===================================================================*/
+
+int coInt32VectorInit(co o, void *data);
+long coInt32VectorSize(cco o);
+void coInt32VectorPrint(cco o);
+static void coInt32VectorDestroy(co o);
+co coInt32VectorClone(cco o);
+
+struct coFnStruct coInt32VectorStruct = {coInt32VectorInit, coInt32VectorSize, coInt32VectorPrint,
+                                         coInt32VectorDestroy, coInt32VectorClone};
+coFn coInt32VectorType = &coInt32VectorStruct;
+
+co coNewInt32Vector(unsigned flags) { return coNew(coInt32VectorType, flags); }
+
+#define COIV_EXTEND 64
+
+int coInt32VectorInit(co o, void *data) {
+  void *ptr = malloc(COIV_EXTEND * sizeof(int32_t));
+  if (ptr == NULL)
+    return 0;
+  o->fn = coInt32VectorType;
+  o->iv.list = (int32_t *)ptr;
+  o->iv.max = COIV_EXTEND;
+  o->iv.cnt = 0;
+  return 1;
+}
+
+long coInt32VectorAdd(co o, int32_t n) {
+  void *ptr;
+  assert(coIsInt32Vector(o));
+  while (o->iv.max <= o->iv.cnt) {
+    ptr = realloc(o->iv.list, (o->iv.cnt + COIV_EXTEND) * sizeof(int32_t));
+    if (ptr == NULL)
+      return -1;
+    o->iv.list = (int32_t *)ptr;
+    o->iv.max += COIV_EXTEND;
+  }
+  o->iv.list[o->iv.cnt] = n;
+  o->iv.cnt++;
+  return o->iv.cnt - 1;
+}
+
+int coInt32VectorAppendVector(co v, cco src) {
+  assert(coIsInt32Vector(v));
+  if (src == NULL)
+    return 0;
+  long oldCnt = v->iv.cnt;
+  if (coIsInt32Vector(src)) {
+    long i;
+    long cnt = src->iv.cnt;
+    for (i = 0; i < cnt; i++) {
+      if (coInt32VectorAdd(v, src->iv.list[i]) < 0) {
+        v->iv.cnt = oldCnt;
+        return 0;
+      }
+    }
+    return 1;
+  } else if (coIsVector(src)) {
+    long i;
+    long cnt = coVectorSize(src);
+    for (i = 0; i < cnt; i++) {
+      cco element = coVectorGet(src, i);
+      if (element != NULL) {
+        if (coIsDbl(element)) {
+          if (coInt32VectorAdd(v, (int32_t)coDblGet(element)) < 0) {
+            v->iv.cnt = oldCnt;
+            return 0;
+          }
+        } else if (coIsBool(element)) {
+          if (coInt32VectorAdd(v, (int32_t)coBoolGet(element)) < 0) {
+            v->iv.cnt = oldCnt;
+            return 0;
+          }
+        }
+      }
+    }
+    return 1;
+  }
+  return 0;
+}
+
+int32_t coInt32VectorGet(cco o, long idx) {
+  if (o == NULL)
+    return 0;
+  assert(coIsInt32Vector(o));
+  if (idx < 0 || idx >= o->iv.cnt)
+    return 0;
+  return o->iv.list[idx];
+}
+
+void coInt32VectorSet(co v, long i, int32_t n) {
+  assert(coIsInt32Vector(v));
+  assert(i >= 0);
+  assert(i < v->iv.cnt);
+  v->iv.list[i] = n;
+}
+
+void coInt32VectorErase(co v, long i) {
+  assert(coIsInt32Vector(v));
+  if (i < 0 || i >= v->iv.cnt)
+    return;
+  i++;
+  while (i < v->iv.cnt) {
+    v->iv.list[i - 1] = v->iv.list[i];
+    i++;
+  }
+  v->iv.cnt--;
+}
+
+void coInt32VectorEraseLast(co v) {
+  assert(coIsInt32Vector(v));
+  if (v->iv.cnt == 0)
+    return;
+  v->iv.cnt--;
+}
+
+void coInt32VectorClear(co o) {
+  assert(coIsInt32Vector(o));
+  o->iv.cnt = 0;
+}
+
+int coInt32VectorEmpty(cco o) {
+  assert(coIsInt32Vector(o));
+  if (o->iv.cnt == 0)
+    return 1;
+  return 0;
+}
+
+long coInt32VectorSize(cco o) {
+  if (o == NULL)
+    return 0;
+  assert(coIsInt32Vector(o));
+  return o->iv.cnt;
+}
+
+void coInt32VectorPrint(cco o) {
+  assert(coIsInt32Vector(o));
+  long i;
+  printf("[");
+  for (i = 0; i < o->iv.cnt; i++) {
+    if (i > 0)
+      printf(", ");
+    printf("%d", o->iv.list[i]);
+  }
+  printf("]");
+}
+
+static void coInt32VectorDestroy(co o) {
+  assert(coIsInt32Vector(o));
+  free(o->iv.list);
+  o->iv.list = NULL;
+  o->iv.max = 0;
+  o->iv.cnt = 0;
+}
+
+co coInt32VectorClone(cco o) {
+  assert(coIsInt32Vector(o));
+  co v = coNew(coInt32VectorType, o->flags);
+  if (v == NULL)
+    return NULL;
+  if (coInt32VectorAppendVector(v, o) == 0) {
+    coDelete(v);
+    return NULL;
+  }
+  return v;
+}
+
+int coInt32VectorExists(co o, int32_t n) {
+  assert(coIsInt32Vector(o));
+  long i;
+  for (i = 0; i < o->iv.cnt; i++) {
+    if (o->iv.list[i] == n)
+      return 1;
+  }
+  return 0;
+}
+
+long coInt32VectorFind(co o, int32_t n) {
+  assert(coIsInt32Vector(o));
+  long i;
+  for (i = 0; i < o->iv.cnt; i++) {
+    if (o->iv.list[i] == n)
+      return i;
+  }
+  return -1;
+}
+
+void coInt32VectorEraseByValue(co o, int32_t n) {
+  assert(coIsInt32Vector(o));
+  long i = 0;
+  while (i < o->iv.cnt) {
+    if (o->iv.list[i] == n) {
+      coInt32VectorErase(o, i);
+    } else {
+      i++;
+    }
+  }
+}
+
+co coNewInt32VectorByVector(cco o) {
+  if (o == NULL)
+    return NULL;
+  
+  if (coIsInt32Vector(o)) {
+    co v = coNew(coInt32VectorType, CO_NONE);
+    if (v == NULL)
+      return NULL;
+    if (coInt32VectorAppendVector(v, o) == 0) {
+      coDelete(v);
+      return NULL;
+    }
+    return v;
+  }
+  
+  if (coIsVector(o)) {
+    co v = coNew(coInt32VectorType, CO_NONE);
+    if (v == NULL)
+      return NULL;
+    long i;
+    long cnt = coVectorSize(o);
+    for (i = 0; i < cnt; i++) {
+      cco element = coVectorGet(o, i);
+      if (element == NULL) {
+        coDelete(v);
+        return NULL;
+      }
+      if (coIsDbl(element)) {
+        if (coInt32VectorAdd(v, (int32_t)coDblGet(element)) < 0) {
+          coDelete(v);
+          return NULL;
+        }
+      } else if (coIsBool(element)) {
+        if (coInt32VectorAdd(v, (int32_t)coBoolGet(element)) < 0) {
+          coDelete(v);
+          return NULL;
+        }
+      } else {
+        coDelete(v);
+        return NULL;
+      }
+    }
+    return v;
+  }
+  
+  return NULL;
+}
+
+/*===================================================================*/
 /* FILE/String Reader */
 /*===================================================================*/
 
@@ -1993,6 +2242,22 @@ static void coWriteJSONTraverse(cco o, int depth, int isUTF8, FILE *fp) {
     fprintf(fp, "%.11g", coDblGet(o));
   } else if (coIsBool(o)) {
     fprintf(fp, "%s", coBoolGet(o) == 0 ? "false" : "true" );
+  } else if (coIsInt32Vector(o)) {
+    long i;
+    long cnt = coInt32VectorSize(o);
+    fputc('[', fp);
+    if (depth >= 0)
+      fputc('\n', fp);
+    for (i = 0; i < cnt; i++) {
+      writeIndent(depth + 1, fp);
+      fprintf(fp, "%d", coInt32VectorGet(o, i));
+      if (i + 1 != cnt)
+        fputc(',', fp);
+      if (depth >= 0)
+        fputc('\n', fp);
+    }
+    writeIndent(depth, fp);
+    fputc(']', fp);
   } else if (coIsVector(o)) {
     long i;
     long cnt = coVectorSize(o);

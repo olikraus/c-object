@@ -22,7 +22,7 @@ else
 LDFLAGS = -Wl,-Bstatic -lelf -lm -lz -lpthread
 endif
 
-COSRC = ./co/co.c ./co/co_extra.c 
+COSRC = ./co/co.c ./co/co_extra.c ./co/co_dnf.c
 COOBJ = $(COSRC:.c=.o)
 EXPATSRC = ./co/co_xml.c ./co/expat/xmlparse.c ./co/expat/xmlrole.c ./co/expat/xmltok.c 
 EXPATOBJ = $(EXPATSRC:.c=.o)
