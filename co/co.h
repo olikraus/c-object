@@ -297,6 +297,7 @@ long coVectorPredecessorBinarySearch(
 
 /* int32 vector functions */
 long coInt32VectorAdd(co o, int32_t n); 
+long coInt32VectorAddUnique(co o, int32_t n); 
 int coInt32VectorAppendVector(co v, cco src); 
 int32_t coInt32VectorGet(cco o, long idx);
 void coInt32VectorSet(co v, long i, int32_t n); 

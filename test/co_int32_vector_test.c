@@ -23,12 +23,21 @@ void run_tests(void) {
   assert(coInt32VectorEmpty(v) == 0);
   assert(coInt32VectorSize(v) == 3);
 
+  /* 2b. Add unique elements */
+  long idx4 = coInt32VectorAddUnique(v, 20); /* Duplicate, should return existing index (1) */
+  long idx5 = coInt32VectorAddUnique(v, 40); /* New element, should add and return index (3) */
+  assert(idx4 == 1);
+  assert(idx5 == 3);
+  assert(coInt32VectorSize(v) == 4);
+  assert(coInt32VectorGet(v, 3) == 40);
+
   /* 3. Get elements */
   assert(coInt32VectorGet(v, 0) == 10);
   assert(coInt32VectorGet(v, 1) == 20);
   assert(coInt32VectorGet(v, 2) == 30);
   assert(coInt32VectorGet(v, -1) == 0);
-  assert(coInt32VectorGet(v, 3) == 0);
+  assert(coInt32VectorGet(v, 3) == 40);
+  assert(coInt32VectorGet(v, 4) == 0);
 
   /* 4. Set elements */
   coInt32VectorSet(v, 1, 25);
@@ -45,11 +54,17 @@ void run_tests(void) {
 
   /* 6. Erase by index */
   coInt32VectorErase(v, 1); /* removes 25 */
+  assert(coInt32VectorSize(v) == 3);
+  assert(coInt32VectorGet(v, 0) == 10);
+  assert(coInt32VectorGet(v, 1) == 30);
+  assert(coInt32VectorGet(v, 2) == 40);
+
+  /* 7. Erase last */
+  coInt32VectorEraseLast(v); /* removes 40 */
   assert(coInt32VectorSize(v) == 2);
   assert(coInt32VectorGet(v, 0) == 10);
   assert(coInt32VectorGet(v, 1) == 30);
 
-  /* 7. Erase last */
   coInt32VectorEraseLast(v); /* removes 30 */
   assert(coInt32VectorSize(v) == 1);
   assert(coInt32VectorGet(v, 0) == 10);

@@ -1264,6 +1264,14 @@ long coInt32VectorAdd(co o, int32_t n) {
   return o->iv.cnt - 1;
 }
 
+long coInt32VectorAddUnique(co o, int32_t n) {
+  assert(coIsInt32Vector(o));
+  long idx = coInt32VectorFind(o, n);
+  if (idx >= 0)
+    return idx;
+  return coInt32VectorAdd(o, n);
+}
+
 int coInt32VectorAppendVector(co v, cco src) {
   assert(coIsInt32Vector(v));
   if (src == NULL)
@@ -1273,7 +1281,7 @@ int coInt32VectorAppendVector(co v, cco src) {
     long i;
     long cnt = src->iv.cnt;
     for (i = 0; i < cnt; i++) {
-      if (coInt32VectorAdd(v, src->iv.list[i]) < 0) {
+      if (coInt32VectorAddUnique(v, src->iv.list[i]) < 0) {
         v->iv.cnt = oldCnt;
         return 0;
       }
@@ -1286,12 +1294,12 @@ int coInt32VectorAppendVector(co v, cco src) {
       cco element = coVectorGet(src, i);
       if (element != NULL) {
         if (coIsDbl(element)) {
-          if (coInt32VectorAdd(v, (int32_t)coDblGet(element)) < 0) {
+          if (coInt32VectorAddUnique(v, (int32_t)coDblGet(element)) < 0) {
             v->iv.cnt = oldCnt;
             return 0;
           }
         } else if (coIsBool(element)) {
-          if (coInt32VectorAdd(v, (int32_t)coBoolGet(element)) < 0) {
+          if (coInt32VectorAddUnique(v, (int32_t)coBoolGet(element)) < 0) {
             v->iv.cnt = oldCnt;
             return 0;
           }
@@ -1449,12 +1457,12 @@ co coNewInt32VectorByVector(cco o) {
         return NULL;
       }
       if (coIsDbl(element)) {
-        if (coInt32VectorAdd(v, (int32_t)coDblGet(element)) < 0) {
+        if (coInt32VectorAddUnique(v, (int32_t)coDblGet(element)) < 0) {
           coDelete(v);
           return NULL;
         }
       } else if (coIsBool(element)) {
-        if (coInt32VectorAdd(v, (int32_t)coBoolGet(element)) < 0) {
+        if (coInt32VectorAddUnique(v, (int32_t)coBoolGet(element)) < 0) {
           coDelete(v);
           return NULL;
         }

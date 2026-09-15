@@ -240,6 +240,7 @@ A dynamic array container optimized specifically for `int32_t` elements. It util
   - `long coInt32VectorSize(cco o)`: Returns the number of elements in the vector.
   - `int coInt32VectorEmpty(cco o)`: Returns `1` if empty, `0` otherwise.
   - `long coInt32VectorAdd(co o, int32_t n)`: Appends the integer `n` to the vector. Returns the index of the added element or `-1` on error.
+  - `long coInt32VectorAddUnique(co o, int32_t n)`: Appends the integer `n` to the vector only if it doesn't already exist. Returns the index of the element (either existing or newly added) or `-1` on error.
   - `int coInt32VectorAppendVector(co v, cco src)`: Appends elements from vector `src` (which can be another Int32Vector or a standard Vector containing numeric elements) to the vector `v`. Returns `1` on success, `0` on error.
   - `int32_t coInt32VectorGet(cco o, long idx)`: Returns the integer element at index `idx`, or `0` if outside bounds.
   - `void coInt32VectorSet(co v, long i, int32_t n)`: Replaces the element at index `i` with `n`. Index `i` must be less than `coInt32VectorSize(v)`.
@@ -385,3 +386,31 @@ The DNF can act as an operand in a multi-valued algebra representing a "set" in 
   Creates and returns a new PSD wrapper map with a single member `"psd"` initialized to an empty `coMap`.
 - **`int coPSDExtendByDNF(co psd, cco dnf)`**:
   Extends the multi-value space of the `psd` with the attributes and values from the `dnf`. It iterates through each clause and variable/attribute inside `dnf` and adds them to `psd` along with their values, guaranteeing that duplicate values are not added. Returns `1` on success, `0` on error.
+
+---
+
+### Command-line Tool: `dnf`
+
+A dedicated command-line utility `dnf` is compiled automatically to allow running union, intersection, and space description procedures directly from the shell using JSON files.
+
+#### Location and Compilation
+- **Source**: `test/dnf.c`
+- **Build target**: `dnf` (runs automatically with `make` or `make dnf`)
+
+#### Command Usage
+```bash
+./dnf [options] [arg1.json arg2.json ...]
+```
+
+The tool is highly flexible and relaxed:
+- If **`-op`** is specified, exactly two input JSON files must be provided to run the pairwise DNF union/intersection operation.
+- If **`-op`** is NOT specified, the tool acts as a standalone PSD builder and validator. You can pass zero, one, or multiple input files. The tool will initialize the PSD (either empty, generated via `-gpsd`, or loaded via `-ipsd`), parse and convert the provided files to unique `Int32Vector` DNFs, and automatically extend the PSD with their attributes and values.
+
+#### CLI Options
+- **`-h`**: Outputs a detailed help/usage message.
+- **`-op <operation>`**: The operation to execute. Must be either `union` or `intersection`.
+- **`-psd`**: Additionally outputs the automatically generated and extended Problem Space Description (PSD) object representing the combined attribute-value space.
+- **`-ipsd <file>`**: Imports an initial Problem Space Description (PSD) setup from `<file>` (a JSON file). Attributes and values from the input DNFs are automatically merged and extended onto this imported PSD.
+- **`-opsd <file>`**: Writes the final, extended PSD map structure to `<file>` (a JSON file).
+- **`-gpsd <attrs> <vals>`**: Quickly generates an initial Problem Space Description (PSD) map with `<attrs>` attributes (named `"0"` through `<attrs>-1`), each containing a unique list of values from `0` to `<vals>-1`. Attributes and values from the input DNFs are automatically merged and extended onto this generated PSD.
+- **`-v`**: Verbose mode. Outputs the parsed input files (`arg1.json` and `arg2.json`), the exact DNF operation executed, and the annotated output.

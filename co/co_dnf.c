@@ -41,9 +41,9 @@ co coConvertToInt32Vector(co o) {
           cco elem = coVectorGet(o, i);
           if (elem != NULL) {
             if (coIsDbl(elem)) {
-              coInt32VectorAdd(iv, (int32_t)coDblGet(elem));
+              coInt32VectorAddUnique(iv, (int32_t)coDblGet(elem));
             } else if (coIsBool(elem)) {
-              coInt32VectorAdd(iv, (int32_t)coBoolGet(elem));
+              coInt32VectorAddUnique(iv, (int32_t)coBoolGet(elem));
             }
           }
         }
@@ -134,10 +134,10 @@ int coDNFUnion(co arg1, cco arg2) {
 }
 
 co coNewPSD(void) {
-  co wrapper = coNewMap(CO_STRDUP | CO_FREE_VALS);
+  co wrapper = coNewMap(CO_STRDUP | CO_STRFREE | CO_FREE_VALS);
   if (wrapper == NULL)
     return NULL;
-  co inner = coNewMap(CO_STRDUP | CO_FREE_VALS);
+  co inner = coNewMap(CO_STRDUP | CO_STRFREE | CO_FREE_VALS);
   if (inner == NULL) {
     coDelete(wrapper);
     return NULL;
@@ -160,6 +160,9 @@ int coPSDExtendByDNF(co psd, cco dnf) {
   co psd_inner = (co)coMapGet(psd, "psd");
   if (psd_inner == NULL || !coIsMap(psd_inner))
     return 0;
+
+  /* Force CO_STRDUP and CO_STRFREE to prevent key pointer sharing and double-frees */
+  psd_inner->flags |= CO_STRDUP | CO_STRFREE;
 
   long i;
   long cnt = coVectorSize(dnf);
@@ -196,10 +199,8 @@ int coPSDExtendByDNF(co psd, cco dnf) {
           long p_cnt = coInt32VectorSize(payload);
           for (p_i = 0; p_i < p_cnt; p_i++) {
             int32_t val = coInt32VectorGet(payload, p_i);
-            if (!coInt32VectorExists(psd_vec, val)) {
-              if (coInt32VectorAdd(psd_vec, val) < 0)
-                return 0;
-            }
+            if (coInt32VectorAddUnique(psd_vec, val) < 0)
+              return 0;
           }
         } else if (coIsVector(payload)) {
           /* Fallback for un-converted standard Vectors with numeric values */
@@ -217,8 +218,8 @@ int coPSDExtendByDNF(co psd, cco dnf) {
                 val = (int32_t)coBoolGet(elem);
                 is_num = 1;
               }
-              if (is_num && !coInt32VectorExists(psd_vec, val)) {
-                if (coInt32VectorAdd(psd_vec, val) < 0)
+              if (is_num) {
+                if (coInt32VectorAddUnique(psd_vec, val) < 0)
                   return 0;
               }
             }
@@ -262,7 +263,7 @@ static co andTermIntersect(cco a, cco b) {
         for (i = 0; i < cnt_a; i++) {
           int32_t val = coInt32VectorGet(val_a, i);
           if (coInt32VectorExists((co)val_b, val)) {
-            if (coInt32VectorAdd(val_c, val) < 0) {
+            if (coInt32VectorAddUnique(val_c, val) < 0) {
               coDelete(val_c);
               coDelete(c);
               return NULL;
