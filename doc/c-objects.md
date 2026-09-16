@@ -347,14 +347,29 @@ Under this module, a DNF expression is represented using a specific JSON structu
   Recursively traverses the object hierarchy starting at `o`. Any `coVector` whose first element is numeric (i.e. `coIsDbl` or `coIsBool`) is converted into a specialized, compact `coInt32Vector`. Elements that are not numeric are discarded. The original `coVector` is fully deleted/erased. This helper is extremely useful for post-processing parsed JSON payloads into mathematically compliant structures.
 
 #### DNF Evaluation & Integrity Checks
-- **`int coDNFIsValid(co dnf)`**:
+- **`int coDNFIsValid(cco dnf)`**:
   Returns `1` if the object hierarchy exactly matches the DNF structure (a vector of maps of int32 vectors), `0` otherwise. Correctly handles special sets like `[]` and `[{}]`.
-- **`int coDNFIsEmpty(co dnf)`**:
+- **`int coDNFIsEmpty(cco dnf)`**:
   Returns `1` if the DNF is equal to `[]` (its size is 0), and `0` otherwise.
-- **`int coDNFIsUniversal(co dnf)`**:
+- **`int coDNFIsUniversal(cco dnf)`**:
   Returns `1` if the DNF is equal to `[{}]` (a single empty map clause representing the universal set), and `0` otherwise.
 
 #### Set Operations
+- **`int coDNFIsSubsetAttributeSelection(cco a, cco b)`**:
+  Returns `1` if all values in `Int32Vector` `a` are also present in `Int32Vector` `b`, `0` otherwise.
+- **`int coDNFIsSubsetANDTermANDTerm(cco subset_and_term, cco superset_and_term)`**:
+  Returns `1` if AND-term `subset_and_term` is a subset of AND-term `superset_and_term`, `0` otherwise.
+  `subset_and_term` is a subset of `superset_and_term` if every attribute in `superset_and_term` is also present in `subset_and_term`, and the value set for that attribute in `subset_and_term` is a subset of the value set in `superset_and_term`. An omitted attribute in `superset_and_term` is treated as unconstrained (universal).
+- **`int coDNFIsSubsetANDTerm(cco psd, cco subset_and_term, cco superset_dnf)`**:
+  Returns `1` if the variants represented by the single AND-term `subset_and_term` are covered by the union of terms in `superset_dnf`.
+  The `psd` (Problem Space Description) is used to correctly handle attributes that are present in `superset_dnf` but missing in `subset_and_term` (interpreting them as unconstrained over their full domain).
+- **`int coDNFIsSubset(cco psd, cco subset_dnf, cco superset_dnf)`**:
+  Returns `1` if the variants represented by `subset_dnf` are a subset of (or equal to) the variants represented by `superset_dnf`.
+  This check handles complex cases where terms in `subset_dnf` are covered by the union of multiple terms in `superset_dnf`.
+
+- **`int coDNFIsEqual(cco psd, cco dnf1, cco dnf2)`**:
+  Returns `1` if `dnf1` and `dnf2` cover exactly the same variant space, and `0` otherwise. It is implemented as a mutual subset check: $dnf1 \subseteq dnf2$ AND $dnf2 \subseteq dnf1$.
+
 - **`int coDNFUnion(co arg1, cco arg2)`**:
   Performs a set union operation by appending all clauses (cloned maps) from `arg2` to `arg1`. `arg2` is not modified. Returns `1` on success, `0` on error.
 - **`int coDNFIntersection(co arg1, cco arg2)`**:
@@ -367,8 +382,29 @@ Under this module, a DNF expression is represented using a specific JSON structu
   - If any attribute-value list becomes empty, the entire intersected AND-term is empty/invalid and is discarded.
   Returns the new DNF on success, `NULL` on error.
 
-#### Multi-Valued Space & Problem Space Description (PSD)
+- **`co coNewDNFBySubtraction(cco psd, cco left_dnf, cco right_dnf)`**:
+  Performs a set-theoretic subtraction ($left\_dnf \setminus right\_dnf$), creating and returning a newly constructed `co` DNF vector with the result. It handles the complex case where terms are split into smaller pieces to ensure non-overlap with the subtracted terms.
 
+- **`co coDNFComplementBySubtract(cco psd, cco dnf)`**:
+  Calculates the set-theoretic complement of the given `dnf` relative to the universal set (as constrained by the `psd`), creating and returning a newly constructed `co` DNF vector with the result. It is implemented internally as $Universal \setminus dnf$.
+
+- **`co coDNFNewCofactor(cco psd, cco dnf, const char *attr_name, int32_t value)`**:
+  Calculates the cofactor (restriction) of the given `dnf` by forcing `attr_name` to `value`. 
+  - Terms that do not contain `attr_name` are kept as-is.
+  - Terms that contain `attr_name` but whose value set includes `value` are kept, but `attr_name` is removed from the term (the constraint is fulfilled).
+  - Terms that contain `attr_name` but whose value set does *not* include `value` are discarded (the constraint is violated).
+  Returns a newly constructed `co` DNF vector with the result.
+
+- **`int coDNFComplement(cco psd, co dnf)`**:
+  Performs an in-place set-theoretic complement of the given `dnf`, replacing its contents with the result. Returns `1` on success, `0` on error.
+
+- **`void coDNFMinimizeANDTermSubset(co dnf)`**:
+  Minimizes the DNF by removing redundant AND-terms. A term is considered redundant if it is a subset of another term in the same DNF (i.e., it represents a subset of the variants already covered by another term). This function performs pairwise checks using `coDNFIsSubsetANDTermANDTerm` and is optimized for speed by avoiding complex DNF subtraction.
+
+- **`void coDNFElideFullDomainAttributes(cco psd, co term)`**:
+  Simplifies an AND-term by removing any attribute whose value set matches the full domain defined in the `psd`. This helps in keeping the DNF representation minimal.
+
+#### Multi-Valued Space & Problem Space Description (PSD)
 The DNF can act as an operand in a multi-valued algebra representing a "set" in a multi-valued space. This space is described by a **Problem Space Description (PSD)**, which is stored as a single AND-Term nested under the key `"psd"` inside a wrapper map:
 
 ```json
@@ -403,14 +439,18 @@ A dedicated command-line utility `dnf` is compiled automatically to allow runnin
 ```
 
 The tool is highly flexible and relaxed:
-- If **`-op`** is specified, exactly two input JSON files must be provided to run the pairwise DNF union/intersection operation.
-- If **`-op`** is NOT specified, the tool acts as a standalone PSD builder and validator. You can pass zero, one, or multiple input files. The tool will initialize the PSD (either empty, generated via `-gpsd`, or loaded via `-ipsd`), parse and convert the provided files to unique `Int32Vector` DNFs, and automatically extend the PSD with their attributes and values.
+- If **`-union`**, **`-intersection`**, or **`-subtract`** is specified, exactly two input JSON files must be provided to run the pairwise DNF operation.
+- If no pairwise operation flag is specified, the tool acts as a standalone PSD builder and validator. You can pass zero, one, or multiple input files. The tool will initialize the PSD (either empty, generated via `-gpsd`, or loaded via `-ipsd`), parse and convert the provided files to unique `Int32Vector` DNFs, and automatically extend the PSD with their attributes and values.
 
 #### CLI Options
 - **`-h`**: Outputs a detailed help/usage message.
-- **`-op <operation>`**: The operation to execute. Must be either `union` or `intersection`.
+- **`-union`**: Executes a pairwise DNF union operation on exactly two input JSON files.
+- **`-intersection`**: Executes a pairwise DNF intersection operation on exactly two input JSON files.
+- **`-subtract`**: Executes a pairwise DNF subtraction operation on exactly two input JSON files.
+- **`-o <file>`**: Writes the main resulting DNF (computed from an operation, or generated randomly via `-gdnf`) to `<file>` (a JSON file) instead of standard output.
 - **`-psd`**: Additionally outputs the automatically generated and extended Problem Space Description (PSD) object representing the combined attribute-value space.
 - **`-ipsd <file>`**: Imports an initial Problem Space Description (PSD) setup from `<file>` (a JSON file). Attributes and values from the input DNFs are automatically merged and extended onto this imported PSD.
 - **`-opsd <file>`**: Writes the final, extended PSD map structure to `<file>` (a JSON file).
 - **`-gpsd <attrs> <vals>`**: Quickly generates an initial Problem Space Description (PSD) map with `<attrs>` attributes (named `"0"` through `<attrs>-1`), each containing a unique list of values from `0` to `<vals>-1`. Attributes and values from the input DNFs are automatically merged and extended onto this generated PSD.
+- **`-gdnf <terms> <attrs> <vals>`**: Generates a random DNF as the output result of the command-line utility. It constructs `<terms>` AND-term maps, where each map contains `<attrs>` unique attributes randomly chosen from the available attributes in the PSD, and each attribute is mapped to `<vals>` unique values randomly chosen from that attribute's valid range in the PSD. If the PSD contains fewer attributes or values than requested, the maximum available are selected.
 - **`-v`**: Verbose mode. Outputs the parsed input files (`arg1.json` and `arg2.json`), the exact DNF operation executed, and the annotated output.

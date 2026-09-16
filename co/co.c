@@ -305,8 +305,10 @@ void coVectorErase(co v, long i) {
                                 // elements must not be deleted
   }
   i++;
-  while (i < v->v.cnt)
+  while (i < v->v.cnt) {
     v->v.list[i - 1] = v->v.list[i];
+    i++;
+  }
   v->v.cnt--;
 }
 

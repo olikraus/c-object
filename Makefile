@@ -38,9 +38,12 @@ release: all
 	
 #gprof: all
 
-all: co_test co_a2l a2l_info a2l_search csv2json csvprint hex2json elf2json json_search json_compare json_format json2utf8json outline xml_test dnf
+all: co_test co_dnf_test co_a2l a2l_info a2l_search csv2json csvprint hex2json elf2json json_search json_compare json_format json2utf8json outline xml_test dnf
 	
 co_test: $(COOBJ) ./test/co_test.o
+	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
+
+co_dnf_test: $(COOBJ) ./test/co_dnf_test.c
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
 
 dnf: $(COOBJ) ./test/dnf.o

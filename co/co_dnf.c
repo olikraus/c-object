@@ -83,14 +83,14 @@ int coDNFIsValid(co dnf) {
   return 1;
 }
 
-int coDNFIsEmpty(co dnf) {
+int coDNFIsEmpty(cco dnf) {
   if (dnf == NULL)
     return 1;
   assert(coIsVector(dnf));
   return coVectorSize(dnf) == 0;
 }
 
-int coDNFIsUniversal(co dnf) {
+int coDNFIsUniversal(cco dnf) {
   if (dnf == NULL)
     return 0;
   assert(coIsVector(dnf));
@@ -100,6 +100,38 @@ int coDNFIsUniversal(co dnf) {
   if (first == NULL || !coIsMap(first))
     return 0;
   return coMapSize(first) == 0;
+}
+
+int coInt32VectorEquals(cco v1, cco v2) {
+  if (v1 == v2) return 1;
+  if (v1 == NULL || v2 == NULL) return 0;
+  if (coInt32VectorSize(v1) != coInt32VectorSize(v2)) return 0;
+  long i;
+  for (i = 0; i < coInt32VectorSize(v1); i++) {
+    if (!coInt32VectorExists((co)v2, coInt32VectorGet(v1, i))) return 0;
+  }
+  return 1;
+}
+
+void coDNFElideFullDomainAttributes(cco psd, co term) {
+  assert(coIsMap(term));
+  if (psd == NULL) return;
+  cco psd_inner = coMapGet(psd, "psd");
+  if (psd_inner == NULL || !coIsMap(psd_inner)) return;
+  
+  coMapIterator iter;
+  if (coMapLoopFirst(&iter, term)) {
+    do {
+      const char *key = coMapLoopKey(&iter);
+      cco val = coMapLoopValue(&iter);
+      cco domain = coMapGet(psd_inner, key);
+      if (domain != NULL && coInt32VectorEquals(val, domain)) {
+        coMapErase(term, key);
+        /* Restart iteration after erase to be safe */
+        if (!coMapLoopFirst(&iter, term)) break;
+      }
+    } while (coMapLoopNext(&iter));
+  }
 }
 
 int coDNFUnion(co arg1, cco arg2) {
@@ -392,4 +424,261 @@ int coDNFIntersection(co arg1, cco arg2) {
   }
   coDelete(res);
   return 1;
+}
+
+int coDNFIsSubsetAttributeSelection(cco a, cco b) {
+  if (a == NULL || b == NULL) return 0;
+  assert(coIsInt32Vector(a));
+  assert(coIsInt32Vector(b));
+  long i;
+  for (i = 0; i < coInt32VectorSize(a); i++) {
+    if (!coInt32VectorExists((co)b, coInt32VectorGet(a, i))) return 0;
+  }
+  return 1;
+}
+
+int coDNFIsSubsetANDTermANDTerm(cco subset_and_term, cco superset_and_term) {
+  assert(coIsMap(subset_and_term));
+  assert(coIsMap(superset_and_term));
+  coMapIterator iter_b;
+  if (coMapLoopFirst(&iter_b, superset_and_term)) {
+    do {
+      const char *key = coMapLoopKey(&iter_b);
+      cco val_b = coMapLoopValue(&iter_b);
+      cco val_a = coMapGet(subset_and_term, key);
+      if (val_a == NULL) return 0;
+      if (!coDNFIsSubsetAttributeSelection(val_a, val_b)) return 0;
+    } while (coMapLoopNext(&iter_b));
+  }
+  return 1;
+}
+
+static co coNewDNFBySubtractANDTermANDTerm(cco psd, cco left, cco right) {
+  assert(coIsMap(left));
+  assert(coIsMap(right));
+
+  co result = coNewVector(CO_FREE_VALS);
+  co effectiveLeft = coClone(left);
+  cco psd_inner = (psd == NULL) ? NULL : coMapGet(psd, "psd");
+
+  /* restrictedNames: sorted attribute names present in right */
+  coMapIterator iter_b;
+  if (coMapLoopFirst(&iter_b, right)) {
+    do {
+      const char *attrName = coMapLoopKey(&iter_b);
+      cco rightValues = coMapLoopValue(&iter_b);
+      cco leftValues = coMapGet(effectiveLeft, attrName);
+
+      co leftValues_cloned;
+      if (leftValues == NULL) {
+        cco domain = (psd_inner == NULL) ? NULL : coMapGet(psd_inner, attrName);
+        if (domain == NULL) {
+          leftValues_cloned = coClone(rightValues);
+        } else {
+          leftValues_cloned = coClone(domain);
+        }
+      } else {
+        leftValues_cloned = coClone(leftValues);
+      }
+
+      /* matchingValues := Intersection(leftValues, rightValues) */
+      co matchingValues = coNewInt32Vector(CO_NONE);
+      long i;
+      for (i = 0; i < coInt32VectorSize(leftValues_cloned); i++) {
+        int32_t v = coInt32VectorGet(leftValues_cloned, i);
+        if (coInt32VectorExists((co)rightValues, v)) {
+          coInt32VectorAdd(matchingValues, v);
+        }
+      }
+
+      /* remainingValues := Difference(leftValues, rightValues) */
+      co remainingValues = coNewInt32Vector(CO_NONE);
+      for (i = 0; i < coInt32VectorSize(leftValues_cloned); i++) {
+        int32_t v = coInt32VectorGet(leftValues_cloned, i);
+        if (!coInt32VectorExists((co)rightValues, v)) {
+          coInt32VectorAdd(remainingValues, v);
+        }
+      }
+      coDelete(leftValues_cloned);
+
+      if (coInt32VectorEmpty(matchingValues)) {
+        /* Disjoint case: return accumulated result + elided effectiveLeft */
+        coDelete(matchingValues);
+        coDelete(remainingValues);
+        coDNFElideFullDomainAttributes(psd, effectiveLeft);
+        coVectorAdd(result, effectiveLeft);
+        return result;
+      }
+
+      if (!coInt32VectorEmpty(remainingValues)) {
+        co escapedTerm = coClone(effectiveLeft);
+        coMapAdd(escapedTerm, attrName, remainingValues);
+        coDNFElideFullDomainAttributes(psd, escapedTerm);
+        coVectorAdd(result, escapedTerm);
+      } else {
+        coDelete(remainingValues);
+      }
+
+      /* effectiveLeft[attributeName] := matchingValues */
+      coMapAdd(effectiveLeft, attrName, matchingValues);
+
+    } while (coMapLoopNext(&iter_b));
+  }
+
+  coDelete(effectiveLeft);
+  return result;
+}
+
+void coDNFMinimizeANDTermSubset(co dnf) {
+  assert(coIsVector(dnf));
+  long i = 0;
+  while (i < coVectorSize(dnf)) {
+    cco term_i = coVectorGet(dnf, i);
+    int removed = 0;
+    long j;
+    for (j = 0; j < coVectorSize(dnf); j++) {
+      if (i == j) continue;
+      cco term_j = coVectorGet(dnf, j);
+      if (coDNFIsSubsetANDTermANDTerm(term_i, term_j)) {
+        coVectorErase(dnf, i);
+        removed = 1;
+        break;
+      }
+    }
+    if (!removed) {
+      i++;
+    }
+  }
+}
+
+co coNewDNFBySubtraction(cco psd, cco left_dnf, cco right_dnf) {
+  assert(coIsVector(left_dnf));
+  assert(coIsVector(right_dnf));
+
+  co result = coClone(left_dnf);
+  coDNFMinimizeANDTermSubset(result);
+
+  long j;
+  for (j = 0; j < coVectorSize(right_dnf); j++) {
+    cco rightTerm = coVectorGet(right_dnf, j);
+    co nextResult = coNewVector(CO_FREE_VALS);
+    
+    long k;
+    for (k = 0; k < coVectorSize(result); k++) {
+      cco leftTerm = coVectorGet(result, k);
+      co diff = coNewDNFBySubtractANDTermANDTerm(psd, leftTerm, rightTerm);
+      coVectorAppendVector(nextResult, diff);
+      coDelete(diff);
+    }
+    
+    coDelete(result);
+    result = nextResult;
+    coDNFMinimizeANDTermSubset(result);
+
+    if (coDNFIsEmpty(result)) break;
+  }
+  return result;
+}
+
+co coDNFComplementBySubtract(cco psd, cco dnf) {
+  assert(coIsVector(dnf));
+  co universal = coNewVector(CO_FREE_VALS);
+  coVectorAdd(universal, coNewMap(CO_STRDUP | CO_FREE_VALS));
+  co res = coNewDNFBySubtraction(psd, universal, dnf);
+  coDelete(universal);
+  return res;
+}
+
+co coDNFNewCofactor(cco psd, cco dnf, const char *attr_name, int32_t value) {
+  assert(coIsVector(dnf));
+  co result = coNewVector(CO_FREE_VALS);
+
+  long i;
+  for (i = 0; i < coVectorSize(dnf); i++) {
+    cco term = coVectorGet(dnf, i);
+    assert(coIsMap(term));
+    cco values = coMapGet(term, attr_name);
+
+    if (values == NULL) {
+      /* Identity Case: The term remains unchanged */
+      coVectorAdd(result, coClone(term));
+    } else {
+      assert(coIsInt32Vector(values));
+      if (coInt32VectorExists((co)values, value)) {
+        /* Fulfillment Case: Remove the attribute */
+        co new_term = coClone(term);
+        coMapErase(new_term, attr_name);
+        coVectorAdd(result, new_term);
+      } else {
+        /* Conflict Case: Term becomes False, do nothing */
+      }
+    }
+  }
+
+  coDNFMinimizeANDTermSubset(result);
+  return result;
+}
+
+int coDNFComplement(cco psd, co dnf) {
+  assert(coIsVector(dnf));
+  co res = coDNFComplementBySubtract(psd, dnf);
+  if (res == NULL)
+    return 0;
+
+  coVectorClear(dnf);
+  long cnt = coVectorSize(res);
+  long i;
+  for (i = 0; i < cnt; i++) {
+    co element = (co)coVectorGet(res, i);
+    if (coVectorAdd(dnf, element) < 0) {
+      long k;
+      for (k = 0; k < i; k++) {
+        res->v.list[k] = NULL;
+      }
+      coDelete(res);
+      return 0;
+    }
+  }
+
+  for (i = 0; i < cnt; i++) {
+    res->v.list[i] = NULL;
+  }
+  coDelete(res);
+  return 1;
+}
+
+int coDNFIsSubsetANDTerm(cco psd, cco subset_and_term, cco superset_dnf) {
+  assert(coIsMap(subset_and_term));
+  assert(coIsVector(superset_dnf));
+  
+  if (coDNFIsUniversal(superset_dnf)) return 1;
+  if (coDNFIsEmpty(superset_dnf)) return 0;
+
+  co subset_dnf = coNewVector(CO_FREE_VALS);
+  coVectorAdd(subset_dnf, coClone(subset_and_term));
+  co remainder = coNewDNFBySubtraction(psd, subset_dnf, superset_dnf);
+  int res = coDNFIsEmpty(remainder);
+  coDelete(remainder);
+  coDelete(subset_dnf);
+  return res;
+}
+
+int coDNFIsSubset(cco psd, cco subset_dnf, cco superset_dnf) {
+  assert(coIsVector(subset_dnf));
+  assert(coIsVector(superset_dnf));
+  
+  if (coDNFIsEmpty(subset_dnf)) return 1;
+  
+  long i;
+  for (i = 0; i < coVectorSize(subset_dnf); i++) {
+    cco a = coVectorGet(subset_dnf, i);
+    if (!coDNFIsSubsetANDTerm(psd, a, superset_dnf)) return 0;
+  }
+  return 1;
+}
+
+int coDNFIsEqual(cco psd, cco dnf1, cco dnf2) {
+  assert(coIsVector(dnf1));
+  assert(coIsVector(dnf2));
+  return coDNFIsSubset(psd, dnf1, dnf2) && coDNFIsSubset(psd, dnf2, dnf1);
 }

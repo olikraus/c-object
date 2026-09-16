@@ -439,11 +439,21 @@ co coReadXMLByFP(FILE *fp, int skip_white_space);
 /* co_dnf.c */
 co coConvertToInt32Vector(co o);
 int coDNFIsValid(co dnf);
-int coDNFIsEmpty(co dnf);
-int coDNFIsUniversal(co dnf);
+int coDNFIsEmpty(cco dnf);
+int coDNFIsUniversal(cco dnf);
 int coDNFUnion(co arg1, cco arg2);
 int coDNFIntersection(co arg1, cco arg2);
 co coNewDNFByIntersection(cco arg1, cco arg2);
+co coNewDNFBySubtraction(cco psd, cco left_dnf, cco right_dnf);
+co coDNFComplementBySubtract(cco psd, cco dnf);
+co coDNFNewCofactor(cco psd, cco dnf, const char *attr_name, int32_t value);
+int coDNFComplement(cco psd, co dnf);
+void coDNFMinimizeANDTermSubset(co dnf);
+int coDNFIsSubsetAttributeSelection(cco a, cco b);
+int coDNFIsSubsetANDTermANDTerm(cco subset_and_term, cco superset_and_term);
+int coDNFIsSubsetANDTerm(cco psd, cco subset_and_term, cco superset_dnf);
+int coDNFIsSubset(cco psd, cco subset_dnf, cco superset_dnf);
+int coDNFIsEqual(cco psd, cco dnf1, cco dnf2);
 co coNewPSD(void);
 int coPSDExtendByDNF(co psd, cco dnf);
 
