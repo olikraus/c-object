@@ -452,6 +452,7 @@ int coDNFCheckUniversal(cco psd, cco dnf);
 int coDNFCheckUniversalByComplement(cco psd, cco dnf);
 int coDNFComplement(cco psd, co dnf);
 void coDNFMinimizeANDTermSubset(co dnf);
+void coDNFMinimizeByANDTermMerge(co dnf);
 void coDNFMinimizeClearFullDomain(cco psd, co dnf);
 int coDNFIsSubsetAttributeSelection(cco a, cco b);
 int coDNFIsSubsetANDTermANDTerm(cco subset_and_term, cco superset_and_term);

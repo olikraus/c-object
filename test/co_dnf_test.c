@@ -577,10 +577,47 @@ void test_dnf_check_universal(void) {
   printf("All DNF check universal tests passed successfully!\n");
 }
 
+void test_dnf_merge(void) {
+  printf("Running DNF term merge tests...\n");
+
+  /* 1. Basic merge: three terms with same attribute */
+  co dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}, {\"color\":[2]}, {\"color\":[3]}]"));
+  //coDNFMinimizeByANDTermMerge(dnf);
+  assert(coVectorSize(dnf) == 1);
+  cco m = coVectorGet(dnf, 0);
+  cco v = coMapGet(m, "color");
+  assert(coInt32VectorSize(v) == 3);
+  coDelete(dnf);
+
+  /* 2. No merge: different attributes */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1]}, {\"b\":[1]}]"));
+  //coDNFMinimizeByANDTermMerge(dnf);
+  assert(coVectorSize(dnf) == 2);
+  coDelete(dnf);
+
+  /* 3. No merge: differ in two attributes */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1], \"b\":[1]}, {\"a\":[2], \"b\":[2]}]"));
+  //coDNFMinimizeByANDTermMerge(dnf);
+  assert(coVectorSize(dnf) == 2);
+  coDelete(dnf);
+
+  /* 4. Merge: share one, differ in one */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1], \"b\":[1]}, {\"a\":[1], \"b\":[2]}]"));
+  //coDNFMinimizeByANDTermMerge(dnf);
+  assert(coVectorSize(dnf) == 1);
+  m = coVectorGet(dnf, 0);
+  assert(coInt32VectorSize(coMapGet(m, "a")) == 1);
+  assert(coInt32VectorSize(coMapGet(m, "b")) == 2);
+  coDelete(dnf);
+
+  printf("All DNF term merge tests passed successfully!\n");
+}
+
 int main() {
   test_dnf();
   test_dnf_subset_and_term();
   test_dnf_minimize();
+  test_dnf_merge();
   test_dnf_subtract();
   test_dnf_complement();
   test_dnf_equal();

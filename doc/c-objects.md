@@ -410,6 +410,9 @@ Under this module, a DNF expression is represented using a specific JSON structu
 - **`void coDNFMinimizeANDTermSubset(co dnf)`**:
   Minimizes the DNF by removing redundant AND-terms. A term is considered redundant if it is a subset of another term in the same DNF (i.e., it represents a subset of the variants already covered by another term). This function performs pairwise checks using `coDNFIsSubsetANDTermANDTerm` and is optimized for speed by avoiding complex DNF subtraction.
 
+- **`void coDNFMinimizeByANDTermMerge(co dnf)`**:
+  Minimizes the DNF by merging structurally compatible AND-terms. Two terms are merged if they contain the exact same set of attributes and differ in only one attribute's value list. In this case, the differing attribute is replaced by the union of both value sets, and the redundant term is removed.
+
 - **`void coDNFMinimizeClearFullDomain(cco psd, co dnf)`**:
   Simplifies every AND-term in the DNF by removing any attribute whose value set matches the full domain defined in the `psd`, and then performs a redundancy check.
 
@@ -456,13 +459,22 @@ The tool is highly flexible and relaxed:
 
 #### CLI Options
 - **`-h`**: Outputs a detailed help/usage message.
-- **`-union`**: Executes a pairwise DNF union operation on exactly two input JSON files.
-- **`-intersection`**: Executes a pairwise DNF intersection operation on exactly two input JSON files.
-- **`-subtract`**: Executes a pairwise DNF subtraction operation on exactly two input JSON files.
+- **`-union`**: Executes a pairwise DNF union operation on exactly two input DNFs.
+- **`-intersection`**: Executes a pairwise DNF intersection operation on exactly two input DNFs.
+- **`-subtract`**: Executes a pairwise DNF subtraction operation on exactly two input DNFs.
+- **`-complement`**: Executes a unary DNF complement operation on exactly one input DNF.
+- **`-equal`**: Checks if two DNFs cover exactly the same variant space.
+- **`-cofactor <a> <v>`**: Calculates the restriction (cofactor) of a DNF for attribute `<a>` and value `<v>`.
+- **`-check-universal`**: Executes a recursive tautology check (Shannon expansion) to determine if a DNF covers the entire PSD space.
+- **`-test`**: Executes six internal mathematical consistency tests on a single DNF:
+  1.  $\overline{f} \cap f = \emptyset$ (Intersection with complement is empty)
+  2.  $\overline{f} \cup f = 1$ (Union with complement is universal via Shannon)
+  3.  $\overline{f} \cup f = 1$ (Union with complement is universal via Complement check)
+  4.  Agreement between Shannon and Complement-based universal checks for original DNF.
+  5.  Agreement between Shannon and Complement-based universal checks for Complement.
+  6.  $\overline{\overline{f}} = f$ (Double complement equality check)
+- **`-test-isec <a> <v>`**: Executes an intersection benchmark. It generates two DNFs with `<a>` AND-terms each, where each term contains `<v>` random values for its attributes. The DNFs are designed to trigger worst-case term explosion ($n \times m$) by using disjoint primary attributes.
+- **`-gdnf <terms> <attrs> <vals>`**: Generates a random DNF. This DNF is treated as an input argument to any of the above operations. If no operation is specified, the generated DNF is output as the result.
 - **`-o <file>`**: Writes the main resulting DNF (computed from an operation, or generated randomly via `-gdnf`) to `<file>` (a JSON file) instead of standard output.
-- **`-psd`**: Additionally outputs the automatically generated and extended Problem Space Description (PSD) object representing the combined attribute-value space.
-- **`-ipsd <file>`**: Imports an initial Problem Space Description (PSD) setup from `<file>` (a JSON file). Attributes and values from the input DNFs are automatically merged and extended onto this imported PSD.
-- **`-opsd <file>`**: Writes the final, extended PSD map structure to `<file>` (a JSON file).
-- **`-gpsd <attrs> <vals>`**: Quickly generates an initial Problem Space Description (PSD) map with `<attrs>` attributes (named `"0"` through `<attrs>-1`), each containing a unique list of values from `0` to `<vals>-1`. Attributes and values from the input DNFs are automatically merged and extended onto this generated PSD.
-- **`-gdnf <terms> <attrs> <vals>`**: Generates a random DNF as the output result of the command-line utility. It constructs `<terms>` AND-term maps, where each map contains `<attrs>` unique attributes randomly chosen from the available attributes in the PSD, and each attribute is mapped to `<vals>` unique values randomly chosen from that attribute's valid range in the PSD. If the PSD contains fewer attributes or values than requested, the maximum available are selected.
-- **`-v`**: Verbose mode. Outputs the parsed input files (`arg1.json` and `arg2.json`), the exact DNF operation executed, and the annotated output.
+- **`-o1 <file>`**: Writes the first input DNF (`arg1`) to `<file>` (a JSON file). This is useful for saving procedural DNFs generated via `-gdnf` or `-test-isec`.
+- **`-o2 <file>`**: Writes the second input DNF (`arg2`) to `<file>` (a JSON file).
