@@ -113,7 +113,7 @@ int coInt32VectorEquals(cco v1, cco v2) {
   return 1;
 }
 
-void coDNFElideFullDomainAttributes(cco psd, co term) {
+void coDNFMinimizeClearFullDomainANDTerm(cco psd, co term) {
   assert(coIsMap(term));
   if (psd == NULL) return;
   cco psd_inner = coMapGet(psd, "psd");
@@ -132,6 +132,15 @@ void coDNFElideFullDomainAttributes(cco psd, co term) {
       }
     } while (coMapLoopNext(&iter));
   }
+}
+
+void coDNFMinimizeClearFullDomain(cco psd, co dnf) {
+  assert(coIsVector(dnf));
+  long i;
+  for (i = 0; i < coVectorSize(dnf); i++) {
+    coDNFMinimizeClearFullDomainANDTerm(psd, (co)coVectorGet(dnf, i));
+  }
+  coDNFMinimizeANDTermSubset(dnf);
 }
 
 int coDNFUnion(co arg1, cco arg2) {
@@ -505,7 +514,7 @@ static co coNewDNFBySubtractANDTermANDTerm(cco psd, cco left, cco right) {
         /* Disjoint case: return accumulated result + elided effectiveLeft */
         coDelete(matchingValues);
         coDelete(remainingValues);
-        coDNFElideFullDomainAttributes(psd, effectiveLeft);
+        coDNFMinimizeClearFullDomainANDTerm(psd, effectiveLeft);
         coVectorAdd(result, effectiveLeft);
         return result;
       }
@@ -513,7 +522,7 @@ static co coNewDNFBySubtractANDTermANDTerm(cco psd, cco left, cco right) {
       if (!coInt32VectorEmpty(remainingValues)) {
         co escapedTerm = coClone(effectiveLeft);
         coMapAdd(escapedTerm, attrName, remainingValues);
-        coDNFElideFullDomainAttributes(psd, escapedTerm);
+        coDNFMinimizeClearFullDomainANDTerm(psd, escapedTerm);
         coVectorAdd(result, escapedTerm);
       } else {
         coDelete(remainingValues);
@@ -556,7 +565,7 @@ co coNewDNFBySubtraction(cco psd, cco left_dnf, cco right_dnf) {
   assert(coIsVector(right_dnf));
 
   co result = coClone(left_dnf);
-  coDNFMinimizeANDTermSubset(result);
+  coDNFMinimizeClearFullDomain(psd, result);
 
   long j;
   for (j = 0; j < coVectorSize(right_dnf); j++) {
@@ -573,7 +582,7 @@ co coNewDNFBySubtraction(cco psd, cco left_dnf, cco right_dnf) {
     
     coDelete(result);
     result = nextResult;
-    coDNFMinimizeANDTermSubset(result);
+    coDNFMinimizeClearFullDomain(psd, result);
 
     if (coDNFIsEmpty(result)) break;
   }
@@ -615,8 +624,139 @@ co coDNFNewCofactor(cco psd, cco dnf, const char *attr_name, int32_t value) {
     }
   }
 
-  coDNFMinimizeANDTermSubset(result);
+  coDNFMinimizeClearFullDomain(psd, result);
   return result;
+}
+
+const char *coDNFGetBestCofactorAttribute(cco psd, cco dnf) {
+  assert(coIsVector(dnf));
+  if (coDNFIsEmpty(dnf)) return NULL;
+
+  co counts = coNewMap(CO_STRDUP | CO_FREE_VALS);
+  const char *best_attr_name = NULL;
+  double max_val = -1.0;
+  
+  long i;
+  for (i = 0; i < coVectorSize(dnf); i++) {
+    cco term = coVectorGet(dnf, i);
+    assert(coIsMap(term));
+    coMapIterator it;
+    if (coMapLoopFirst(&it, term)) {
+      do {
+        const char *key = coMapLoopKey(&it);
+        co d = (co)coMapGet(counts, key);
+        double current_val;
+        if (d == NULL) {
+          current_val = 1.0;
+          coMapAdd(counts, key, coNewDbl(current_val));
+        } else {
+          current_val = coDblGet(d) + 1.0;
+          coDblSet(d, current_val);
+        }
+        
+        if (current_val > max_val) {
+          max_val = current_val;
+          best_attr_name = key;
+        }
+      } while (coMapLoopNext(&it));
+    }
+  }
+
+  const char *stable_ptr = NULL;
+  if (best_attr_name != NULL) {
+    cco psd_inner = (psd == NULL) ? NULL : coMapGet(psd, "psd");
+    assert(psd_inner != NULL);
+    stable_ptr = coMapGetKey(psd_inner, best_attr_name);
+    assert(stable_ptr != NULL); /* Attribute MUST exist in PSD */
+  }
+
+  coDelete(counts);
+  return stable_ptr;
+}
+
+int coDNFCheckUniversal(cco psd, cco dnf) {
+  assert(coIsVector(dnf));
+  
+  if (coDNFIsEmpty(dnf)) return 0;
+  if (coDNFIsUniversal(dnf)) return 1;
+
+  /* Early Abort Check: Domain Coverage Rule 
+     If any attribute A's union of values does not cover D_A, then NOT universal.
+  */
+  co counts = coNewMap(CO_STRDUP | CO_FREE_VALS);
+  long i;
+  for (i = 0; i < coVectorSize(dnf); i++) {
+    cco term = coVectorGet(dnf, i);
+    coMapIterator it;
+    if (coMapLoopFirst(&it, term)) {
+      do {
+        const char *key = coMapLoopKey(&it);
+        cco vals = coMapLoopValue(&it);
+        co union_vec = (co)coMapGet(counts, key);
+        if (union_vec == NULL) {
+          coMapAdd(counts, key, coClone(vals));
+        } else {
+          coInt32VectorAppendVector(union_vec, vals);
+        }
+      } while (coMapLoopNext(&it));
+    }
+  }
+
+  int abort = 0;
+  cco psd_inner = (psd == NULL) ? NULL : coMapGet(psd, "psd");
+  const char *best_attr_name = NULL;
+  long max_count = -1;
+
+  coMapIterator it;
+  if (coMapLoopFirst(&it, counts)) {
+    do {
+      const char *key = coMapLoopKey(&it);
+      cco union_vec = coMapLoopValue(&it);
+      cco domain = (psd_inner == NULL) ? NULL : coMapGet(psd_inner, key);
+      
+      /* 1. Coverage Check */
+      if (domain != NULL && !coInt32VectorEquals(union_vec, domain)) {
+        abort = 1;
+        break;
+      }
+
+      /* 2. Heuristic for Shannon expansion */
+      long count = 0;
+      for (i = 0; i < coVectorSize(dnf); i++) {
+        if (coMapExists(coVectorGet(dnf, i), key)) count++;
+      }
+      if (count > max_count) {
+        max_count = count;
+        best_attr_name = key;
+      }
+    } while (coMapLoopNext(&it));
+  }
+  coDelete(counts);
+
+  if (abort) return 0;
+  if (best_attr_name == NULL) return 0;
+
+  /* Stabilize attr name pointer from PSD */
+  const char *stable_attr = coMapGetKey(psd_inner, best_attr_name);
+  cco domain = coMapGet(psd_inner, stable_attr);
+
+  for (i = 0; i < coInt32VectorSize(domain); i++) {
+    int32_t val = coInt32VectorGet(domain, i);
+    co cofactor = coDNFNewCofactor(psd, dnf, stable_attr, val);
+    int res = coDNFCheckUniversal(psd, cofactor);
+    coDelete(cofactor);
+    if (res == 0) return 0;
+  }
+
+  return 1;
+}
+
+int coDNFCheckUniversalByComplement(cco psd, cco dnf) {
+  assert(coIsVector(dnf));
+  co complement = coDNFComplementBySubtract(psd, dnf);
+  int res = coDNFIsEmpty(complement);
+  coDelete(complement);
+  return res;
 }
 
 int coDNFComplement(cco psd, co dnf) {

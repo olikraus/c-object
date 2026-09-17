@@ -354,6 +354,12 @@ Under this module, a DNF expression is represented using a specific JSON structu
 - **`int coDNFIsUniversal(cco dnf)`**:
   Returns `1` if the DNF is equal to `[{}]` (a single empty map clause representing the universal set), and `0` otherwise.
 
+- **`int coDNFCheckUniversal(cco psd, cco dnf)`**:
+  Recursively checks if the given `dnf` covers the entire variant space (as defined by the `psd`). Unlike `coDNFIsUniversal`, this function uses Shannon expansion to correctly identify cases where the union of multiple constrained terms fills the entire space. Returns `1` if universal, `0` otherwise.
+
+- **`int coDNFCheckUniversalByComplement(cco psd, cco dnf)`**:
+  An alternative implementation of the universal cover check. It calculates the complement of the `dnf` ($Universal \setminus dnf$) and returns `1` if the resulting complement is empty, `0` otherwise.
+
 #### Set Operations
 - **`int coDNFIsSubsetAttributeSelection(cco a, cco b)`**:
   Returns `1` if all values in `Int32Vector` `a` are also present in `Int32Vector` `b`, `0` otherwise.
@@ -395,14 +401,20 @@ Under this module, a DNF expression is represented using a specific JSON structu
   - Terms that contain `attr_name` but whose value set does *not* include `value` are discarded (the constraint is violated).
   Returns a newly constructed `co` DNF vector with the result.
 
+- **`const char *coDNFGetBestCofactorAttribute(cco psd, cco dnf)`**:
+  Returns a pointer to the attribute name that appears most frequently across all AND-terms in the given `dnf`. This is typically used as a heuristic for selecting the next variable to expand during Shannon decomposition. Returns `NULL` if the DNF is empty.
+
 - **`int coDNFComplement(cco psd, co dnf)`**:
   Performs an in-place set-theoretic complement of the given `dnf`, replacing its contents with the result. Returns `1` on success, `0` on error.
 
 - **`void coDNFMinimizeANDTermSubset(co dnf)`**:
   Minimizes the DNF by removing redundant AND-terms. A term is considered redundant if it is a subset of another term in the same DNF (i.e., it represents a subset of the variants already covered by another term). This function performs pairwise checks using `coDNFIsSubsetANDTermANDTerm` and is optimized for speed by avoiding complex DNF subtraction.
 
-- **`void coDNFElideFullDomainAttributes(cco psd, co term)`**:
-  Simplifies an AND-term by removing any attribute whose value set matches the full domain defined in the `psd`. This helps in keeping the DNF representation minimal.
+- **`void coDNFMinimizeClearFullDomain(cco psd, co dnf)`**:
+  Simplifies every AND-term in the DNF by removing any attribute whose value set matches the full domain defined in the `psd`, and then performs a redundancy check.
+
+- **`void coDNFMinimizeClearFullDomainANDTerm(cco psd, co term)`**:
+  Simplifies a single AND-term by removing any attribute whose value set matches the full domain defined in the `psd`. This helps in keeping the DNF representation minimal.
 
 #### Multi-Valued Space & Problem Space Description (PSD)
 The DNF can act as an operand in a multi-valued algebra representing a "set" in a multi-valued space. This space is described by a **Problem Space Description (PSD)**, which is stored as a single AND-Term nested under the key `"psd"` inside a wrapper map:

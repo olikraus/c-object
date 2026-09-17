@@ -510,6 +510,73 @@ void test_dnf_cofactor(void) {
   printf("All DNF cofactor tests passed successfully!\n");
 }
 
+void test_dnf_best_attr(void) {
+  printf("Running DNF best cofactor attribute tests...\n");
+
+  co psd = coNewPSD();
+  co dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1], \"b\":[1]}, {\"b\":[2]}]"));
+  coPSDExtendByDNF(psd, dnf);
+  
+  const char *best = coDNFGetBestCofactorAttribute(psd, dnf);
+  assert(best != NULL);
+  /* 'b' appears twice, 'a' appears once. */
+  assert(strcmp(best, "b") == 0);
+
+  coDelete(dnf);
+  coDelete(psd);
+  printf("All DNF best attribute tests passed successfully!\n");
+}
+
+void test_dnf_check_universal(void) {
+  printf("Running DNF check universal tests...\n");
+
+  co psd = coNewPSD();
+  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2,3], \"size\":[1,2]}]")));
+
+  /* Helper to check universal coverage */
+  #define CHECK_UNIVERSAL(json_in, expected) { \
+    co in = coConvertToInt32Vector(coReadJSONByString(json_in)); \
+    int res = coDNFCheckUniversal(psd, in); \
+    if (res != expected) printf("Failed: check universal of %s (expected %d, got %d)\n", json_in, expected, res); \
+    assert(res == expected); \
+    coDelete(in); \
+  }
+
+  /* 1. Explicit Universal Set */
+  CHECK_UNIVERSAL("[{}]", 1);
+
+  /* 2. Empty Set (not universal) */
+  CHECK_UNIVERSAL("[]", 0);
+
+  /* 3. Single term covering full domain (via elision logic implicitly) */
+  /* If PSD has color 1,2,3, then {color: [1,2,3]} is universal */
+  CHECK_UNIVERSAL("[{\"color\":[1,2,3]}]", 1);
+
+  /* 4. Multi-term cover (Boolean case: A or NOT A) */
+  /* color: [1,2,3]. Term 1: color 1. Term 2: color 2,3. Result: universal. */
+  CHECK_UNIVERSAL("[{\"color\":[1]}, {\"color\":[2,3]}]", 1);
+
+  /* 5. Missing value (not universal) */
+  CHECK_UNIVERSAL("[{\"color\":[1]}, {\"color\":[2]}]", 0);
+
+  /* 6. Multi-attribute cross-term cover */
+  /* color: [1,2,3], size: [1,2]. Cover: {color:1} OR {color:[2,3], size:1} OR {color:[2,3], size:2} */
+  CHECK_UNIVERSAL("[{\"color\":[1]}, {\"color\":[2,3], \"size\":[1]}, {\"color\":[2,3], \"size\":[2]}]", 1);
+
+  /* 7. Cross-verify both methods */
+  {
+    co in = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}, {\"color\":[2,3], \"size\":[1]}, {\"color\":[2,3], \"size\":[2]}]"));
+    int r1 = coDNFCheckUniversal(psd, in);
+    int r2 = coDNFCheckUniversalByComplement(psd, in);
+    assert(r1 == r2);
+    assert(r1 == 1);
+    coDelete(in);
+  }
+
+  coDelete(psd);
+  printf("All DNF check universal tests passed successfully!\n");
+}
+
 int main() {
   test_dnf();
   test_dnf_subset_and_term();
@@ -518,5 +585,7 @@ int main() {
   test_dnf_complement();
   test_dnf_equal();
   test_dnf_cofactor();
+  test_dnf_best_attr();
+  test_dnf_check_universal();
   return 0;
 }
