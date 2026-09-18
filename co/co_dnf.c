@@ -1,6 +1,53 @@
 #include "co.h"
 #include <stdlib.h>
 #include <assert.h>
+#include <string.h>
+
+static int compareANDTerms(const void *a, const void *b) {
+  cco t1 = *(cco *)a;
+  cco t2 = *(cco *)b;
+
+  /* 1. Sort by map size (number of attributes) */
+  long s1 = coMapSize(t1);
+  long s2 = coMapSize(t2);
+  if (s1 != s2)
+    return (int)(s1 - s2);
+
+  /* 2. Compare keys and values */
+  coMapIterator it1, it2;
+  int res1 = coMapLoopFirst(&it1, t1);
+  int res2 = coMapLoopFirst(&it2, t2);
+
+  while (res1 && res2) {
+    const char *k1 = coMapLoopKey(&it1);
+    const char *k2 = coMapLoopKey(&it2);
+    int cmp = strcmp(k1, k2);
+    if (cmp != 0)
+      return cmp;
+    
+    /* Keys match, compare values (Int32Vectors) */
+    cco v1 = coMapLoopValue(&it1);
+    cco v2 = coMapLoopValue(&it2);
+    long vs1 = coInt32VectorSize(v1);
+    long vs2 = coInt32VectorSize(v2);
+    if (vs1 != vs2)
+      return (int)(vs1 - vs2);
+    
+    /* Sizes match, compare elements */
+    long i;
+    for (i = 0; i < vs1; i++) {
+      int32_t val1 = coInt32VectorGet(v1, i);
+      int32_t val2 = coInt32VectorGet(v2, i);
+      if (val1 != val2)
+        return (int)(val1 - val2);
+    }
+
+    res1 = coMapLoopNext(&it1);
+    res2 = coMapLoopNext(&it2);
+  }
+
+  return 0;
+}
 
 co coConvertToInt32Vector(co o) {
   if (o == NULL)
@@ -406,10 +453,94 @@ co coNewDNFByIntersectionWithoutMinimization(cco psd, cco arg1, cco arg2) {
 }
 
 co coNewDNFByIntersection(cco psd, cco arg1, cco arg2) {
-  co result = coNewDNFByIntersectionWithoutMinimization(psd, arg1, arg2);
-  if (result != NULL) {
-    coDNFMinimizeClearFullDomain(psd, result);
+  assert(coIsVector(arg1));
+  assert(coIsVector(arg2));
+
+  co result = coNewVector(CO_FREE_VALS);
+  if (result == NULL)
+    return NULL;
+
+  /* Parallel vector to track the volume of each term in 'result' */
+  co volumes = coNewInt32Vector(CO_NONE);
+  if (volumes == NULL) {
+    coDelete(result);
+    return NULL;
   }
+
+  long i, j;
+  long cnt1 = coVectorSize(arg1);
+  long cnt2 = coVectorSize(arg2);
+
+  for (i = 0; i < cnt1; i++) {
+    cco a = coVectorGet(arg1, i);
+    if (a == NULL || !coIsMap(a))
+      continue;
+
+    for (j = 0; j < cnt2; j++) {
+      cco b = coVectorGet(arg2, j);
+      if (b == NULL || !coIsMap(b))
+        continue;
+
+      co intersection = andTermIntersect(a, b);
+      if (intersection != NULL) {
+        /* Online Subset Minimization with Volume-Based Pruning: 
+           Keep 'result' minimal during construction.
+        */
+        int32_t new_vol = coDNFGetVolumeANDTerm(psd, intersection);
+        int skip = 0;
+        long k;
+        long res_cnt = coVectorSize(result);
+        for (k = 0; k < res_cnt; k++) {
+          cco existing = coVectorGet(result, k);
+          if (existing == NULL) continue;
+          
+          int32_t existing_vol = coInt32VectorGet(volumes, k);
+
+          /* 1. New term is subset of existing? 
+             Only possible if existing_vol >= new_vol
+          */
+          if (existing_vol >= new_vol) {
+            if (coDNFIsSubsetANDTermANDTerm(intersection, existing)) {
+              skip = 1;
+              break;
+            }
+          }
+
+          /* 2. Existing term is subset of new term?
+             Only possible if new_vol >= existing_vol
+          */
+          if (new_vol >= existing_vol) {
+            if (coDNFIsSubsetANDTermANDTerm(existing, intersection)) {
+              coDelete((co)existing);
+              result->v.list[k] = NULL;
+            }
+          }
+        }
+
+        if (!skip) {
+          coVectorAdd(result, intersection);
+          coInt32VectorAdd(volumes, new_vol);
+        } else {
+          coDelete(intersection);
+        }
+      }
+    }
+  }
+
+  /* Compaction Pass: Remove the NULL markers from both result and volumes */
+  long write_idx = 0;
+  long read_idx;
+  long total = coVectorSize(result);
+  for (read_idx = 0; read_idx < total; read_idx++) {
+    if (result->v.list[read_idx] != NULL) {
+      result->v.list[write_idx] = result->v.list[read_idx];
+      coInt32VectorSet(volumes, write_idx, coInt32VectorGet(volumes, read_idx));
+      write_idx++;
+    }
+  }
+  result->v.cnt = write_idx;
+
+  coDelete(volumes);
   return result;
 }
 
@@ -571,9 +702,18 @@ void coDNFMinimizeANDTermSubset(co dnf) {
 
 void coDNFMinimizeByANDTermMerge(co dnf) {
   assert(coIsVector(dnf));
+
   int changed = 1;
   while (changed) {
     changed = 0;
+
+    /* Step 1: Subset Removal */
+    long old_size = coVectorSize(dnf);
+    coDNFMinimizeANDTermSubset(dnf);
+    if (coVectorSize(dnf) != old_size)
+      changed = 1;
+
+    /* Step 2: Merge terms differing in exactly one attribute */
     long i, j;
     for (i = 0; i < coVectorSize(dnf); i++) {
       for (j = i + 1; j < coVectorSize(dnf); j++) {
@@ -889,4 +1029,82 @@ int coDNFIsEqual(cco psd, cco dnf1, cco dnf2) {
   assert(coIsVector(dnf1));
   assert(coIsVector(dnf2));
   return coDNFIsSubset(psd, dnf1, dnf2) && coDNFIsSubset(psd, dnf2, dnf1);
+}
+
+int32_t coDNFGetVolumeANDTerm(cco psd, cco term) {
+  assert(coIsMap(term));
+  if (psd == NULL)
+    return 1;
+  cco psd_inner = coMapGet(psd, "psd");
+  if (psd_inner == NULL || !coIsMap(psd_inner))
+    return 1;
+
+  int32_t volume = 1;
+  coMapIterator it;
+  if (coMapLoopFirst(&it, psd_inner)) {
+    do {
+      const char *key = coMapLoopKey(&it);
+      cco domain = coMapLoopValue(&it);
+      cco term_vals = coMapGet(term, key);
+      if (term_vals == NULL) {
+        volume *= (int32_t)coInt32VectorSize(domain);
+      } else {
+        volume *= (int32_t)coInt32VectorSize(term_vals);
+      }
+    } while (coMapLoopNext(&it));
+  }
+  return volume;
+}
+
+static int32_t coDNFGetVolumeRecursive(cco psd, cco psd_inner, coMapIterator *attr_iter, cco dnf) {
+  if (coDNFIsEmpty(dnf)) return 0;
+  if (coDNFIsUniversal(dnf)) {
+    /* If universal, the volume is the product of all remaining attribute domains */
+    int32_t remaining_vol = 1;
+    coMapIterator it = *attr_iter;
+    /* Note: the current attribute was already advanced in the caller, or we are at the end */
+    while (it.current_node != NULL) {
+      remaining_vol *= (int32_t)coInt32VectorSize(coMapLoopValue(&it));
+      if (!coMapLoopNext(&it)) break;
+    }
+    return remaining_vol;
+  }
+
+  /* Get current attribute and advance iterator for next level */
+  const char *attr = coMapLoopKey(attr_iter);
+  cco domain = coMapLoopValue(attr_iter);
+  
+  coMapIterator next_iter = *attr_iter;
+  int has_next = coMapLoopNext(&next_iter);
+
+  long i;
+  int32_t total_volume = 0;
+  long domain_size = coInt32VectorSize(domain);
+  for (i = 0; i < domain_size; i++) {
+    int32_t val = coInt32VectorGet(domain, i);
+    co cofactor = coDNFNewCofactor(psd, dnf, attr, val);
+    
+    if (has_next) {
+      total_volume += coDNFGetVolumeRecursive(psd, psd_inner, &next_iter, cofactor);
+    } else {
+      /* Base case: no more attributes, check if cofactor is universal */
+      if (coDNFIsUniversal(cofactor)) total_volume += 1;
+    }
+    coDelete(cofactor);
+  }
+  return total_volume;
+}
+
+int32_t coDNFGetVolume(cco psd, cco dnf) {
+  assert(coIsVector(dnf));
+  if (psd == NULL) return 0;
+  cco psd_inner = coMapGet(psd, "psd");
+  if (psd_inner == NULL || coMapSize(psd_inner) == 0) return 0;
+  
+  if (coDNFIsEmpty(dnf)) return 0;
+
+  coMapIterator it;
+  if (!coMapLoopFirst(&it, psd_inner)) return 0;
+
+  return coDNFGetVolumeRecursive(psd, psd_inner, &it, dnf);
 }

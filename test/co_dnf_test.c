@@ -613,6 +613,41 @@ void test_dnf_merge(void) {
   printf("All DNF term merge tests passed successfully!\n");
 }
 
+void test_dnf_get_volume(void) {
+  printf("Running DNF get volume tests...\n");
+
+  co psd = coNewPSD();
+  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2,3], \"size\":[1,2]}]")));
+
+  /* 1. Single term */
+  co dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}]"));
+  int32_t s1 = coDNFGetVolume(psd, dnf);
+  if (s1 != 2) printf("Failed Case 1: expected 2, got %d\n", s1);
+  assert(s1 == 2); /* color:1 * size:{1,2} */
+  coDelete(dnf);
+
+  /* 2. Overlapping terms */
+  /* Term A: {color:1} -> coverage {1,1}, {1,2} (size 2) */
+  /* Term B: {size:1}  -> coverage {1,1}, {2,1}, {3,1} (size 3) */
+  /* Union: {1,1}, {1,2}, {2,1}, {3,1} (size 4) */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}, {\"size\":[1]}]"));
+  assert(coDNFGetVolume(psd, dnf) == 4);
+  coDelete(dnf);
+
+  /* 3. Universal set */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{}]"));
+  assert(coDNFGetVolume(psd, dnf) == 6);
+  coDelete(dnf);
+
+  /* 4. Empty set */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[]"));
+  assert(coDNFGetVolume(psd, dnf) == 0);
+  coDelete(dnf);
+
+  coDelete(psd);
+  printf("All DNF get volume tests passed successfully!\n");
+}
+
 int main() {
   test_dnf();
   test_dnf_subset_and_term();
@@ -624,5 +659,6 @@ int main() {
   test_dnf_cofactor();
   test_dnf_best_attr();
   test_dnf_check_universal();
+  test_dnf_get_volume();
   return 0;
 }

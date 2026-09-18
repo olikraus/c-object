@@ -156,6 +156,29 @@ long coVectorAdd(co o, cco p) {
   return o->v.cnt - 1;
 }
 
+long coVectorInsert(co o, long i, cco p) {
+  void *ptr;
+  assert(coIsVector(o));
+  if (i >= o->v.cnt)
+    return coVectorAdd(o, p);
+
+  while (o->v.max <= o->v.cnt) {
+    ptr = realloc(o->v.list, (o->v.cnt + COV_EXTEND) * sizeof(co));
+    if (ptr == NULL)
+      return -1;
+    o->v.list = (cco *)ptr;
+    o->v.max += COV_EXTEND;
+  }
+
+  long j;
+  for (j = o->v.cnt; j > i; j--) {
+    o->v.list[j] = o->v.list[j - 1];
+  }
+  o->v.list[i] = p;
+  o->v.cnt++;
+  return i;
+}
+
 long coVectorSize(cco o) {
   if (o == NULL)
     return 0;

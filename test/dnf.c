@@ -774,6 +774,10 @@ int main(int argc, char **argv) {
              coVectorSize(arg1), coVectorSize(arg2), coVectorSize(result), t2 - t1);
 
       co result_raw = coClone(result);
+      
+      printf("  Volumes: arg1:%d, arg2:%d, result_raw:%d\n", 
+             coDNFGetVolume(psd, arg1), coDNFGetVolume(psd, arg2), coDNFGetVolume(psd, result_raw));
+
       long before_clear = coVectorSize(result);
       t1 = get_ms();
       coDNFMinimizeClearFullDomain(psd, result);
@@ -794,6 +798,8 @@ int main(int argc, char **argv) {
       printf("  coDNFIsEqual(result_raw:%ld, result:%ld) -> %s (%.2f ms)\n",
              coVectorSize(result_raw), coVectorSize(result), eq ? "PASS" : "FAIL", t2 - t1);
 
+      printf("  Final volume: %d\n", coDNFGetVolume(psd, result));
+
       coDelete(result_raw);
       
       printf("  ---\n");
@@ -802,6 +808,13 @@ int main(int argc, char **argv) {
       t2 = get_ms();
       printf("  coNewDNFByIntersection(psd, arg1:%ld, arg2:%ld) -> result:%ld (%.2f ms)\n", 
              coVectorSize(arg1), coVectorSize(arg2), coVectorSize(result2), t2 - t1);
+
+      long before_clear2 = coVectorSize(result2);
+      t1 = get_ms();
+      coDNFMinimizeClearFullDomain(psd, result2);
+      t2 = get_ms();
+      printf("  coDNFMinimizeClearFullDomain(result:%ld) -> result:%ld (%.2f ms)\n", 
+             before_clear2, coVectorSize(result2), t2 - t1);
 
       long before_merge2 = coVectorSize(result2);
       t1 = get_ms();
@@ -815,6 +828,7 @@ int main(int argc, char **argv) {
       t2 = get_ms();
       printf("  coDNFIsEqual(manual:%ld, automatic:%ld) -> %s (%.2f ms)\n",
              coVectorSize(result), coVectorSize(result2), eq2 ? "PASS" : "FAIL", t2 - t1);
+      printf("  Final volume: %d\n", coDNFGetVolume(psd, result2));
 
       coDelete(result2);
       result_dnf = result;

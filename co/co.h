@@ -272,6 +272,7 @@ void coBoolSet(co o, int b);
 long coVectorAdd(co o, cco p); // add object at the end of the list, returns -1 for error, 
     // p will be moved and deleted by the vector destructor if CO_FREE_VALS is set, 
 	// p can be NULL pointer
+long coVectorInsert(co o, long i, cco p); // insert object at position i
 int coVectorAppendVector(co v, cco src); // append elements from src to vector v, elements are cloned, this means CO_FREE_VALS should be set for v
 cco coVectorGet(cco o, long idx); // return object at specific position from the vector
 void coVectorSet(co v, long i, cco e); // replace an element within the vector, the index must be lower than coVectorSize()
@@ -460,6 +461,8 @@ int coDNFIsSubsetANDTermANDTerm(cco subset_and_term, cco superset_and_term);
 int coDNFIsSubsetANDTerm(cco psd, cco subset_and_term, cco superset_dnf);
 int coDNFIsSubset(cco psd, cco subset_dnf, cco superset_dnf);
 int coDNFIsEqual(cco psd, cco dnf1, cco dnf2);
+int32_t coDNFGetVolumeANDTerm(cco psd, cco term);
+int32_t coDNFGetVolume(cco psd, cco dnf);
 co coNewPSD(void);
 int coPSDExtendByDNF(co psd, cco dnf);
 
