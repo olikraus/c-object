@@ -3,8 +3,6 @@
 #include <assert.h>
 #include <string.h>
 
-#define CO_DNF_MINIMIZE_VOLUME_THRESHOLD 3
-
 static int compareANDTerms(const void *a, const void *b) {
   cco t1 = *(cco *)a;
   cco t2 = *(cco *)b;
@@ -473,6 +471,7 @@ co coNewDNFByIntersection(cco psd, cco arg1, cco arg2) {
   long cnt1 = coVectorSize(arg1);
   long cnt2 = coVectorSize(arg2);
   int32_t max_vol = 0;
+  int32_t min_vol = 2147483647;
 
   for (i = 0; i < cnt1; i++) {
     cco a = coVectorGet(arg1, i);
@@ -486,42 +485,43 @@ co coNewDNFByIntersection(cco psd, cco arg1, cco arg2) {
 
       co intersection = andTermIntersect(a, b);
       if (intersection != NULL) {
-        /* Online Subset Minimization with Heuristic Volume-Based Pruning: 
+        /* Online Subset Minimization with Dynamic Range Pruning: 
            Keep 'result' minimal during construction.
         */
         int32_t new_vol = coDNFGetVolumeANDTerm(psd, intersection);
         if (new_vol > max_vol) max_vol = new_vol;
-
+        if (new_vol < min_vol) min_vol = new_vol;
+        
+        int32_t threshold = (max_vol - min_vol) / 4;
         int skip = 0;
         long k;
         long res_cnt = coVectorSize(result);
-        for (k = 0; k < res_cnt; k++) {
-          cco existing = coVectorGet(result, k);
-          if (existing == NULL) continue;
-          
-          int32_t existing_vol = coInt32VectorGet(volumes, k);
-
-          /* 1. New term is subset of existing? 
-             Only possible if existing_vol >= new_vol.
-             Heuristic: only check if existing_vol is significant.
-          */
-          if (existing_vol >= new_vol && 
-              existing_vol + CO_DNF_MINIMIZE_VOLUME_THRESHOLD >= max_vol) {
-            if (coDNFIsSubsetANDTermANDTerm(intersection, existing)) {
-              skip = 1;
-              break;
+        
+        /* Heuristic: Only perform expensive subset checks in likely zones. */
+        if (new_vol <= min_vol + threshold) {
+          /* 1. Zone A: New term is small, check if it is a subset of any existing term */
+          for (k = 0; k < res_cnt; k++) {
+            cco existing = coVectorGet(result, k);
+            if (existing == NULL) continue;
+            int32_t existing_vol = coInt32VectorGet(volumes, k);
+            if (existing_vol >= new_vol) {
+              if (coDNFIsSubsetANDTermANDTerm(intersection, existing)) {
+                skip = 1;
+                break;
+              }
             }
           }
-
-          /* 2. Existing term is subset of new term?
-             Only possible if new_vol >= existing_vol.
-             Heuristic: only check if new_vol is significant.
-          */
-          if (new_vol >= existing_vol &&
-              new_vol + CO_DNF_MINIMIZE_VOLUME_THRESHOLD >= max_vol) {
-            if (coDNFIsSubsetANDTermANDTerm(existing, intersection)) {
-              coDelete((co)existing);
-              result->v.list[k] = NULL;
+        } else if (new_vol >= max_vol - threshold) {
+          /* 2. Zone B: New term is large, check if it is a superset of any existing terms */
+          for (k = 0; k < res_cnt; k++) {
+            cco existing = coVectorGet(result, k);
+            if (existing == NULL) continue;
+            int32_t existing_vol = coInt32VectorGet(volumes, k);
+            if (new_vol >= existing_vol) {
+              if (coDNFIsSubsetANDTermANDTerm(existing, intersection)) {
+                coDelete((co)existing);
+                result->v.list[k] = NULL;
+              }
             }
           }
         }
