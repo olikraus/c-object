@@ -60,7 +60,7 @@ void test_dnf(void) {
   long initial_size = coVectorSize(dnf); /* Should be 2 */
   assert(initial_size == 2);
 
-  int union_res = coDNFUnion(dnf, dnf2);
+  int union_res = coDNFUnion(NULL, dnf, dnf2);
   assert(union_res == 1);
   assert(coVectorSize(dnf) == 3);
   assert(coDNFIsValid(dnf) == 1);
@@ -119,7 +119,7 @@ void test_dnf(void) {
   co isec_arg1 = coReadJSONByString("[]");
   co isec_arg2 = coReadJSONByString("[{\"color\":[1,2]}]");
   isec_arg2 = coConvertToInt32Vector(isec_arg2);
-  assert(coDNFIntersection(isec_arg1, isec_arg2) == 1);
+  assert(coDNFIntersection(NULL, isec_arg1, isec_arg2) == 1);
   assert(coDNFIsEmpty(isec_arg1) == 1);
   coDelete(isec_arg1);
   coDelete(isec_arg2);
@@ -128,7 +128,7 @@ void test_dnf(void) {
   isec_arg1 = coReadJSONByString("[{}]");
   isec_arg2 = coReadJSONByString("[{\"color\":[1,2]}]");
   isec_arg2 = coConvertToInt32Vector(isec_arg2);
-  assert(coDNFIntersection(isec_arg1, isec_arg2) == 1);
+  assert(coDNFIntersection(NULL, isec_arg1, isec_arg2) == 1);
   assert(coDNFIsValid(isec_arg1) == 1);
   assert(coVectorSize(isec_arg1) == 1);
   cco clause0 = coVectorGet(isec_arg1, 0);
@@ -144,7 +144,7 @@ void test_dnf(void) {
   isec_arg2 = coReadJSONByString("[{\"color\":[2,3,4],\"size\":[1]}]");
   isec_arg1 = coConvertToInt32Vector(isec_arg1);
   isec_arg2 = coConvertToInt32Vector(isec_arg2);
-  assert(coDNFIntersection(isec_arg1, isec_arg2) == 1);
+  assert(coDNFIntersection(NULL, isec_arg1, isec_arg2) == 1);
   assert(coDNFIsValid(isec_arg1) == 1);
   assert(coVectorSize(isec_arg1) == 1);
   cco res_clause = coVectorGet(isec_arg1, 0);
@@ -164,7 +164,7 @@ void test_dnf(void) {
   isec_arg2 = coReadJSONByString("[{\"size\":[3,4]}]");
   isec_arg1 = coConvertToInt32Vector(isec_arg1);
   isec_arg2 = coConvertToInt32Vector(isec_arg2);
-  assert(coDNFIntersection(isec_arg1, isec_arg2) == 1);
+  assert(coDNFIntersection(NULL, isec_arg1, isec_arg2) == 1);
   assert(coDNFIsValid(isec_arg1) == 1);
   cco d_clause = coVectorGet(isec_arg1, 0);
   cco d_color = coMapGet(d_clause, "color");
@@ -179,7 +179,7 @@ void test_dnf(void) {
   isec_arg2 = coReadJSONByString("[{\"color\":[3,4]}]");
   isec_arg1 = coConvertToInt32Vector(isec_arg1);
   isec_arg2 = coConvertToInt32Vector(isec_arg2);
-  assert(coDNFIntersection(isec_arg1, isec_arg2) == 1);
+  assert(coDNFIntersection(NULL, isec_arg1, isec_arg2) == 1);
   assert(coDNFIsEmpty(isec_arg1) == 1);
   coDelete(isec_arg1);
   coDelete(isec_arg2);
@@ -189,7 +189,7 @@ void test_dnf(void) {
   co arg2 = coReadJSONByString("[{\"size\":[3,4]}]");
   arg1 = coConvertToInt32Vector(arg1);
   arg2 = coConvertToInt32Vector(arg2);
-  co isec_new = coNewDNFByIntersection(arg1, arg2);
+  co isec_new = coNewDNFByIntersection(NULL, arg1, arg2);
   assert(isec_new != NULL && coDNFIsValid(isec_new) == 1);
   assert(coVectorSize(isec_new) == 1);
   cco new_clause = coVectorGet(isec_new, 0);
@@ -582,7 +582,7 @@ void test_dnf_merge(void) {
 
   /* 1. Basic merge: three terms with same attribute */
   co dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}, {\"color\":[2]}, {\"color\":[3]}]"));
-  //coDNFMinimizeByANDTermMerge(dnf);
+  coDNFMinimizeByANDTermMerge(dnf);
   assert(coVectorSize(dnf) == 1);
   cco m = coVectorGet(dnf, 0);
   cco v = coMapGet(m, "color");
@@ -591,19 +591,19 @@ void test_dnf_merge(void) {
 
   /* 2. No merge: different attributes */
   dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1]}, {\"b\":[1]}]"));
-  //coDNFMinimizeByANDTermMerge(dnf);
+  coDNFMinimizeByANDTermMerge(dnf);
   assert(coVectorSize(dnf) == 2);
   coDelete(dnf);
 
   /* 3. No merge: differ in two attributes */
   dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1], \"b\":[1]}, {\"a\":[2], \"b\":[2]}]"));
-  //coDNFMinimizeByANDTermMerge(dnf);
+  coDNFMinimizeByANDTermMerge(dnf);
   assert(coVectorSize(dnf) == 2);
   coDelete(dnf);
 
   /* 4. Merge: share one, differ in one */
   dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1], \"b\":[1]}, {\"a\":[1], \"b\":[2]}]"));
-  //coDNFMinimizeByANDTermMerge(dnf);
+  coDNFMinimizeByANDTermMerge(dnf);
   assert(coVectorSize(dnf) == 1);
   m = coVectorGet(dnf, 0);
   assert(coInt32VectorSize(coMapGet(m, "a")) == 1);

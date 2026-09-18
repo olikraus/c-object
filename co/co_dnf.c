@@ -143,7 +143,7 @@ void coDNFMinimizeClearFullDomain(cco psd, co dnf) {
   coDNFMinimizeANDTermSubset(dnf);
 }
 
-int coDNFUnion(co arg1, cco arg2) {
+int coDNFUnion(cco psd, co arg1, cco arg2) {
   assert(coIsVector(arg1));
   assert(coIsVector(arg2));
   
@@ -171,6 +171,7 @@ int coDNFUnion(co arg1, cco arg2) {
       }
     }
   }
+  coDNFMinimizeClearFullDomain(psd, arg1);
   return 1;
 }
 
@@ -368,7 +369,7 @@ static co andTermIntersect(cco a, cco b) {
   return c;
 }
 
-co coNewDNFByIntersection(cco arg1, cco arg2) {
+co coNewDNFByIntersectionWithoutMinimization(cco psd, cco arg1, cco arg2) {
   assert(coIsVector(arg1));
   assert(coIsVector(arg2));
 
@@ -404,16 +405,23 @@ co coNewDNFByIntersection(cco arg1, cco arg2) {
   return result;
 }
 
-int coDNFIntersection(co arg1, cco arg2) {
+co coNewDNFByIntersection(cco psd, cco arg1, cco arg2) {
+  co result = coNewDNFByIntersectionWithoutMinimization(psd, arg1, arg2);
+  if (result != NULL) {
+    coDNFMinimizeClearFullDomain(psd, result);
+  }
+  return result;
+}
+
+int coDNFIntersection(cco psd, co arg1, cco arg2) {
   assert(coIsVector(arg1));
   assert(coIsVector(arg2));
 
-  co res = coNewDNFByIntersection(arg1, arg2);
+  co res = coNewDNFByIntersection(psd, arg1, arg2);
   if (res == NULL)
     return 0;
 
   coVectorClear(arg1);
-
   long cnt = coVectorSize(res);
   long i;
   for (i = 0; i < cnt; i++) {
@@ -434,6 +442,7 @@ int coDNFIntersection(co arg1, cco arg2) {
   coDelete(res);
   return 1;
 }
+
 
 int coDNFIsSubsetAttributeSelection(cco a, cco b) {
   if (a == NULL || b == NULL) return 0;
@@ -556,6 +565,65 @@ void coDNFMinimizeANDTermSubset(co dnf) {
     }
     if (!removed) {
       i++;
+    }
+  }
+}
+
+void coDNFMinimizeByANDTermMerge(co dnf) {
+  assert(coIsVector(dnf));
+  int changed = 1;
+  while (changed) {
+    changed = 0;
+    long i, j;
+    for (i = 0; i < coVectorSize(dnf); i++) {
+      for (j = i + 1; j < coVectorSize(dnf); j++) {
+        cco t1 = coVectorGet(dnf, i);
+        cco t2 = coVectorGet(dnf, j);
+
+        if (coMapSize(t1) != coMapSize(t2))
+          continue;
+
+        const char *diff_key = NULL;
+        int diff_count = 0;
+        int mismatch = 0;
+
+        coMapIterator it;
+        if (coMapLoopFirst(&it, t1)) {
+          do {
+            const char *key = coMapLoopKey(&it);
+            cco v1 = coMapLoopValue(&it);
+            cco v2 = coMapGet(t2, key);
+            if (v2 == NULL) {
+              mismatch = 1;
+              break;
+            }
+            if (!coInt32VectorEquals(v1, v2)) {
+              diff_count++;
+              diff_key = key;
+            }
+          } while (coMapLoopNext(&it));
+        }
+
+        if (mismatch)
+          continue;
+
+        if (diff_count == 1) {
+          /* Merge t2 into t1 at diff_key */
+          co v1 = (co)coMapGet(t1, diff_key);
+          cco v2 = coMapGet(t2, diff_key);
+          coInt32VectorAppendVector(v1, v2);
+          coVectorErase(dnf, j);
+          changed = 1;
+          break;
+        } else if (diff_count == 0) {
+          /* Identical terms */
+          coVectorErase(dnf, j);
+          changed = 1;
+          break;
+        }
+      }
+      if (changed)
+        break;
     }
   }
 }

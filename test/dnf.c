@@ -32,6 +32,7 @@ void print_help(const char *prog) {
   printf("  -opsd <file>        Write the extended PSD to a named JSON file\n");
   printf("  -gpsd <attrs> <val> Quickly generate a PSD with attributes/values\n");
   printf("  -gdnf <t> <a> <v>   Generate a random DNF as result (t: terms, a: attrs, v: values)\n");
+  printf("  -seed <s>           Set the seed for random operations (default: 12345)\n");
   printf("  -v                  Verbose mode (output input files and commands)\n");
 }
 
@@ -65,6 +66,7 @@ int main(int argc, char **argv) {
   long gdnf_attrs = 0;
   long gdnf_vals = 0;
   int has_gdnf = 0;
+  unsigned int seed = 12345;
 
   if (argc == 1) {
     help = 1;
@@ -176,6 +178,14 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Error: -opsd option requires a file path argument\n");
         return 1;
       }
+    } else if (strcmp(argv[i], "-seed") == 0) {
+      if (i + 1 < argc) {
+        seed = (unsigned int)atol(argv[i + 1]);
+        i++;
+      } else {
+        fprintf(stderr, "Error: -seed option requires an integer argument\n");
+        return 1;
+      }
     } else {
       /* Positional argument */
       if (file_cnt < 128) {
@@ -191,6 +201,8 @@ int main(int argc, char **argv) {
     print_help(argv[0]);
     return 0;
   }
+
+  srand(seed);
 
   /* Validate constraints */
   if (ipsd_path != NULL && has_gpsd) {
@@ -412,8 +424,6 @@ int main(int argc, char **argv) {
       return 1;
     }
 
-    /* Seed rand */
-    srand((unsigned int)time(NULL));
 
     long term_idx;
     for (term_idx = 0; term_idx < gdnf_terms; term_idx++) {
@@ -617,9 +627,9 @@ int main(int argc, char **argv) {
       /* Test 1: intersection(cdnf, dnf) must be empty */
       printf("Test 1: intersection(cdnf, dnf) must be empty\n");
       t1 = get_ms();
-      co isec = coNewDNFByIntersection(cdnf, arg1);
+      co isec = coNewDNFByIntersection(psd, cdnf, arg1);
       t2 = get_ms();
-      printf("  coNewDNFByIntersection(cdnf:%ld, arg1:%ld) -> isec:%ld (%.2f ms)\n",
+      printf("  coNewDNFByIntersection(psd, cdnf:%ld, arg1:%ld) -> isec:%ld (%.2f ms)\n",
              coVectorSize(cdnf), coVectorSize(arg1), coVectorSize(isec), t2 - t1);
       printf("  Result: %s\n\n", coDNFIsEmpty(isec) ? "PASS" : "FAIL");
       coDelete(isec);
@@ -627,7 +637,7 @@ int main(int argc, char **argv) {
       /* Test 2: union(cdnf, dnf) must be universal with shannon expansion */
       printf("Test 2: union(cdnf, dnf) must be universal via Shannon Expansion\n");
       co u = coClone(cdnf);
-      coDNFUnion(u, arg1);
+      coDNFUnion(psd, u, arg1);
       t1 = get_ms();
       int res2 = coDNFCheckUniversal(psd, u);
       t2 = get_ms();
@@ -710,7 +720,6 @@ int main(int argc, char **argv) {
         do { if (attrs_cnt < 2048) attrs[attrs_cnt++] = coMapLoopKey(&it_a); } while (coMapLoopNext(&it_a));
       }
 
-      srand((unsigned int)time(NULL));
       int b;
       for (b = 0; b < 2; b++) {
         co dnf_gen = coNewVector(CO_FREE_VALS);
@@ -758,18 +767,60 @@ int main(int argc, char **argv) {
       }
 
       double t1, t2;
-      printf("Test Intersection Benchmark: arg1:%ld terms, arg2:%ld terms\n", coVectorSize(arg1), coVectorSize(arg2));
       t1 = get_ms();
-      co result = coNewDNFByIntersection(arg1, arg2);
+      co result = coNewDNFByIntersectionWithoutMinimization(psd, arg1, arg2);
       t2 = get_ms();
-      printf("  coNewDNFByIntersection(arg1, arg2) -> result:%ld (%.2f ms)\n", coVectorSize(result), t2 - t1);
+      printf("  coNewDNFByIntersectionWithoutMinimization(arg1:%ld, arg2:%ld) -> result:%ld (%.2f ms)\n", 
+             coVectorSize(arg1), coVectorSize(arg2), coVectorSize(result), t2 - t1);
+
+      co result_raw = coClone(result);
+      long before_clear = coVectorSize(result);
+      t1 = get_ms();
+      coDNFMinimizeClearFullDomain(psd, result);
+      t2 = get_ms();
+      printf("  coDNFMinimizeClearFullDomain(result:%ld) -> result:%ld (%.2f ms)\n", 
+             before_clear, coVectorSize(result), t2 - t1);
+
+      long before_merge = coVectorSize(result);
+      t1 = get_ms();
+      coDNFMinimizeByANDTermMerge(result);
+      t2 = get_ms();
+      printf("  coDNFMinimizeByANDTermMerge(result:%ld) -> result:%ld (%.2f ms)\n", 
+             before_merge, coVectorSize(result), t2 - t1);
+
+      t1 = get_ms();
+      int eq = coDNFIsEqual(psd, result_raw, result);
+      t2 = get_ms();
+      printf("  coDNFIsEqual(result_raw:%ld, result:%ld) -> %s (%.2f ms)\n",
+             coVectorSize(result_raw), coVectorSize(result), eq ? "PASS" : "FAIL", t2 - t1);
+
+      coDelete(result_raw);
       
-      coDelete(result);
-      for (i_file = 0; i_file < file_cnt; i_file++) coDelete(loaded_files[i_file]);
-      coDelete(psd);
-      return 0;
+      printf("  ---\n");
+      t1 = get_ms();
+      co result2 = coNewDNFByIntersection(psd, arg1, arg2);
+      t2 = get_ms();
+      printf("  coNewDNFByIntersection(psd, arg1:%ld, arg2:%ld) -> result:%ld (%.2f ms)\n", 
+             coVectorSize(arg1), coVectorSize(arg2), coVectorSize(result2), t2 - t1);
+
+      long before_merge2 = coVectorSize(result2);
+      t1 = get_ms();
+      coDNFMinimizeByANDTermMerge(result2);
+      t2 = get_ms();
+      printf("  coDNFMinimizeByANDTermMerge(result:%ld) -> result:%ld (%.2f ms)\n", 
+             before_merge2, coVectorSize(result2), t2 - t1);
+
+      t1 = get_ms();
+      int eq2 = coDNFIsEqual(psd, result, result2);
+      t2 = get_ms();
+      printf("  coDNFIsEqual(manual:%ld, automatic:%ld) -> %s (%.2f ms)\n",
+             coVectorSize(result), coVectorSize(result2), eq2 ? "PASS" : "FAIL", t2 - t1);
+
+      coDelete(result2);
+      result_dnf = result;
+      needs_delete = 1;
     } else if (is_union) {
-      if (coDNFUnion(arg1, arg2) == 0) {
+      if (coDNFUnion(psd, arg1, arg2) == 0) {
         fprintf(stderr, "Error: Union operation failed\n");
         int k;
         for (k = 0; k < file_cnt; k++) {
@@ -780,7 +831,7 @@ int main(int argc, char **argv) {
       }
       result_dnf = arg1; /* Mutated in-place */
     } else if (is_intersection) {
-      if (coDNFIntersection(arg1, arg2) == 0) {
+      if (coDNFIntersection(psd, arg1, arg2) == 0) {
         fprintf(stderr, "Error: Intersection operation failed\n");
         int k;
         for (k = 0; k < file_cnt; k++) {
@@ -830,7 +881,7 @@ int main(int argc, char **argv) {
   }
 
   /* Output Result DNF */
-  if (result_dnf != NULL) {
+  if (result_dnf != NULL && (o_path != NULL || !is_test_isec)) {
     FILE *out_f = stdout;
     if (o_path != NULL) {
       out_f = fopen(o_path, "w");
