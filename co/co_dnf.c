@@ -492,19 +492,19 @@ co coNewDNFByIntersection(cco psd, cco arg1, cco arg2) {
         if (new_vol > max_vol) max_vol = new_vol;
         if (new_vol < min_vol) min_vol = new_vol;
         
-        int32_t threshold = (max_vol - min_vol) / 4;
+        int32_t threshold = (max_vol - min_vol) / 8;
         int skip = 0;
         long k;
         long res_cnt = coVectorSize(result);
         
-        /* Heuristic: Only perform expensive subset checks in likely zones. */
+        /* Heuristic: Only perform expensive subset checks between extremes. */
         if (new_vol <= min_vol + threshold) {
-          /* 1. Zone A: New term is small, check if it is a subset of any existing term */
+          /* 1. Zone A: New term is small, check if it is a subset of any LARGE existing term */
           for (k = 0; k < res_cnt; k++) {
             cco existing = coVectorGet(result, k);
             if (existing == NULL) continue;
             int32_t existing_vol = coInt32VectorGet(volumes, k);
-            if (existing_vol >= new_vol) {
+            if (existing_vol >= max_vol || existing_vol==new_vol) {
               if (coDNFIsSubsetANDTermANDTerm(intersection, existing)) {
                 skip = 1;
                 break;
@@ -512,12 +512,12 @@ co coNewDNFByIntersection(cco psd, cco arg1, cco arg2) {
             }
           }
         } else if (new_vol >= max_vol - threshold) {
-          /* 2. Zone B: New term is large, check if it is a superset of any existing terms */
+          /* 2. Zone B: New term is large, check if it is a superset of any SMALL existing terms */
           for (k = 0; k < res_cnt; k++) {
             cco existing = coVectorGet(result, k);
             if (existing == NULL) continue;
-            int32_t existing_vol = coInt32VectorGet(volumes, k);
-            if (new_vol >= existing_vol) {
+            int32_t existing_vol = coInt32VectorGet(volumes, k);            
+            if (existing_vol <= min_vol || existing_vol==new_vol) {
               if (coDNFIsSubsetANDTermANDTerm(existing, intersection)) {
                 coDelete((co)existing);
                 result->v.list[k] = NULL;
@@ -548,6 +548,9 @@ co coNewDNFByIntersection(cco psd, cco arg1, cco arg2) {
     }
   }
   result->v.cnt = write_idx;
+
+  int32_t threshold = (max_vol - min_vol) / 8;
+  printf("DEBUG: min_vol:%d, max_vol:%d, threshold:%d\n", min_vol, max_vol, threshold);
 
   coDelete(volumes);
   return result;
