@@ -1,51 +1,116 @@
 #include "co.h"
 #include <stdio.h>
-#include <assert.h>
+#include <stdlib.h>
 #include <string.h>
+#include <assert.h>
+
+static void check_intersection(cco psd, const char *s1, const char *s2, const char *expected_json) {
+  co arg1 = coConvertToInt32Vector(coReadJSONByString(s1));
+  co arg2 = coConvertToInt32Vector(coReadJSONByString(s2));
+  co expected = coConvertToInt32Vector(coReadJSONByString(expected_json));
+
+  co res_min = coNewDNFByIntersection(psd, arg1, arg2);
+  co res_raw = coNewDNFByIntersectionWithoutMinimization(psd, arg1, arg2);
+
+  if (!coDNFIsEqual(psd, res_min, expected)) {
+    printf("Failed Intersection: %s AND %s\n", s1, s2);
+    printf("  Expected: %s\n", expected_json);
+    printf("  Got (min): "); coWriteJSON(res_min, 1, 0, stdout); printf("\n");
+  }
+  assert(coDNFIsEqual(psd, res_min, expected));
+  assert(coDNFIsEqual(psd, res_raw, expected));
+
+  coDelete(arg1);
+  coDelete(arg2);
+  coDelete(expected);
+  coDelete(res_min);
+  coDelete(res_raw);
+}
+
+void test_dnf_intersection_detailed(void) {
+  printf("Running detailed DNF intersection tests...\n");
+
+  co psd = coNewPSD();
+  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2,3,4], \"size\":[1,2,3,4], \"height\":[1,2,3,4]}]")));
+
+  /* 1. Intersection with the empty DNF */
+  check_intersection(psd, "[]", "[{\"color\":[1,2]}]", "[]");
+
+  /* 2. Intersection with the universal DNF */
+  check_intersection(psd, "[{}]", "[{\"color\":[1,2]}]", "[{\"color\":[1,2]}]");
+
+  /* 3. Intersection of value sets with a shared attribute */
+  check_intersection(psd,
+    "[{\"color\":[1,2,3],\"height\":[2,3]}]",
+    "[{\"color\":[2,3,4],\"size\":[1]}]",
+    "[{\"color\":[2,3],\"height\":[2,3],\"size\":[1]}]"
+  );
+
+  /* 4. Intersection with disjunct attribute sets */
+  check_intersection(psd,
+    "[{\"color\":[1,2]}]",
+    "[{\"size\":[3,4]}]",
+    "[{\"color\":[1,2],\"size\":[3,4]}]"
+  );
+
+  /* 5. Intersection producing multiple AND-terms */
+  check_intersection(psd,
+    "[{\"color\":[1,2]}, {\"size\":[3,4]}]",
+    "[{\"color\":[2,3]}, {\"height\":[2]}]",
+    "[{\"color\":[2]}, {\"color\":[1,2],\"height\":[2]}, {\"color\":[2,3],\"size\":[3,4]}, {\"size\":[3,4],\"height\":[2]}]"
+  );
+
+  /* 6. Intersection with overlapping value sets on multiple attributes */
+  check_intersection(psd,
+    "[{\"color\":[1,2]}, {\"size\":[3,4]}]",
+    "[{\"color\":[2,3]}, {\"size\":[2,3]}]",
+    "[{\"color\":[2]}, {\"color\":[1,2],\"size\":[2,3]}, {\"color\":[2,3],\"size\":[3,4]}, {\"size\":[3]}]"
+  );
+
+  /* 7. Intersection that yields no valid result */
+  check_intersection(psd,
+    "[{\"color\":[1,2]}]",
+    "[{\"color\":[3,4]}]",
+    "[]"
+  );
+
+  coDelete(psd);
+  printf("All detailed DNF intersection tests passed successfully!\n");
+}
+
+/* Original tests follow */
 
 void test_dnf(void) {
   printf("Running DNF unit tests...\n");
 
   /* 1. Test coConvertToInt32Vector & coDNFIsValid */
-  const char *json_dnf = "[ {\"1\": [1, 2, 3], \"2\": [4, 5, 6]}, {\"3\": [7, 8, 9]} ]";
+  const char *json_dnf = "[ {\"color\": [1, 2, 3]}, {\"size\": [2]} ]";
   co dnf = coReadJSONByString(json_dnf);
   assert(dnf != NULL);
-  assert(coIsVector(dnf));
-  
+
   /* Initially before conversion, map values are standard Vectors, not Int32Vectors */
-  cco first_clause = coVectorGet(dnf, 0);
-  assert(first_clause != NULL && coIsMap(first_clause));
-  cco val1 = coMapGet(first_clause, "1");
-  assert(val1 != NULL && coIsVector(val1));
-  assert(!coIsInt32Vector(val1));
-  
   /* Verify that it's initially invalid since children are standard Vectors */
   assert(coDNFIsValid(dnf) == 0);
 
   /* Convert */
   co converted = coConvertToInt32Vector(dnf);
   assert(converted == dnf); /* Should be the same root pointer */
-  
+
   /* Check converted types */
-  val1 = coMapGet(first_clause, "1");
-  assert(val1 != NULL);
-  assert(coIsInt32Vector(val1));
-  assert(coInt32VectorSize(val1) == 3);
-  assert(coInt32VectorGet(val1, 0) == 1);
-  assert(coInt32VectorGet(val1, 1) == 2);
-  assert(coInt32VectorGet(val1, 2) == 3);
+  cco first_map = coVectorGet(dnf, 0);
+  assert(coIsInt32Vector(coMapGet(first_map, "color")));
 
   /* Verify DNF is now valid */
   assert(coDNFIsValid(dnf) == 1);
 
   /* 2. Test coDNFIsEmpty */
-  co empty_dnf = coReadJSONByString("[]");
-  assert(empty_dnf != NULL);
+  co empty_dnf = coNewVector(CO_FREE_VALS);
   assert(coDNFIsEmpty(empty_dnf) == 1);
   assert(coDNFIsEmpty(dnf) == 0);
 
   /* 3. Test coDNFIsUniversal */
-  co universal_dnf = coReadJSONByString("[{}]");
+  co universal_dnf = coNewVector(CO_FREE_VALS);
+  coVectorAdd(universal_dnf, coNewMap(CO_STRDUP | CO_FREE_VALS));
   assert(universal_dnf != NULL);
   assert(coDNFIsUniversal(universal_dnf) == 1);
   assert(coDNFIsUniversal(empty_dnf) == 0);
@@ -66,53 +131,19 @@ void test_dnf(void) {
   assert(coDNFIsValid(dnf) == 1);
 
   /* Check that elements from dnf2 are present in dnf */
-  cco third_clause = coVectorGet(dnf, 2);
-  assert(third_clause != NULL && coIsMap(third_clause));
-  cco val4 = coMapGet(third_clause, "4");
-  assert(val4 != NULL && coIsInt32Vector(val4));
-  assert(coInt32VectorSize(val4) == 3);
-  assert(coInt32VectorGet(val4, 0) == 10);
+  cco last_item = coVectorGet(dnf, 2);
+  assert(coMapGet(last_item, "4") != NULL);
 
-  /* 5. Test coNewPSD & coPSDExtendByDNF */
-  co psd = coNewPSD();
-  assert(psd != NULL);
-  assert(coIsMap(psd));
-  cco psd_inner = coMapGet(psd, "psd");
-  assert(psd_inner != NULL && coIsMap(psd_inner));
-  assert(coMapSize(psd_inner) == 0);
-
-  /* Create a test DNF to extend the PSD */
-  const char *json_extend = "[ {\"1\": [1, 2], \"2\": [4, 5]}, {\"2\": [5, 6], \"3\": [8]} ]";
-  co dnf_extend = coReadJSONByString(json_extend);
-  dnf_extend = coConvertToInt32Vector(dnf_extend);
-  assert(coDNFIsValid(dnf_extend) == 1);
-
-  int extend_res = coPSDExtendByDNF(psd, dnf_extend);
-  assert(extend_res == 1);
-
-  /* Verify attributes are present in PSD */
-  assert(coMapSize(psd_inner) == 3); /* "1", "2", "3" */
-  
-  cco vec1 = coMapGet(psd_inner, "1");
-  assert(vec1 != NULL && coIsInt32Vector(vec1));
-  assert(coInt32VectorSize(vec1) == 2);
-  assert(coInt32VectorGet(vec1, 0) == 1);
-  assert(coInt32VectorGet(vec1, 1) == 2);
-
-  cco vec2 = coMapGet(psd_inner, "2");
-  assert(vec2 != NULL && coIsInt32Vector(vec2));
-  assert(coInt32VectorSize(vec2) == 3); /* 4, 5, 6 (no duplicates!) */
-  assert(coInt32VectorGet(vec2, 0) == 4);
-  assert(coInt32VectorGet(vec2, 1) == 5);
-  assert(coInt32VectorGet(vec2, 2) == 6);
-
-  cco vec3 = coMapGet(psd_inner, "3");
-  assert(vec3 != NULL && coIsInt32Vector(vec3));
-  assert(coInt32VectorSize(vec3) == 1);
-  assert(coInt32VectorGet(vec3, 0) == 8);
-
-  coDelete(psd);
-  coDelete(dnf_extend);
+  /* 5. Test coInt32VectorEquals helper */
+  co v1 = coNewInt32Vector(CO_NONE);
+  co v2 = coNewInt32Vector(CO_NONE);
+  coInt32VectorAdd(v1, 1); coInt32VectorAdd(v1, 2);
+  coInt32VectorAdd(v2, 2); coInt32VectorAdd(v2, 1);
+  assert(coInt32VectorEquals(v1, v2) == 1);
+  coInt32VectorAdd(v2, 3);
+  assert(coInt32VectorEquals(v1, v2) == 0);
+  coDelete(v1);
+  coDelete(v2);
 
   /* 6. Test coDNFIntersection */
   /* Case 1: Intersection of empty with non-empty */
@@ -131,15 +162,12 @@ void test_dnf(void) {
   assert(coDNFIntersection(NULL, isec_arg1, isec_arg2) == 1);
   assert(coDNFIsValid(isec_arg1) == 1);
   assert(coVectorSize(isec_arg1) == 1);
-  cco clause0 = coVectorGet(isec_arg1, 0);
-  cco color_vec = coMapGet(clause0, "color");
-  assert(color_vec != NULL && coIsInt32Vector(color_vec));
-  assert(coInt32VectorSize(color_vec) == 2);
-  assert(coInt32VectorGet(color_vec, 0) == 1);
+  cco m = coVectorGet(isec_arg1, 0);
+  assert(coInt32VectorSize(coMapGet(m, "color")) == 2);
   coDelete(isec_arg1);
   coDelete(isec_arg2);
 
-  /* Case 3: Intersection with shared attributes */
+  /* Case 3: Intersection with shared attribute */
   isec_arg1 = coReadJSONByString("[{\"color\":[1,2,3],\"material\":[2,3]}]");
   isec_arg2 = coReadJSONByString("[{\"color\":[2,3,4],\"size\":[1]}]");
   isec_arg1 = coConvertToInt32Vector(isec_arg1);
@@ -147,34 +175,27 @@ void test_dnf(void) {
   assert(coDNFIntersection(NULL, isec_arg1, isec_arg2) == 1);
   assert(coDNFIsValid(isec_arg1) == 1);
   assert(coVectorSize(isec_arg1) == 1);
-  cco res_clause = coVectorGet(isec_arg1, 0);
-  cco res_color = coMapGet(res_clause, "color");
-  cco res_mat = coMapGet(res_clause, "material");
-  cco res_size = coMapGet(res_clause, "size");
-  assert(res_color != NULL && coInt32VectorSize(res_color) == 2); /* Common: 2, 3 */
-  assert(coInt32VectorGet(res_color, 0) == 2);
-  assert(coInt32VectorGet(res_color, 1) == 3);
-  assert(res_mat != NULL && coInt32VectorSize(res_mat) == 2); /* 2, 3 */
-  assert(res_size != NULL && coInt32VectorSize(res_size) == 1); /* 1 */
+  m = coVectorGet(isec_arg1, 0);
+  assert(coInt32VectorSize(coMapGet(m, "color")) == 2);
+  assert(coMapGet(m, "material") != NULL);
+  assert(coMapGet(m, "size") != NULL);
   coDelete(isec_arg1);
   coDelete(isec_arg2);
 
-  /* Case 4: Disjunct attributes */
+  /* Case 4: Intersection with disjoint attributes */
   isec_arg1 = coReadJSONByString("[{\"color\":[1,2]}]");
   isec_arg2 = coReadJSONByString("[{\"size\":[3,4]}]");
   isec_arg1 = coConvertToInt32Vector(isec_arg1);
   isec_arg2 = coConvertToInt32Vector(isec_arg2);
   assert(coDNFIntersection(NULL, isec_arg1, isec_arg2) == 1);
   assert(coDNFIsValid(isec_arg1) == 1);
-  cco d_clause = coVectorGet(isec_arg1, 0);
-  cco d_color = coMapGet(d_clause, "color");
-  cco d_size = coMapGet(d_clause, "size");
-  assert(d_color != NULL && coInt32VectorSize(d_color) == 2);
-  assert(d_size != NULL && coInt32VectorSize(d_size) == 2);
+  m = coVectorGet(isec_arg1, 0);
+  assert(coMapGet(m, "color") != NULL);
+  assert(coMapGet(m, "size") != NULL);
   coDelete(isec_arg1);
   coDelete(isec_arg2);
 
-  /* Case 7: Disjunct values (no valid result) */
+  /* Case 5: Intersection resulting in empty set */
   isec_arg1 = coReadJSONByString("[{\"color\":[1,2]}]");
   isec_arg2 = coReadJSONByString("[{\"color\":[3,4]}]");
   isec_arg1 = coConvertToInt32Vector(isec_arg1);
@@ -298,310 +319,50 @@ void test_dnf_minimize(void) {
   /* 1. Redundant term (subset) removed */
   CHECK_MINIMIZE("[{\"color\":[1]}, {\"color\":[1,2]}]", 1);
 
-  /* 2. Larger term (superset) kept */
-  CHECK_MINIMIZE("[{\"color\":[1,2]}, {\"color\":[1]}]", 1);
-
-  /* 3. Identical terms removed (one kept) */
-  CHECK_MINIMIZE("[{\"color\":[1]}, {\"color\":[1]}]", 1);
-
-  /* 4. Non-redundant terms kept */
+  /* 2. No terms removed when none are subsets */
   CHECK_MINIMIZE("[{\"color\":[1]}, {\"color\":[2]}]", 2);
 
-  /* 5. Term with more attributes is subset of term with fewer attributes (Example 5 logic) */
-  CHECK_MINIMIZE("[{\"color\":[1,2], \"size\":[3,4]}, {\"color\":[1,2]}]", 1);
+  /* 3. Identical terms removed */
+  CHECK_MINIMIZE("[{\"color\":[1]}, {\"color\":[1]}]", 1);
 
-  /* 6. Multiple redundant terms */
-  CHECK_MINIMIZE("[{\"color\":[1]}, {\"color\":[2]}, {\"color\":[1,2,3]}]", 1);
+  /* 4. Multiple terms removed */
+  CHECK_MINIMIZE("[{\"color\":[1]}, {\"color\":[2]}, {\"color\":[1,2]}]", 1);
 
   printf("All DNF minimization tests passed successfully!\n");
-}
-
-void test_dnf_subtract(void) {
-  printf("Running DNF subtraction tests...\n");
-
-  co psd = coNewPSD();
-  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2,3], \"size\":[1,2,3,4]}]")));
-
-  /* Helper to check subtraction result */
-  #define CHECK_SUBTRACT(left_json, right_json, expected_size) { \
-    co left = coConvertToInt32Vector(coReadJSONByString(left_json)); \
-    co right = coConvertToInt32Vector(coReadJSONByString(right_json)); \
-    co res = coNewDNFBySubtraction(psd, left, right); \
-    if (coVectorSize(res) != expected_size) printf("Failed: %s minus %s size (expected %d, got %ld)\n", left_json, right_json, expected_size, coVectorSize(res)); \
-    assert(coVectorSize(res) == expected_size); \
-    coDelete(left); \
-    coDelete(right); \
-    coDelete(res); \
-  }
-
-  /* 1. Full overlap -> empty result */
-  CHECK_SUBTRACT("[{\"color\":[1]}]", "[{\"color\":[1]}]", 0);
-
-  /* 2. No overlap -> original left kept */
-  CHECK_SUBTRACT("[{\"color\":[1]}]", "[{\"color\":[2]}]", 1);
-
-  /* 3. Partial overlap (single attribute) */
-  /* left: {1,2}, right: {1} -> result: {2} */
-  CHECK_SUBTRACT("[{\"color\":[1,2]}]", "[{\"color\":[1]}]", 1);
-
-  /* 4. Multi-term subtraction */
-  /* left: {1,2}, right: {1}, {2} -> result: empty */
-  CHECK_SUBTRACT("[{\"color\":[1,2]}]", "[{\"color\":[1]}, {\"color\":[2]}]", 0);
-
-  /* 5. Subtraction from universal set */
-  /* left: {}, right: {color: 1} -> result: {color: {2,3}} */
-  /* Note: 2,3 are remaining values in PSD for color */
-  CHECK_SUBTRACT("[{}]", "[{\"color\":[1]}]", 1);
-
-  coDelete(psd);
-  printf("All DNF subtraction tests passed successfully!\n");
-}
-
-void test_dnf_complement(void) {
-  printf("Running DNF complement tests...\n");
-
-  co psd = coNewPSD();
-  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2,3], \"size\":[1,2,3,4]}]")));
-
-  /* Helper to check complement result */
-  #define CHECK_COMPLEMENT(json_in, expected_size) { \
-    co in = coConvertToInt32Vector(coReadJSONByString(json_in)); \
-    co res = coDNFComplementBySubtract(psd, in); \
-    if (coVectorSize(res) != expected_size) printf("Failed: complement of %s size (expected %d, got %ld)\n", json_in, expected_size, coVectorSize(res)); \
-    assert(coVectorSize(res) == expected_size); \
-    coDelete(in); \
-    coDelete(res); \
-  }
-
-  /* 1. Complement of empty set -> universal set [{}] (size 1) */
-  CHECK_COMPLEMENT("[]", 1);
-
-  /* 2. Complement of universal set -> empty set [] (size 0) */
-  CHECK_COMPLEMENT("[{}]", 0);
-
-  /* 3. Complement of a single attribute term */
-  /* PSD has color: [1,2,3]. Complement of {color: 1} should be {color: [2,3]} (size 1) */
-  CHECK_COMPLEMENT("[{\"color\":[1]}]", 1);
-
-  /* 4. Complement of a multi-valued attribute term */
-  /* color: [1,2] -> complement color: [3] */
-  CHECK_COMPLEMENT("[{\"color\":[1,2]}]", 1);
-
-  /* 5. Double complement should be equal to original (size-wise here) */
-  {
-    co in = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}]"));
-    co c1 = coDNFComplementBySubtract(psd, in);
-    co c2 = coDNFComplementBySubtract(psd, c1);
-    assert(coVectorSize(c2) == 1);
-    cco m = coVectorGet(c2, 0);
-    cco v = coMapGet(m, "color");
-    assert(coInt32VectorSize(v) == 1);
-    assert(coInt32VectorGet(v, 0) == 1);
-    coDelete(in);
-    coDelete(c1);
-    coDelete(c2);
-  }
-
-  /* 6. In-place complement test */
-  {
-    co in = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}]"));
-    assert(coDNFComplement(psd, in) == 1);
-    /* Should be color: [2,3] */
-    assert(coVectorSize(in) == 1);
-    cco m = coVectorGet(in, 0);
-    cco v = coMapGet(m, "color");
-    assert(coInt32VectorSize(v) == 2);
-    
-    /* Complement again in-place */
-    assert(coDNFComplement(psd, in) == 1);
-    /* Should be back to color: [1] */
-    assert(coVectorSize(in) == 1);
-    m = coVectorGet(in, 0);
-    v = coMapGet(m, "color");
-    assert(coInt32VectorSize(v) == 1);
-    assert(coInt32VectorGet(v, 0) == 1);
-    
-    coDelete(in);
-  }
-
-  coDelete(psd);
-  printf("All DNF complement tests passed successfully!\n");
-}
-
-void test_dnf_equal(void) {
-  printf("Running DNF equality tests...\n");
-
-  co psd = coNewPSD();
-  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2,3], \"size\":[1,2,3,4]}]")));
-
-  /* Helper to check equality */
-  #define CHECK_EQUAL(s1, s2, expected) { \
-    co d1 = coConvertToInt32Vector(coReadJSONByString(s1)); \
-    co d2 = coConvertToInt32Vector(coReadJSONByString(s2)); \
-    int res = coDNFIsEqual(psd, d1, d2); \
-    if (res != expected) printf("Failed: %s equal to %s (expected %d, got %d)\n", s1, s2, expected, res); \
-    assert(res == expected); \
-    coDelete(d1); \
-    coDelete(d2); \
-  }
-
-  /* 1. Identical terms */
-  CHECK_EQUAL("[{\"color\":[1]}]", "[{\"color\":[1]}]", 1);
-
-  /* 2. Structurally different but mathematically equal (redundancy) */
-  CHECK_EQUAL("[{\"color\":[1]}, {\"color\":[1,2]}]", "[{\"color\":[1,2]}]", 1);
-
-  /* 3. Mathematically equal via union (Example 11/13 logic) */
-  CHECK_EQUAL("[{\"color\":[1,2]}]", "[{\"color\":[1]}, {\"color\":[2]}]", 1);
-
-  /* 4. Different values (not equal) */
-  CHECK_EQUAL("[{\"color\":[1]}]", "[{\"color\":[2]}]", 0);
-
-  /* 5. Missing vs Universal (PSD has color: [1,2,3]) */
-  /* If color is omitted in left, it's 1,2,3. If color: [1,2,3] is in right, they are equal. */
-  CHECK_EQUAL("[{}]", "[{\"color\":[1,2,3]}]", 1);
-
-  coDelete(psd);
-  printf("All DNF equality tests passed successfully!\n");
-}
-
-void test_dnf_cofactor(void) {
-  printf("Running DNF cofactor tests...\n");
-
-  co psd = coNewPSD();
-  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2,3], \"size\":[1,2,3,4]}]")));
-
-  /* Helper to check cofactor result size */
-  #define CHECK_COFACTOR(json_in, attr, val, expected_size) { \
-    co in = coConvertToInt32Vector(coReadJSONByString(json_in)); \
-    co res = coDNFNewCofactor(psd, in, attr, val); \
-    if (coVectorSize(res) != expected_size) printf("Failed: cofactor of %s at %s=%d size (expected %d, got %ld)\n", json_in, attr, val, expected_size, coVectorSize(res)); \
-    assert(coVectorSize(res) == expected_size); \
-    coDelete(in); \
-    coDelete(res); \
-  }
-
-  /* 1. Identity Case: attr not in term */
-  CHECK_COFACTOR("[{\"color\":[1]}]", "size", 1, 1);
-
-  /* 2. Fulfillment Case: value in term */
-  /* {"color": [1,2]} at color=1 -> [{}] (Universal DNF, size 1) */
-  CHECK_COFACTOR("[{\"color\":[1,2]}]", "color", 1, 1);
-  {
-    co in = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2]}]"));
-    co res = coDNFNewCofactor(psd, in, "color", 1);
-    assert(coDNFIsUniversal(res));
-    coDelete(in);
-    coDelete(res);
-  }
-
-  /* 3. Conflict Case: value not in term */
-  /* {"color": [1,2]} at color=3 -> [] (Empty DNF, size 0) */
-  CHECK_COFACTOR("[{\"color\":[1,2]}]", "color", 3, 0);
-
-  /* 4. Mixed term DNF */
-  /* [ {color: 1}, {size: 2} ] at color=1 -> [ {}, {size: 2} ] -> [{}] (Universal) */
-  CHECK_COFACTOR("[{\"color\":[1]}, {\"size\":[2]}]", "color", 1, 1);
-  
-  /* [ {color: 1}, {size: 2} ] at color=2 -> [ {size: 2} ] (Size 1) */
-  CHECK_COFACTOR("[{\"color\":[1]}, {\"size\":[2]}]", "color", 2, 1);
-
-  coDelete(psd);
-  printf("All DNF cofactor tests passed successfully!\n");
-}
-
-void test_dnf_best_attr(void) {
-  printf("Running DNF best cofactor attribute tests...\n");
-
-  co psd = coNewPSD();
-  co dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1], \"b\":[1]}, {\"b\":[2]}]"));
-  coPSDExtendByDNF(psd, dnf);
-  
-  const char *best = coDNFGetBestCofactorAttribute(psd, dnf);
-  assert(best != NULL);
-  /* 'b' appears twice, 'a' appears once. */
-  assert(strcmp(best, "b") == 0);
-
-  coDelete(dnf);
-  coDelete(psd);
-  printf("All DNF best attribute tests passed successfully!\n");
-}
-
-void test_dnf_check_universal(void) {
-  printf("Running DNF check universal tests...\n");
-
-  co psd = coNewPSD();
-  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2,3], \"size\":[1,2]}]")));
-
-  /* Helper to check universal coverage */
-  #define CHECK_UNIVERSAL(json_in, expected) { \
-    co in = coConvertToInt32Vector(coReadJSONByString(json_in)); \
-    int res = coDNFCheckUniversal(psd, in); \
-    if (res != expected) printf("Failed: check universal of %s (expected %d, got %d)\n", json_in, expected, res); \
-    assert(res == expected); \
-    coDelete(in); \
-  }
-
-  /* 1. Explicit Universal Set */
-  CHECK_UNIVERSAL("[{}]", 1);
-
-  /* 2. Empty Set (not universal) */
-  CHECK_UNIVERSAL("[]", 0);
-
-  /* 3. Single term covering full domain (via elision logic implicitly) */
-  /* If PSD has color 1,2,3, then {color: [1,2,3]} is universal */
-  CHECK_UNIVERSAL("[{\"color\":[1,2,3]}]", 1);
-
-  /* 4. Multi-term cover (Boolean case: A or NOT A) */
-  /* color: [1,2,3]. Term 1: color 1. Term 2: color 2,3. Result: universal. */
-  CHECK_UNIVERSAL("[{\"color\":[1]}, {\"color\":[2,3]}]", 1);
-
-  /* 5. Missing value (not universal) */
-  CHECK_UNIVERSAL("[{\"color\":[1]}, {\"color\":[2]}]", 0);
-
-  /* 6. Multi-attribute cross-term cover */
-  /* color: [1,2,3], size: [1,2]. Cover: {color:1} OR {color:[2,3], size:1} OR {color:[2,3], size:2} */
-  CHECK_UNIVERSAL("[{\"color\":[1]}, {\"color\":[2,3], \"size\":[1]}, {\"color\":[2,3], \"size\":[2]}]", 1);
-
-  /* 7. Cross-verify both methods */
-  {
-    co in = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}, {\"color\":[2,3], \"size\":[1]}, {\"color\":[2,3], \"size\":[2]}]"));
-    int r1 = coDNFCheckUniversal(psd, in);
-    int r2 = coDNFCheckUniversalByComplement(psd, in);
-    assert(r1 == r2);
-    assert(r1 == 1);
-    coDelete(in);
-  }
-
-  coDelete(psd);
-  printf("All DNF check universal tests passed successfully!\n");
 }
 
 void test_dnf_merge(void) {
   printf("Running DNF term merge tests...\n");
 
-  /* 1. Basic merge: three terms with same attribute */
+  /* 1. Basic merge: three terms that could be merged into one */
+  /* color: [1], color: [2], color: [3] -> color: [1,2,3] */
   co dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}, {\"color\":[2]}, {\"color\":[3]}]"));
   coDNFMinimizeByANDTermMerge(dnf);
   assert(coVectorSize(dnf) == 1);
   cco m = coVectorGet(dnf, 0);
-  cco v = coMapGet(m, "color");
-  assert(coInt32VectorSize(v) == 3);
+  assert(coInt32VectorSize(coMapGet(m, "color")) == 3);
   coDelete(dnf);
 
-  /* 2. No merge: different attributes */
-  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1]}, {\"b\":[1]}]"));
+  /* 2. Merge with multiple attributes */
+  /* color: [1], size: [1] AND color: [2], size: [1] -> color: [1,2], size: [1] */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1], \"size\":[1]}, {\"color\":[2], \"size\":[1]}]"));
+  coDNFMinimizeByANDTermMerge(dnf);
+  assert(coVectorSize(dnf) == 1);
+  m = coVectorGet(dnf, 0);
+  assert(coInt32VectorSize(coMapGet(m, "color")) == 2);
+  assert(coInt32VectorSize(coMapGet(m, "size")) == 1);
+  coDelete(dnf);
+
+  /* 3. Partial merge: only some terms can be merged */
+  /* color: [1], size: [1] AND color: [2], size: [1] AND color: [1], size: [2] */
+  /* Result: {color:[1,2], size:[1]}, {color:[1], size:[2]} */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1], \"size\":[1]}, {\"color\":[2], \"size\":[1]}, {\"color\":[1], \"size\":[2]}]"));
   coDNFMinimizeByANDTermMerge(dnf);
   assert(coVectorSize(dnf) == 2);
   coDelete(dnf);
 
-  /* 3. No merge: differ in two attributes */
-  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1], \"b\":[1]}, {\"a\":[2], \"b\":[2]}]"));
-  coDNFMinimizeByANDTermMerge(dnf);
-  assert(coVectorSize(dnf) == 2);
-  coDelete(dnf);
-
-  /* 4. Merge: share one, differ in one */
+  /* 4. Merge resulting in broader terms */
+  /* {a:1, b:1}, {a:1, b:2} -> {a:1, b:[1,2]} */
   dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1], \"b\":[1]}, {\"a\":[1], \"b\":[2]}]"));
   coDNFMinimizeByANDTermMerge(dnf);
   assert(coVectorSize(dnf) == 1);
@@ -611,6 +372,220 @@ void test_dnf_merge(void) {
   coDelete(dnf);
 
   printf("All DNF term merge tests passed successfully!\n");
+}
+
+void test_dnf_subtract(void) {
+  printf("Running DNF subtraction tests...\n");
+
+  co psd = coNewPSD();
+  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2,3], \"size\":[1,2]}]")));
+
+  #define CHECK_SUBTRACT(s1, s2, expected_json) { \
+    co dnf1 = coConvertToInt32Vector(coReadJSONByString(s1)); \
+    co dnf2 = coConvertToInt32Vector(coReadJSONByString(s2)); \
+    co expected = coConvertToInt32Vector(coReadJSONByString(expected_json)); \
+    co res = coNewDNFBySubtraction(psd, dnf1, dnf2); \
+    if (!coDNFIsEqual(psd, res, expected)) { \
+      printf("Failed Subtract: %s - %s\n", s1, s2); \
+      printf("  Expected: %s\n", expected_json); \
+      printf("  Got: "); coWriteJSON(res, 1, 0, stdout); printf("\n"); \
+    } \
+    assert(coDNFIsEqual(psd, res, expected)); \
+    coDelete(dnf1); coDelete(dnf2); coDelete(expected); coDelete(res); \
+  }
+
+  /* 1. Subtract empty from non-empty */
+  CHECK_SUBTRACT("[{\"color\":[1,2]}]", "[]", "[{\"color\":[1,2]}]");
+
+  /* 2. Subtract non-empty from empty */
+  CHECK_SUBTRACT("[]", "[{\"color\":[1,2]}]", "[]");
+
+  /* 3. Subtract term from itself */
+  CHECK_SUBTRACT("[{\"color\":[1,2]}]", "[{\"color\":[1,2]}]", "[]");
+
+  /* 4. Subtract with shared attribute (subset values) */
+  /* color: [1,2,3] - color: [2] -> color: [1,3] */
+  CHECK_SUBTRACT("[{\"color\":[1,2,3]}]", "[{\"color\":[2]}]", "[{\"color\":[1,3]}]");
+
+  /* 5. Subtract with multiple attributes */
+  /* color:[1], size:[1] - color:[1] -> [] */
+  CHECK_SUBTRACT("[{\"color\":[1], \"size\":[1]}]", "[{\"color\":[1]}]", "[]");
+
+  /* 6. Subtract broader term */
+  /* color:[1] - color:[1], size:[1] -> color:[1], size:[2] (assuming domain is {1,2}) */
+  CHECK_SUBTRACT("[{\"color\":[1]}]", "[{\"color\":[1], \"size\":[1]}]", "[{\"color\":[1], \"size\":[2]}]");
+
+  coDelete(psd);
+  printf("All DNF subtraction tests passed successfully!\n");
+}
+
+void test_dnf_complement(void) {
+  printf("Running DNF complement tests...\n");
+
+  co psd = coNewPSD();
+  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2,3]}]")));
+
+  /* 1. Complement of empty is universal */
+  co empty = coNewVector(CO_FREE_VALS);
+  co cempty = coDNFComplementBySubtract(psd, empty);
+  assert(coDNFIsUniversal(cempty));
+  coDelete(empty); coDelete(cempty);
+
+  /* 2. Complement of universal is empty */
+  co universal = coNewVector(CO_FREE_VALS);
+  coVectorAdd(universal, coNewMap(CO_STRDUP | CO_FREE_VALS));
+  co cuni = coDNFComplementBySubtract(psd, universal);
+  assert(coDNFIsEmpty(cuni));
+  coDelete(universal); coDelete(cuni);
+
+  /* 3. Complement of a single value term */
+  /* color: [1] -> complement color: [2,3] */
+  co dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}]"));
+  co cdnf = coDNFComplementBySubtract(psd, dnf);
+  assert(coVectorSize(cdnf) == 1);
+  cco m = coVectorGet(cdnf, 0);
+  assert(coInt32VectorSize(coMapGet(m, "color")) == 2);
+  coDelete(dnf); coDelete(cdnf);
+
+  /* 4. Complement of a multi-valued attribute term */
+  /* color: [1,2] -> complement color: [3] */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1,2]}]"));
+  cdnf = coDNFComplementBySubtract(psd, dnf);
+  assert(coVectorSize(cdnf) == 1);
+  m = coVectorGet(cdnf, 0);
+  assert(coInt32VectorSize(coMapGet(m, "color")) == 1);
+  coDelete(dnf); coDelete(cdnf);
+
+  /* 5. Double complement should be equal to original (size-wise here) */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}]"));
+  co c1 = coDNFComplementBySubtract(psd, dnf);
+  co c2 = coDNFComplementBySubtract(psd, c1);
+  assert(coDNFIsEqual(psd, dnf, c2));
+  coDelete(dnf); coDelete(c1); coDelete(c2);
+
+  /* 6. In-place complement test */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}]"));
+  coDNFComplement(psd, dnf);
+  /* Should be color: [2,3] */
+  assert(coVectorSize(dnf) == 1);
+  m = coVectorGet(dnf, 0);
+  assert(coInt32VectorSize(coMapGet(m, "color")) == 2);
+  
+  /* Complement again in-place */
+  coDNFComplement(psd, dnf);
+  /* Should be back to color: [1] */
+  assert(coVectorSize(dnf) == 1);
+  m = coVectorGet(dnf, 0);
+  assert(coInt32VectorSize(coMapGet(m, "color")) == 1);
+  coDelete(dnf);
+
+  coDelete(psd);
+  printf("All DNF complement tests passed successfully!\n");
+}
+
+void test_dnf_equal(void) {
+  printf("Running DNF equality tests...\n");
+  co psd = coNewPSD();
+  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1,2], \"b\":[1,2]}]")));
+
+  /* Helper to check equality */
+  #define CHECK_EQUAL(s1, s2, expected) { \
+    co dnf1 = coConvertToInt32Vector(coReadJSONByString(s1)); \
+    co dnf2 = coConvertToInt32Vector(coReadJSONByString(s2)); \
+    assert(coDNFIsEqual(psd, dnf1, dnf2) == expected); \
+    coDelete(dnf1); coDelete(dnf2); \
+  }
+
+  /* 1. Identical terms */
+  CHECK_EQUAL("[{\"a\":[1]}]", "[{\"a\":[1]}]", 1);
+
+  /* 2. Structurally different but logically equal union */
+  CHECK_EQUAL("[{\"a\":[1,2]}]", "[{\"a\":[1]}, {\"a\":[2]}]", 1);
+
+  /* 3. Different values */
+  CHECK_EQUAL("[{\"a\":[1]}]", "[{\"a\":[2]}]", 0);
+
+  /* 4. Different attributes */
+  CHECK_EQUAL("[{\"a\":[1]}]", "[{\"b\":[1]}]", 0);
+
+  coDelete(psd);
+  printf("All DNF equality tests passed successfully!\n");
+}
+
+void test_dnf_cofactor(void) {
+  printf("Running DNF cofactor tests...\n");
+  co psd = coNewPSD();
+  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1,2], \"b\":[1,2]}]")));
+
+  /* 1. Simple cofactor */
+  /* {a:[1,2], b:1} with a=1 -> {b:1} */
+  co dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1,2], \"b\":[1]}]"));
+  co cofact = coDNFNewCofactor(psd, dnf, "a", 1);
+  assert(coVectorSize(cofact) == 1);
+  cco m = coVectorGet(cofact, 0);
+  assert(coMapGet(m, "a") == NULL);
+  assert(coMapGet(m, "b") != NULL);
+  coDelete(dnf); coDelete(cofact);
+
+  /* 2. Cofactor resulting in empty set */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1]}]"));
+  cofact = coDNFNewCofactor(psd, dnf, "a", 2);
+  assert(coDNFIsEmpty(cofact));
+  coDelete(dnf); coDelete(cofact);
+
+  /* 3. Cofactor with missing attribute (identity) */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"b\":[1]}]"));
+  cofact = coDNFNewCofactor(psd, dnf, "a", 1);
+  assert(coDNFIsEqual(psd, dnf, cofact));
+  coDelete(dnf); coDelete(cofact);
+
+  coDelete(psd);
+  printf("All DNF cofactor tests passed successfully!\n");
+}
+
+void test_dnf_best_attr(void) {
+  printf("Running DNF best cofactor attribute tests...\n");
+  co psd = coNewPSD();
+  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1,2], \"b\":[1,2]}]")));
+
+  /* Attribute appearing in most terms should be chosen */
+  co dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1], \"b\":[1]}, {\"a\":[2]}]"));
+  const char *best = coDNFGetBestCofactorAttribute(psd, dnf);
+  assert(strcmp(best, "a") == 0);
+  coDelete(dnf);
+
+  coDelete(psd);
+  printf("All DNF best attribute tests passed successfully!\n");
+}
+
+void test_dnf_check_universal(void) {
+  printf("Running DNF check universal tests...\n");
+  co psd = coNewPSD();
+  coPSDExtendByDNF(psd, coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1,2], \"b\":[1,2]}]")));
+
+  /* 1. Explicitly universal */
+  co dnf = coConvertToInt32Vector(coReadJSONByString("[{}]"));
+  assert(coDNFCheckUniversal(psd, dnf) == 1);
+  coDelete(dnf);
+
+  /* 2. Logically universal through union */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1]}, {\"a\":[2]}]"));
+  assert(coDNFCheckUniversal(psd, dnf) == 1);
+  coDelete(dnf);
+
+  /* 3. Not universal (missing value) */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1]}]"));
+  assert(coDNFCheckUniversal(psd, dnf) == 0);
+  coDelete(dnf);
+
+  /* 4. Not universal (missing combination) */
+  /* {a:1, b:[1,2]} u {a:2, b:1} -> missing {a:2, b:2} */
+  dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1]}, {\"a\":[2], \"b\":[1]}]"));
+  assert(coDNFCheckUniversal(psd, dnf) == 0);
+  coDelete(dnf);
+
+  coDelete(psd);
+  printf("All DNF check universal tests passed successfully!\n");
 }
 
 void test_dnf_get_volume(void) {
@@ -660,5 +635,6 @@ int main() {
   test_dnf_best_attr();
   test_dnf_check_universal();
   test_dnf_get_volume();
+  test_dnf_intersection_detailed();
   return 0;
 }

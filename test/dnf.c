@@ -23,7 +23,7 @@ void print_help(const char *prog) {
   printf("  -cofactor <a> <v>   Execute DNF cofactor for attribute <a> and value <v>\n");
   printf("  -check-universal    Check whether a DNF covers the entire PSD space\n");
   printf("  -test               Execute several internal consistency tests on a single DNF\n");
-  printf("  -test-isec <a> <v>  Execute intersection benchmark with <a> terms and <v> values each\n");
+  printf("  -test-isec <a> <v>  Execute intersection benchmark (requires -gpsd) with <a> terms and <v> values each\n");
   printf("  -o <file>           Write the resulting DNF to a named JSON file\n");
   printf("  -o1 <file>          Write the first input DNF (arg1) to a named JSON file\n");
   printf("  -o2 <file>          Write the second input DNF (arg2) to a named JSON file\n");
