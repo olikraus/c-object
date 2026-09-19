@@ -14,7 +14,7 @@
 debug: CFLAGS = -g -DCO_USE_ZLIB -Wall -I./co -I./co/expat
 sanitize: CFLAGS = -g -DCO_USE_ZLIB -Wall -fsanitize=address -I./co -I./co/expat
 release: CFLAGS = -O4 -DNDEBUG -DCO_USE_ZLIB -Wall -I./co -I./co/expat
-#gprof: CFLAGS = -g -pg -DCO_USE_ZLIB -Wall -I./co
+gprof: CFLAGS = -g -no-pie -fno-omit-frame-pointer -pg -DCO_USE_ZLIB -Wall -I./co
 
 ifeq ($(shell uname -s),Linux)
 LDFLAGS = -lelf -lm -lz -lpthread
@@ -22,7 +22,7 @@ else
 LDFLAGS = -Wl,-Bstatic -lelf -lm -lz -lpthread
 endif
 
-COSRC = ./co/co.c ./co/co_extra.c ./co/co_dnf.c
+COSRC = ./co/co.c ./co/co_extra.c ./co/co_dnf.c ./co/co_bitset.c
 COOBJ = $(COSRC:.c=.o)
 EXPATSRC = ./co/co_xml.c ./co/expat/xmlparse.c ./co/expat/xmlrole.c ./co/expat/xmltok.c 
 EXPATOBJ = $(EXPATSRC:.c=.o)
@@ -36,7 +36,7 @@ release: all
 	strip a2l_search.exe
 	strip json2utf8json.exe
 	
-#gprof: all
+gprof: all
 
 all: co_test co_dnf_test co_a2l a2l_info a2l_search csv2json csvprint hex2json elf2json json_search json_compare json_format json2utf8json outline xml_test dnf
 	

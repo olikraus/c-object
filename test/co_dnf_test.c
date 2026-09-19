@@ -337,6 +337,7 @@ void test_dnf_merge(void) {
   /* 1. Basic merge: three terms that could be merged into one */
   /* color: [1], color: [2], color: [3] -> color: [1,2,3] */
   co dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1]}, {\"color\":[2]}, {\"color\":[3]}]"));
+  coDNFMinimizeANDTermSubset(dnf);
   coDNFMinimizeByANDTermMerge(dnf);
   assert(coVectorSize(dnf) == 1);
   cco m = coVectorGet(dnf, 0);
@@ -346,6 +347,7 @@ void test_dnf_merge(void) {
   /* 2. Merge with multiple attributes */
   /* color: [1], size: [1] AND color: [2], size: [1] -> color: [1,2], size: [1] */
   dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1], \"size\":[1]}, {\"color\":[2], \"size\":[1]}]"));
+  coDNFMinimizeANDTermSubset(dnf);
   coDNFMinimizeByANDTermMerge(dnf);
   assert(coVectorSize(dnf) == 1);
   m = coVectorGet(dnf, 0);
@@ -357,6 +359,7 @@ void test_dnf_merge(void) {
   /* color: [1], size: [1] AND color: [2], size: [1] AND color: [1], size: [2] */
   /* Result: {color:[1,2], size:[1]}, {color:[1], size:[2]} */
   dnf = coConvertToInt32Vector(coReadJSONByString("[{\"color\":[1], \"size\":[1]}, {\"color\":[2], \"size\":[1]}, {\"color\":[1], \"size\":[2]}]"));
+  coDNFMinimizeANDTermSubset(dnf);
   coDNFMinimizeByANDTermMerge(dnf);
   assert(coVectorSize(dnf) == 2);
   coDelete(dnf);
@@ -364,6 +367,7 @@ void test_dnf_merge(void) {
   /* 4. Merge resulting in broader terms */
   /* {a:1, b:1}, {a:1, b:2} -> {a:1, b:[1,2]} */
   dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1], \"b\":[1]}, {\"a\":[1], \"b\":[2]}]"));
+  coDNFMinimizeANDTermSubset(dnf);
   coDNFMinimizeByANDTermMerge(dnf);
   assert(coVectorSize(dnf) == 1);
   m = coVectorGet(dnf, 0);

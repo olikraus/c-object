@@ -437,6 +437,40 @@ The DNF can act as an operand in a multi-valued algebra representing a "set" in 
   Creates and returns a new PSD wrapper map with a single member `"psd"` initialized to an empty `coMap`.
 - **`int coPSDExtendByDNF(co psd, cco dnf)`**:
   Extends the multi-value space of the `psd` with the attributes and values from the `dnf`. It iterates through each clause and variable/attribute inside `dnf` and adds them to `psd` along with their values, guaranteeing that duplicate values are not added. Returns `1` on success, `0` on error.
+- **`void coBVPreparePSD(co psd)`**:
+  Prepares a Problem Space Description (PSD) for bitvector operations. It generates metadata that maps symbolic attribute-value pairs to unique bit positions. This function adds/updates the following members in the `psd` map:
+  - **`bvattributes`**: A map from attribute name to an `Int32Vector` containing `[index, start_bit, num_values]`.
+  - **`bvpos`**: An `Int32Vector` containing bit offsets. The last entry is the total number of bits.
+  - **`bvvaluepos`**: A nested map where `bvvaluepos[attr_name][value_as_string]` returns the local bit offset (as a Double object).
+  - **`bvmask`**: A `coVector` of bitvectors (`co_BVType`). Each bitvector is a mask where all bits belonging to the corresponding attribute (indexed by the attribute's order in the PSD) are set to one.
+
+---
+
+### I. BitVector Object (`coBitVectorType`)
+A high-performance bitset implementation that leverages SIMD instructions (SSE2, AVX2, AVX-512) for accelerated operations. Bitvectors are first-class objects and can be managed by standard containers.
+
+- **SIMD Detection**:
+  - `void coBVDetect(void)`: Detects the best available SIMD instruction set on the current CPU and configures the global dispatchers. This should be called once at application startup.
+
+- **Constructors & Destructors**:
+  - `co_BVType coNewBV(uint64_t bits)`: Creates a new bitvector object with at least `bits` capacity. The memory is 64-byte aligned and initialized to zero.
+  - `void coDeleteBV(co_BVType bv)`: Deletes the bitvector object. (Note: Standard `coDelete()` also works).
+
+- **API Functions**:
+  - `void coBVSet(co_BVType bv, uint64_t bit_idx)`: Sets the bit at `bit_idx` to 1.
+  - `void coBVClr(co_BVType bv, uint64_t bit_idx)`: Clears the bit at `bit_idx` to 0.
+  - `int coBVGet(co_BVType bv, uint64_t bit_idx)`: Returns the state of the bit at `bit_idx` (0 or 1).
+  - `void coBVOR(co_BVType res, co_BVType a, co_BVType b)`: Computes bitwise `res = a | b`.
+  - `void coBVAND(co_BVType res, co_BVType a, co_BVType b)`: Computes bitwise `res = a & b`.
+  - `void coBVANDNOT(co_BVType res, co_BVType a, co_BVType b)`: Computes bitwise `res = a & ~b`.
+  - `int coBVIsEqual(co_BVType a, co_BVType b)`: Returns `1` if all bits in `a` and `b` are identical, `0` otherwise.
+
+- **Conversion Functions**:
+  These functions bridge the gap between symbolic DNF representation and bitvector representation using a prepared PSD:
+  - `co_BVType coNewBVFromANDTerm(cco psd, cco and_term)`: Converts a symbolic `coMap` AND-term to a bitvector.
+  - `co coNewANDTermFromBV(cco psd, co_BVType bv)`: Converts a bitvector back to a symbolic `coMap` AND-term.
+  - `co coNewBVDNFFromDNF(cco psd, cco dnf)`: Converts a standard DNF (`Vector` of `Maps`) to a bitvector DNF (`Vector` of `co_BVType`).
+  - `co coNewDNFFromBVDNF(cco psd, cco bv_dnf)`: Converts a bitvector DNF back to a standard symbolic DNF.
 
 ---
 

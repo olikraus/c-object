@@ -98,6 +98,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <immintrin.h>
 #ifdef CO_USE_ZLIB
 #include "zlib.h"
 #endif /* CO_USE_ZLIB */
@@ -180,6 +181,18 @@ struct coStruct {
     } b;
   };
 };
+
+typedef struct coBVStruct {
+  coFn fn;
+  unsigned flags;
+  union {
+    uint64_t *u64;
+    __m128i *m128;
+    __m256i *m256;
+    __m512i *m512;
+  } data;
+  int cnt;
+} *co_BVType;
 
 struct coFnStruct {
   coInitFn init; // (*coInitFn)(co o);
@@ -465,5 +478,22 @@ int32_t coDNFGetVolumeANDTerm(cco psd, cco term);
 int32_t coDNFGetVolume(cco psd, cco dnf);
 co coNewPSD(void);
 int coPSDExtendByDNF(co psd, cco dnf);
+
+/* co_bitset.c */
+void coBVDetect(void);
+co_BVType coNewBV(uint64_t bits);
+void coDeleteBV(co_BVType bv);
+void coBVSet(co_BVType bv, uint64_t bit_idx);
+void coBVClr(co_BVType bv, uint64_t bit_idx);
+int coBVGet(co_BVType bv, uint64_t bit_idx);
+void coBVOR(co_BVType res, co_BVType a, co_BVType b);
+void coBVAND(co_BVType res, co_BVType a, co_BVType b);
+void coBVANDNOT(co_BVType res, co_BVType a, co_BVType b);
+int coBVIsEqual(co_BVType a, co_BVType b);
+void coBVPreparePSD(co psd);
+co_BVType coNewBVFromANDTerm(cco psd, cco and_term);
+co coNewANDTermFromBV(cco psd, co_BVType bv);
+co coNewBVDNFFromDNF(cco psd, cco dnf);
+co coNewDNFFromBVDNF(cco psd, cco bv_dnf);
 
 #endif /* CO_INCLUDE */

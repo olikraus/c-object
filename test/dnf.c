@@ -781,6 +781,7 @@ int main(int argc, char **argv) {
       long before_clear = coVectorSize(result);
       t1 = get_ms();
       coDNFMinimizeClearFullDomain(psd, result);
+      coDNFMinimizeANDTermSubset(result);
       t2 = get_ms();
       printf("  coDNFMinimizeClearFullDomain(result:%ld) -> result:%ld (%.2f ms)\n", 
              before_clear, coVectorSize(result), t2 - t1);
@@ -788,6 +789,7 @@ int main(int argc, char **argv) {
       long before_merge = coVectorSize(result);
       t1 = get_ms();
       coDNFMinimizeByANDTermMerge(result);
+      coDNFMinimizeANDTermSubset(result);
       t2 = get_ms();
       printf("  coDNFMinimizeByANDTermMerge(result:%ld) -> result:%ld (%.2f ms)\n", 
              before_merge, coVectorSize(result), t2 - t1);
@@ -812,6 +814,7 @@ int main(int argc, char **argv) {
       long before_clear2 = coVectorSize(result2);
       t1 = get_ms();
       coDNFMinimizeClearFullDomain(psd, result2);
+      coDNFMinimizeANDTermSubset(result2);
       t2 = get_ms();
       printf("  coDNFMinimizeClearFullDomain(result:%ld) -> result:%ld (%.2f ms)\n", 
              before_clear2, coVectorSize(result2), t2 - t1);
@@ -819,6 +822,7 @@ int main(int argc, char **argv) {
       long before_merge2 = coVectorSize(result2);
       t1 = get_ms();
       coDNFMinimizeByANDTermMerge(result2);
+      coDNFMinimizeANDTermSubset(result2);
       t2 = get_ms();
       printf("  coDNFMinimizeByANDTermMerge(result:%ld) -> result:%ld (%.2f ms)\n", 
              before_merge2, coVectorSize(result2), t2 - t1);

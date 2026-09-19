@@ -187,7 +187,6 @@ void coDNFMinimizeClearFullDomain(cco psd, co dnf) {
   for (i = 0; i < coVectorSize(dnf); i++) {
     coDNFMinimizeClearFullDomainANDTerm(psd, (co)coVectorGet(dnf, i));
   }
-  coDNFMinimizeANDTermSubset(dnf);
 }
 
 int coDNFUnion(cco psd, co arg1, cco arg2) {
@@ -219,6 +218,7 @@ int coDNFUnion(cco psd, co arg1, cco arg2) {
     }
   }
   coDNFMinimizeClearFullDomain(psd, arg1);
+  coDNFMinimizeANDTermSubset(arg1);
   return 1;
 }
 
@@ -549,9 +549,6 @@ co coNewDNFByIntersection(cco psd, cco arg1, cco arg2) {
   }
   result->v.cnt = write_idx;
 
-  int32_t threshold = (max_vol - min_vol) / 8;
-  printf("DEBUG: min_vol:%d, max_vol:%d, threshold:%d\n", min_vol, max_vol, threshold);
-
   coDelete(volumes);
   return result;
 }
@@ -719,13 +716,7 @@ void coDNFMinimizeByANDTermMerge(co dnf) {
   while (changed) {
     changed = 0;
 
-    /* Step 1: Subset Removal */
-    long old_size = coVectorSize(dnf);
-    coDNFMinimizeANDTermSubset(dnf);
-    if (coVectorSize(dnf) != old_size)
-      changed = 1;
-
-    /* Step 2: Merge terms differing in exactly one attribute */
+    /* Merge terms differing in exactly one attribute */
     long i, j;
     for (i = 0; i < coVectorSize(dnf); i++) {
       for (j = i + 1; j < coVectorSize(dnf); j++) {
@@ -786,6 +777,7 @@ co coNewDNFBySubtraction(cco psd, cco left_dnf, cco right_dnf) {
 
   co result = coClone(left_dnf);
   coDNFMinimizeClearFullDomain(psd, result);
+  coDNFMinimizeANDTermSubset(result);
 
   long j;
   for (j = 0; j < coVectorSize(right_dnf); j++) {
@@ -803,6 +795,7 @@ co coNewDNFBySubtraction(cco psd, cco left_dnf, cco right_dnf) {
     coDelete(result);
     result = nextResult;
     coDNFMinimizeClearFullDomain(psd, result);
+    coDNFMinimizeANDTermSubset(result);
 
     if (coDNFIsEmpty(result)) break;
   }
@@ -845,6 +838,7 @@ co coDNFNewCofactor(cco psd, cco dnf, const char *attr_name, int32_t value) {
   }
 
   coDNFMinimizeClearFullDomain(psd, result);
+  coDNFMinimizeANDTermSubset(result);
   return result;
 }
 
