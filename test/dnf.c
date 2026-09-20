@@ -37,6 +37,7 @@ void print_help(const char *prog) {
 }
 
 int main(int argc, char **argv) {
+  coBVDetect();
   int help = 0;
   int verbose = 0;
   int show_psd = 0;
@@ -773,6 +774,42 @@ int main(int argc, char **argv) {
       printf("  coNewDNFByIntersectionWithoutMinimization(arg1:%ld, arg2:%ld) -> result:%ld (%.2f ms)\n", 
              coVectorSize(arg1), coVectorSize(arg2), coVectorSize(result), t2 - t1);
 
+      /* BV Comparison Path */
+      coBVPreparePSD(psd);
+      co bv_arg1 = coNewBVDNFFromDNF(psd, arg1);
+      co bv_arg2 = coNewBVDNFFromDNF(psd, arg2);
+      t1 = get_ms();
+      co bv_result = coNewBVDNFByIntersectionWithoutMinimization(psd, bv_arg1, bv_arg2);
+      t2 = get_ms();
+      co dnf_bv_result = coNewDNFFromBVDNF(psd, bv_result);
+      printf("  coNewBVDNFByIntersectionWithoutMinimization(arg1:%ld, arg2:%ld) -> result:%ld (%.2f ms)\n",
+             coVectorSize(bv_arg1), coVectorSize(bv_arg2), coVectorSize(bv_result), t2 - t1);
+      
+      int bv_eq = coDNFIsEqual(psd, result, dnf_bv_result);
+      printf("  BVDNF vs DNF Equality: %s\n", bv_eq ? "PASS" : "FAIL");
+      coDelete(dnf_bv_result);
+
+      /* Subset Minimization Path (First Step after intersection) */
+      long before_subset = coVectorSize(result);
+      t1 = get_ms();
+      coDNFMinimizeANDTermSubset(result);
+      t2 = get_ms();
+      printf("  coDNFMinimizeANDTermSubset(result:%ld) -> result:%ld (%.2f ms)\n", 
+             before_subset, coVectorSize(result), t2 - t1);
+
+      long bv_before_subset = coVectorSize(bv_result);
+      t1 = get_ms();
+      coBVDNFMinimizeANDTermSubset(bv_result);
+      t2 = get_ms();
+      co dnf_bv_subset = coNewDNFFromBVDNF(psd, bv_result);
+      printf("  coBVDNFMinimizeANDTermSubset(result:%ld) -> result:%ld (%.2f ms)\n", 
+             bv_before_subset, coVectorSize(bv_result), t2 - t1);
+      int bv_subset_eq = coDNFIsEqual(psd, result, dnf_bv_subset);
+      printf("  BVDNF vs DNF Equality (ANDTermSubset): %s\n", bv_subset_eq ? "PASS" : "FAIL");
+      coDelete(dnf_bv_subset);
+
+      co bv_result_raw = coClone(bv_result);
+
       co result_raw = coClone(result);
       
       printf("  Volumes: arg1:%d, arg2:%d, result_raw:%d\n", 
@@ -786,6 +823,19 @@ int main(int argc, char **argv) {
       printf("  coDNFMinimizeClearFullDomain(result:%ld) -> result:%ld (%.2f ms)\n", 
              before_clear, coVectorSize(result), t2 - t1);
 
+      /* BV ClearFullDomain Path */
+      long bv_before_clear = coVectorSize(bv_result);
+      t1 = get_ms();
+      coBVDNFMinimizeClearFullDomain(psd, bv_result);
+      coBVDNFMinimizeANDTermSubset(bv_result);
+      t2 = get_ms();
+      co dnf_bv_clear = coNewDNFFromBVDNF(psd, bv_result);
+      printf("  coBVDNFMinimizeClearFullDomain(result:%ld) -> result:%ld (%.2f ms)\n", 
+             bv_before_clear, coVectorSize(bv_result), t2 - t1);
+      int bv_clear_eq = coDNFIsEqual(psd, result, dnf_bv_clear);
+      printf("  BVDNF vs DNF Equality (ClearFullDomain): %s\n", bv_clear_eq ? "PASS" : "FAIL");
+      coDelete(dnf_bv_clear);
+
       long before_merge = coVectorSize(result);
       t1 = get_ms();
       coDNFMinimizeByANDTermMerge(result);
@@ -794,14 +844,38 @@ int main(int argc, char **argv) {
       printf("  coDNFMinimizeByANDTermMerge(result:%ld) -> result:%ld (%.2f ms)\n", 
              before_merge, coVectorSize(result), t2 - t1);
 
+      /* BV TermMerge Path */
+      long bv_before_merge = coVectorSize(bv_result);
+      t1 = get_ms();
+      coBVDNFMinimizeByANDTermMerge(psd, bv_result);
+      coBVDNFMinimizeANDTermSubset(bv_result);
+      t2 = get_ms();
+      co dnf_bv_merge = coNewDNFFromBVDNF(psd, bv_result);
+      printf("  coBVDNFMinimizeByANDTermMerge(result:%ld) -> result:%ld (%.2f ms)\n", 
+             bv_before_merge, coVectorSize(bv_result), t2 - t1);
+      int bv_merge_eq = coDNFIsEqual(psd, result, dnf_bv_merge);
+      printf("  BVDNF vs DNF Equality (TermMerge): %s\n", bv_merge_eq ? "PASS" : "FAIL");
+      coDelete(dnf_bv_merge);
+
       t1 = get_ms();
       int eq = coDNFIsEqual(psd, result_raw, result);
       t2 = get_ms();
       printf("  coDNFIsEqual(result_raw:%ld, result:%ld) -> %s (%.2f ms)\n",
              coVectorSize(result_raw), coVectorSize(result), eq ? "PASS" : "FAIL", t2 - t1);
 
+      /* BV IsEqual Path */
+      t1 = get_ms();
+      int bv_eq_res = coBVDNFIsEqual(psd, bv_result_raw, bv_result);
+      t2 = get_ms();
+      printf("  coBVDNFIsEqual(result_raw:%ld, result:%ld) -> %s (%.2f ms)\n",
+             coVectorSize(bv_result_raw), coVectorSize(bv_result), bv_eq_res ? "PASS" : "FAIL", t2 - t1);
+
       printf("  Final volume: %d\n", coDNFGetVolume(psd, result));
 
+      coDelete(bv_arg1);
+      coDelete(bv_arg2);
+      coDelete(bv_result);
+      coDelete(bv_result_raw);
       coDelete(result_raw);
       
       printf("  ---\n");

@@ -459,11 +459,13 @@ A high-performance bitset implementation that leverages SIMD instructions (SSE2,
 - **API Functions**:
   - `void coBVSet(co_BVType bv, uint64_t bit_idx)`: Sets the bit at `bit_idx` to 1.
   - `void coBVClr(co_BVType bv, uint64_t bit_idx)`: Clears the bit at `bit_idx` to 0.
+  - `void coBVClearAll(co_BVType bv)`: Sets all bits in the bitvector to 0.
   - `int coBVGet(co_BVType bv, uint64_t bit_idx)`: Returns the state of the bit at `bit_idx` (0 or 1).
   - `void coBVOR(co_BVType res, co_BVType a, co_BVType b)`: Computes bitwise `res = a | b`.
   - `void coBVAND(co_BVType res, co_BVType a, co_BVType b)`: Computes bitwise `res = a & b`.
   - `void coBVANDNOT(co_BVType res, co_BVType a, co_BVType b)`: Computes bitwise `res = a & ~b`.
   - `int coBVIsEqual(co_BVType a, co_BVType b)`: Returns `1` if all bits in `a` and `b` are identical, `0` otherwise.
+  - `int coBVANDTstZero(co_BVType res, co_BVType a, co_BVType b)`: Computes bitwise `res = a & b`. Returns `0` if the result (`res`) is all-zero, and `1` if at least one bit is set.
 
 - **Conversion Functions**:
   These functions bridge the gap between symbolic DNF representation and bitvector representation using a prepared PSD:
@@ -471,6 +473,8 @@ A high-performance bitset implementation that leverages SIMD instructions (SSE2,
   - `co coNewANDTermFromBV(cco psd, co_BVType bv)`: Converts a bitvector back to a symbolic `coMap` AND-term.
   - `co coNewBVDNFFromDNF(cco psd, cco dnf)`: Converts a standard DNF (`Vector` of `Maps`) to a bitvector DNF (`Vector` of `co_BVType`).
   - `co coNewDNFFromBVDNF(cco psd, cco bv_dnf)`: Converts a bitvector DNF back to a standard symbolic DNF.
+  - `int coBVDNFIntersectionWithoutMinimization(cco psd, co arg1, cco arg2)`: Performs in-place set intersection of two bitvector DNFs.
+  - `co coNewBVDNFByIntersectionWithoutMinimization(cco psd, cco arg1, cco arg2)`: Returns a new bitvector DNF representing the intersection.
 
 ---
 

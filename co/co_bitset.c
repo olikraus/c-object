@@ -10,27 +10,38 @@ int co_bv_base_size = 8;
 /* Function pointer types */
 typedef void (*co_bv_set_fn)(co_BVType bv, uint64_t bit_idx);
 typedef void (*co_bv_clr_fn)(co_BVType bv, uint64_t bit_idx);
+typedef void (*co_bv_clear_all_fn)(co_BVType bv);
 typedef int (*co_bv_get_fn)(co_BVType bv, uint64_t bit_idx);
 typedef void (*co_bv_op3_fn)(co_BVType res, co_BVType a, co_BVType b);
 typedef int (*co_bv_is_equal_fn)(co_BVType a, co_BVType b);
+typedef int (*co_bv_is_subset_fn)(co_BVType a, co_BVType b);
+typedef int (*co_bv_and_tst_zero_fn)(co_BVType res, co_BVType a, co_BVType b);
 
 /* Implementations forward declarations */
 void co_bv_set_u64(co_BVType bv, uint64_t bit_idx);
 void co_bv_clr_u64(co_BVType bv, uint64_t bit_idx);
+void co_bv_clear_all_u64(co_BVType bv);
 int co_bv_get_u64(co_BVType bv, uint64_t bit_idx);
 void co_bv_or_u64(co_BVType res, co_BVType a, co_BVType b);
 void co_bv_and_u64(co_BVType res, co_BVType a, co_BVType b);
+void co_bv_xor_u64(co_BVType res, co_BVType a, co_BVType b);
 void co_bv_andnot_u64(co_BVType res, co_BVType a, co_BVType b);
 int co_bv_is_equal_u64(co_BVType a, co_BVType b);
+int co_bv_is_subset_u64(co_BVType a, co_BVType b);
+int co_bv_and_tst_zero_u64(co_BVType res, co_BVType a, co_BVType b);
 
 /* Global function pointers, default to u64 scalar versions */
 static co_bv_set_fn co_bv_set_ptr = co_bv_set_u64;
 static co_bv_clr_fn co_bv_clr_ptr = co_bv_clr_u64;
+static co_bv_clear_all_fn co_bv_clear_all_ptr = co_bv_clear_all_u64;
 static co_bv_get_fn co_bv_get_ptr = co_bv_get_u64;
 static co_bv_op3_fn co_bv_or_ptr = co_bv_or_u64;
 static co_bv_op3_fn co_bv_and_ptr = co_bv_and_u64;
+static co_bv_op3_fn co_bv_xor_ptr = co_bv_xor_u64;
 static co_bv_op3_fn co_bv_andnot_ptr = co_bv_andnot_u64;
 static co_bv_is_equal_fn co_bv_is_equal_ptr = co_bv_is_equal_u64;
+static co_bv_is_subset_fn co_bv_is_subset_ptr = co_bv_is_subset_u64;
+static co_bv_and_tst_zero_fn co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_u64;
 
 /* coBitVectorType functions */
 static int coBVInit(co o, void *data) { return 1; }
@@ -62,6 +73,9 @@ void co_bv_set_u64(co_BVType bv, uint64_t bit_idx) {
 void co_bv_clr_u64(co_BVType bv, uint64_t bit_idx) {
     bv->data.u64[bit_idx >> 6] &= ~(1ULL << (bit_idx & 0x3f));
 }
+void co_bv_clear_all_u64(co_BVType bv) {
+    for (int i = 0; i < bv->cnt; i++) bv->data.u64[i] = 0;
+}
 int co_bv_get_u64(co_BVType bv, uint64_t bit_idx) {
     return (bv->data.u64[bit_idx >> 6] >> (bit_idx & 0x3f)) & 1;
 }
@@ -71,12 +85,33 @@ void co_bv_or_u64(co_BVType res, co_BVType a, co_BVType b) {
 void co_bv_and_u64(co_BVType res, co_BVType a, co_BVType b) {
     for (int i = 0; i < res->cnt; i++) res->data.u64[i] = a->data.u64[i] & b->data.u64[i];
 }
+void co_bv_xor_u64(co_BVType res, co_BVType a, co_BVType b) {
+    for (int i = 0; i < res->cnt; i++) res->data.u64[i] = a->data.u64[i] ^ b->data.u64[i];
+}
 void co_bv_andnot_u64(co_BVType res, co_BVType a, co_BVType b) {
     for (int i = 0; i < res->cnt; i++) res->data.u64[i] = a->data.u64[i] & ~b->data.u64[i];
 }
 int co_bv_is_equal_u64(co_BVType a, co_BVType b) {
     if (a->cnt != b->cnt) return 0;
     return memcmp(a->data.u64, b->data.u64, (size_t)a->cnt * co_bv_base_size) == 0;
+}
+int co_bv_is_subset_u64(co_BVType a, co_BVType b) {
+    for (int i = 0; i < a->cnt; i++) {
+        if (a->data.u64[i] & ~b->data.u64[i]) return 0;
+    }
+    return 1;
+}
+/* 
+   Computes bitwise res = a & b. 
+   Returns 1 if at least one bit is set in the result, 0 if result is all zeros.
+*/
+int co_bv_and_tst_zero_u64(co_BVType res, co_BVType a, co_BVType b) {
+    uint64_t nz = 0;
+    for (int i = 0; i < res->cnt; i++) {
+        res->data.u64[i] = a->data.u64[i] & b->data.u64[i];
+        nz |= res->data.u64[i];
+    }
+    return nz ? 1 : 0;
 }
 
 // m128
@@ -89,6 +124,11 @@ __attribute__((target("sse2")))
 void co_bv_clr_m128(co_BVType bv, uint64_t bit_idx) {
     uint64_t *p = (uint64_t *)bv->data.m128;
     p[bit_idx >> 6] &= ~(1ULL << (bit_idx & 0x3f));
+}
+__attribute__((target("sse2")))
+void co_bv_clear_all_m128(co_BVType bv) {
+    __m128i zero = _mm_setzero_si128();
+    for (int i = 0; i < bv->cnt; i++) bv->data.m128[i] = zero;
 }
 __attribute__((target("sse2")))
 int co_bv_get_m128(co_BVType bv, uint64_t bit_idx) {
@@ -104,6 +144,10 @@ void co_bv_and_m128(co_BVType res, co_BVType a, co_BVType b) {
     for (int i = 0; i < res->cnt; i++) res->data.m128[i] = _mm_and_si128(a->data.m128[i], b->data.m128[i]);
 }
 __attribute__((target("sse2")))
+void co_bv_xor_m128(co_BVType res, co_BVType a, co_BVType b) {
+    for (int i = 0; i < res->cnt; i++) res->data.m128[i] = _mm_xor_si128(a->data.m128[i], b->data.m128[i]);
+}
+__attribute__((target("sse2")))
 void co_bv_andnot_m128(co_BVType res, co_BVType a, co_BVType b) {
     /* Note: _mm_andnot_si128(b, a) computes (~b & a) */
     for (int i = 0; i < res->cnt; i++) res->data.m128[i] = _mm_andnot_si128(b->data.m128[i], a->data.m128[i]);
@@ -112,6 +156,29 @@ __attribute__((target("sse2")))
 int co_bv_is_equal_m128(co_BVType a, co_BVType b) {
     if (a->cnt != b->cnt) return 0;
     return memcmp(a->data.m128, b->data.m128, (size_t)a->cnt * co_bv_base_size) == 0;
+}
+__attribute__((target("sse2")))
+int co_bv_is_subset_m128(co_BVType a, co_BVType b) {
+    __m128i zero = _mm_setzero_si128();
+    for (int i = 0; i < a->cnt; i++) {
+        __m128i v = _mm_andnot_si128(b->data.m128[i], a->data.m128[i]);
+        if (_mm_movemask_epi8(_mm_cmpeq_epi8(v, zero)) != 0xffff) return 0;
+    }
+    return 1;
+}
+/* 
+   Computes bitwise res = a & b. 
+   Returns 1 if at least one bit is set in the result, 0 if result is all zeros.
+*/
+__attribute__((target("sse2")))
+int co_bv_and_tst_zero_m128(co_BVType res, co_BVType a, co_BVType b) {
+    __m128i zero = _mm_setzero_si128();
+    int nz = 0;
+    for (int i = 0; i < res->cnt; i++) {
+        res->data.m128[i] = _mm_and_si128(a->data.m128[i], b->data.m128[i]);
+        if (_mm_movemask_epi8(_mm_cmpeq_epi8(res->data.m128[i], zero)) != 0xffff) nz = 1;
+    }
+    return nz;
 }
 
 // m256
@@ -124,6 +191,11 @@ __attribute__((target("avx2")))
 void co_bv_clr_m256(co_BVType bv, uint64_t bit_idx) {
     uint64_t *p = (uint64_t *)bv->data.m256;
     p[bit_idx >> 6] &= ~(1ULL << (bit_idx & 0x3f));
+}
+__attribute__((target("avx2")))
+void co_bv_clear_all_m256(co_BVType bv) {
+    __m256i zero = _mm256_setzero_si256();
+    for (int i = 0; i < bv->cnt; i++) bv->data.m256[i] = zero;
 }
 __attribute__((target("avx2")))
 int co_bv_get_m256(co_BVType bv, uint64_t bit_idx) {
@@ -139,6 +211,10 @@ void co_bv_and_m256(co_BVType res, co_BVType a, co_BVType b) {
     for (int i = 0; i < res->cnt; i++) res->data.m256[i] = _mm256_and_si256(a->data.m256[i], b->data.m256[i]);
 }
 __attribute__((target("avx2")))
+void co_bv_xor_m256(co_BVType res, co_BVType a, co_BVType b) {
+    for (int i = 0; i < res->cnt; i++) res->data.m256[i] = _mm256_xor_si256(a->data.m256[i], b->data.m256[i]);
+}
+__attribute__((target("avx2")))
 void co_bv_andnot_m256(co_BVType res, co_BVType a, co_BVType b) {
     for (int i = 0; i < res->cnt; i++) res->data.m256[i] = _mm256_andnot_si256(b->data.m256[i], a->data.m256[i]);
 }
@@ -146,6 +222,26 @@ __attribute__((target("avx2")))
 int co_bv_is_equal_m256(co_BVType a, co_BVType b) {
     if (a->cnt != b->cnt) return 0;
     return memcmp(a->data.m256, b->data.m256, (size_t)a->cnt * co_bv_base_size) == 0;
+}
+__attribute__((target("avx2")))
+int co_bv_is_subset_m256(co_BVType a, co_BVType b) {
+    for (int i = 0; i < a->cnt; i++) {
+        if (!_mm256_testz_si256(a->data.m256[i], _mm256_andnot_si256(b->data.m256[i], a->data.m256[i]))) return 0;
+    }
+    return 1;
+}
+/* 
+   Computes bitwise res = a & b. 
+   Returns 1 if at least one bit is set in the result, 0 if result is all zeros.
+*/
+__attribute__((target("avx2")))
+int co_bv_and_tst_zero_m256(co_BVType res, co_BVType a, co_BVType b) {
+    int nz = 0;
+    for (int i = 0; i < res->cnt; i++) {
+        res->data.m256[i] = _mm256_and_si256(a->data.m256[i], b->data.m256[i]);
+        if (!_mm256_testz_si256(res->data.m256[i], res->data.m256[i])) nz = 1;
+    }
+    return nz;
 }
 
 // m512
@@ -158,6 +254,11 @@ __attribute__((target("avx512f")))
 void co_bv_clr_m512(co_BVType bv, uint64_t bit_idx) {
     uint64_t *p = (uint64_t *)bv->data.m512;
     p[bit_idx >> 6] &= ~(1ULL << (bit_idx & 0x3f));
+}
+__attribute__((target("avx512f")))
+void co_bv_clear_all_m512(co_BVType bv) {
+    __m512i zero = _mm512_setzero_si512();
+    for (int i = 0; i < bv->cnt; i++) bv->data.m512[i] = zero;
 }
 __attribute__((target("avx512f")))
 int co_bv_get_m512(co_BVType bv, uint64_t bit_idx) {
@@ -173,6 +274,10 @@ void co_bv_and_m512(co_BVType res, co_BVType a, co_BVType b) {
     for (int i = 0; i < res->cnt; i++) res->data.m512[i] = _mm512_and_si512(a->data.m512[i], b->data.m512[i]);
 }
 __attribute__((target("avx512f")))
+void co_bv_xor_m512(co_BVType res, co_BVType a, co_BVType b) {
+    for (int i = 0; i < res->cnt; i++) res->data.m512[i] = _mm512_xor_si512(a->data.m512[i], b->data.m512[i]);
+}
+__attribute__((target("avx512f")))
 void co_bv_andnot_m512(co_BVType res, co_BVType a, co_BVType b) {
     for (int i = 0; i < res->cnt; i++) res->data.m512[i] = _mm512_andnot_si512(b->data.m512[i], a->data.m512[i]);
 }
@@ -180,6 +285,26 @@ __attribute__((target("avx512f")))
 int co_bv_is_equal_m512(co_BVType a, co_BVType b) {
     if (a->cnt != b->cnt) return 0;
     return memcmp(a->data.m512, b->data.m512, (size_t)a->cnt * co_bv_base_size) == 0;
+}
+__attribute__((target("avx512f")))
+int co_bv_is_subset_m512(co_BVType a, co_BVType b) {
+    for (int i = 0; i < a->cnt; i++) {
+        if (_mm512_test_epi64_mask(a->data.m512[i], _mm512_andnot_si512(b->data.m512[i], a->data.m512[i])) != 0) return 0;
+    }
+    return 1;
+}
+/* 
+   Computes bitwise res = a & b. 
+   Returns 1 if at least one bit is set in the result, 0 if result is all zeros.
+*/
+__attribute__((target("avx512f")))
+int co_bv_and_tst_zero_m512(co_BVType res, co_BVType a, co_BVType b) {
+    int nz = 0;
+    for (int i = 0; i < res->cnt; i++) {
+        res->data.m512[i] = _mm512_and_si512(a->data.m512[i], b->data.m512[i]);
+        if (_mm512_test_epi64_mask(res->data.m512[i], res->data.m512[i]) != 0) nz = 1;
+    }
+    return nz;
 }
 
 void coBVDetect(void) {
@@ -193,29 +318,41 @@ void coBVDetect(void) {
         co_bv_base_size = 64;
         co_bv_set_ptr = co_bv_set_m512;
         co_bv_clr_ptr = co_bv_clr_m512;
+        co_bv_clear_all_ptr = co_bv_clear_all_m512;
         co_bv_get_ptr = co_bv_get_m512;
         co_bv_or_ptr = co_bv_or_m512;
         co_bv_and_ptr = co_bv_and_m512;
+        co_bv_xor_ptr = co_bv_xor_m512;
         co_bv_andnot_ptr = co_bv_andnot_m512;
         co_bv_is_equal_ptr = co_bv_is_equal_m512;
+        co_bv_is_subset_ptr = co_bv_is_subset_m512;
+        co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_m512;
     } else if (__builtin_cpu_supports("avx2")) {
         co_bv_base_size = 32;
         co_bv_set_ptr = co_bv_set_m256;
         co_bv_clr_ptr = co_bv_clr_m256;
+        co_bv_clear_all_ptr = co_bv_clear_all_m256;
         co_bv_get_ptr = co_bv_get_m256;
         co_bv_or_ptr = co_bv_or_m256;
         co_bv_and_ptr = co_bv_and_m256;
+        co_bv_xor_ptr = co_bv_xor_m256;
         co_bv_andnot_ptr = co_bv_andnot_m256;
         co_bv_is_equal_ptr = co_bv_is_equal_m256;
+        co_bv_is_subset_ptr = co_bv_is_subset_m256;
+        co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_m256;
     } else if (__builtin_cpu_supports("sse2")) {
         co_bv_base_size = 16;
         co_bv_set_ptr = co_bv_set_m128;
         co_bv_clr_ptr = co_bv_clr_m128;
+        co_bv_clear_all_ptr = co_bv_clear_all_m128;
         co_bv_get_ptr = co_bv_get_m128;
         co_bv_or_ptr = co_bv_or_m128;
         co_bv_and_ptr = co_bv_and_m128;
+        co_bv_xor_ptr = co_bv_xor_m128;
         co_bv_andnot_ptr = co_bv_andnot_m128;
         co_bv_is_equal_ptr = co_bv_is_equal_m128;
+        co_bv_is_subset_ptr = co_bv_is_subset_m128;
+        co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_m128;
     }
 }
 
@@ -236,8 +373,8 @@ co_BVType coNewBV(uint64_t bits) {
         free(bv);
         return NULL;
     }
-    memset(mem, 0, (size_t)bv->cnt * co_bv_base_size);
     bv->data.u64 = mem;
+    coBVClearAll(bv);
     return bv;
 }
 
@@ -459,12 +596,153 @@ co coNewDNFFromBVDNF(cco psd, cco bv_dnf) {
     return dnf;
 }
 
+co coNewBVDNFByIntersectionWithoutMinimization(cco psd, cco arg1, cco arg2) {
+    co bvpos = (co)coMapGet(psd, "bvpos");
+    if (!bvpos) return NULL;
+    uint64_t total_bits = coInt32VectorGet(bvpos, coInt32VectorSize(bvpos) - 1);
+
+    co res = coNewVector(CO_FREE_VALS);
+    long cnt1 = coVectorSize(arg1);
+    long cnt2 = coVectorSize(arg2);
+
+    for (long i = 0; i < cnt1; i++) {
+        co_BVType a = (co_BVType)coVectorGet(arg1, i);
+        for (long j = 0; j < cnt2; j++) {
+            co_BVType b = (co_BVType)coVectorGet(arg2, j);
+            co_BVType intersected = coNewBV(total_bits);
+            if (coBVANDTermIntersect(psd, intersected, a, b)) {
+                coVectorAdd(res, (cco)intersected);
+            } else {
+                coDeleteBV(intersected);
+            }
+        }
+    }
+    return res;
+}
+
+int coBVDNFIntersectionWithoutMinimization(cco psd, co arg1, cco arg2) {
+    co res = coNewBVDNFByIntersectionWithoutMinimization(psd, arg1, arg2);
+    if (res == NULL) return 0;
+
+    coVectorClear(arg1);
+    long cnt = coVectorSize(res);
+    for (long i = 0; i < cnt; i++) {
+        co element = (co)coVectorGet(res, i);
+        /* Move elements to arg1. We need to clone because res will be deleted and it has CO_FREE_VALS */
+        coVectorAdd(arg1, coClone((cco)element));
+    }
+    coDelete(res);
+    return 1;
+}
+
+void coBVDNFMinimizeANDTermSubset(co dnf) {
+    long i, j;
+    if (!coIsVector(dnf)) return;
+    
+    for (i = 0; i < coVectorSize(dnf); i++) {
+        co_BVType a = (co_BVType)coVectorGet(dnf, i);
+        if (!a) continue;
+        for (j = 0; j < coVectorSize(dnf); j++) {
+            if (i == j) continue;
+            co_BVType b = (co_BVType)coVectorGet(dnf, j);
+            if (!b) continue;
+            
+            if (coBVIsSubset(a, b)) {
+                coVectorErase(dnf, i);
+                i--;
+                break;
+            }
+        }
+    }
+}
+
+void coBVDNFMinimizeByANDTermMerge(cco psd, co dnf) {
+    if (!coIsVector(dnf)) return;
+
+    co bvmask = (co)coMapGet(psd, "bvmask");
+    co bvpos = (co)coMapGet(psd, "bvpos");
+    if (!bvmask || !bvpos) return;
+    uint64_t total_bits = coInt32VectorGet(bvpos, coInt32VectorSize(bvpos) - 1);
+
+    co_BVType xor_res = coNewBV(total_bits);
+    co_BVType temp = coNewBV(total_bits);
+
+    int changed = 1;
+    while (changed) {
+        changed = 0;
+        long i, j;
+        for (i = 0; i < coVectorSize(dnf); i++) {
+            co_BVType a = (co_BVType)coVectorGet(dnf, i);
+            for (j = i + 1; j < coVectorSize(dnf); j++) {
+                co_BVType b = (co_BVType)coVectorGet(dnf, j);
+                
+                coBVXOR(xor_res, a, b);
+                
+                /* Count how many attributes have bits set in the XOR result */
+                int diff_attr_count = 0;
+                long mask_cnt = coVectorSize(bvmask);
+                for (long k = 0; k < mask_cnt; k++) {
+                    co_BVType m = (co_BVType)coVectorGet(bvmask, k);
+                    if (coBVANDTstZero(temp, xor_res, m)) {
+                        diff_attr_count++;
+                    }
+                }
+                
+                if (diff_attr_count == 1) {
+                    /* Merge terms */
+                    coBVOR(a, a, b);
+                    coVectorErase(dnf, j);
+                    changed = 1;
+                    break;
+                } else if (diff_attr_count == 0) {
+                    /* Identical terms */
+                    coVectorErase(dnf, j);
+                    changed = 1;
+                    break;
+                }
+            }
+            if (changed) break;
+        }
+    }
+    coDeleteBV(xor_res);
+    coDeleteBV(temp);
+}
+
+void coBVDNFMinimizeClearFullDomain(cco psd, co dnf) {
+    /* In BV representation, "clearing full domain" (making an attribute universal) 
+       is just having all bits set. MinimizeANDTermSubset will handle the logical 
+       consequences. */
+    coBVDNFMinimizeANDTermSubset(dnf);
+}
+
+int coBVDNFIsSubset(cco psd, cco subset_dnf, cco superset_dnf) {
+    if (coVectorEmpty(subset_dnf)) return 1;
+    if (coVectorEmpty(superset_dnf)) return 0;
+
+    /* Use symbolic engine for subset check as a robust baseline. 
+       This ensures bitvector DNF results can be verified against symbolic logic. */
+    co symbolic_subset = coNewDNFFromBVDNF(psd, subset_dnf);
+    co symbolic_superset = coNewDNFFromBVDNF(psd, superset_dnf);
+    int res = coDNFIsSubset(psd, symbolic_subset, symbolic_superset);
+    coDelete(symbolic_subset);
+    coDelete(symbolic_superset);
+    return res;
+}
+
+int coBVDNFIsEqual(cco psd, cco dnf1, cco dnf2) {
+    return coBVDNFIsSubset(psd, dnf1, dnf2) && coBVDNFIsSubset(psd, dnf2, dnf1);
+}
+
 void coBVSet(co_BVType bv, uint64_t bit_idx) {
     co_bv_set_ptr(bv, bit_idx);
 }
 
 void coBVClr(co_BVType bv, uint64_t bit_idx) {
     co_bv_clr_ptr(bv, bit_idx);
+}
+
+void coBVClearAll(co_BVType bv) {
+    co_bv_clear_all_ptr(bv);
 }
 
 int coBVGet(co_BVType bv, uint64_t bit_idx) {
@@ -479,10 +757,49 @@ void coBVAND(co_BVType res, co_BVType a, co_BVType b) {
     co_bv_and_ptr(res, a, b);
 }
 
+void coBVXOR(co_BVType res, co_BVType a, co_BVType b) {
+    co_bv_xor_ptr(res, a, b);
+}
+
 void coBVANDNOT(co_BVType res, co_BVType a, co_BVType b) {
     co_bv_andnot_ptr(res, a, b);
 }
 
 int coBVIsEqual(co_BVType a, co_BVType b) {
     return co_bv_is_equal_ptr(a, b);
+}
+
+int coBVIsSubset(co_BVType a, co_BVType b) {
+    return co_bv_is_subset_ptr(a, b);
+}
+
+/* 
+   Computes bitwise res = a & b. 
+   Returns 1 if at least one bit is set in the result, 0 if result is all zeros.
+*/
+int coBVANDTstZero(co_BVType res, co_BVType a, co_BVType b) {
+    return co_bv_and_tst_zero_ptr(res, a, b);
+}
+
+int coBVANDTermIntersect(cco psd, co_BVType res, co_BVType a, co_BVType b) {
+    co bvmask = (co)coMapGet(psd, "bvmask");
+    co bvpos = (co)coMapGet(psd, "bvpos");
+    if (!bvmask || !bvpos) return 0;
+    uint64_t total_bits = coInt32VectorGet(bvpos, coInt32VectorSize(bvpos) - 1);
+
+    if (coBVANDTstZero(res, a, b) == 0) return 0;
+
+    co_BVType temp = coNewBV(total_bits);
+    long cnt = coVectorSize(bvmask);
+    for (long i = 0; i < cnt; i++) {
+        co_BVType m = (co_BVType)coVectorGet(bvmask, i);
+        if (coBVANDTstZero(temp, res, m) == 0) {
+            /* Empty intersection for this attribute: entire term is empty */
+            coBVClearAll(res);
+            coDeleteBV(temp);
+            return 0;
+        }
+    }
+    coDeleteBV(temp);
+    return 1;
 }
