@@ -480,6 +480,7 @@ co coNewPSD(void);
 int coPSDExtendByDNF(co psd, cco dnf);
 
 /* co_bitset.c */
+extern int co_bv_base_size;
 void coBVDetect(void);
 co_BVType coNewBV(uint64_t bits);
 void coDeleteBV(co_BVType bv);
@@ -493,6 +494,8 @@ void coBVXOR(co_BVType res, co_BVType a, co_BVType b);
 void coBVANDNOT(co_BVType res, co_BVType a, co_BVType b);
 int coBVIsEqual(co_BVType a, co_BVType b);
 int coBVIsSubset(co_BVType a, co_BVType b);
+int coBVSuperSubTest(co_BVType a, co_BVType b);
+int coBVIsDisjoint(co_BVType a, co_BVType b);
 int coBVANDTstZero(co_BVType res, co_BVType a, co_BVType b);
 void coBVPreparePSD(co psd);
 co_BVType coNewBVFromANDTerm(cco psd, cco and_term);
@@ -501,7 +504,9 @@ co coNewBVDNFFromDNF(cco psd, cco dnf);
 co coNewDNFFromBVDNF(cco psd, cco bv_dnf);
 int coBVANDTermIntersect(cco psd, co_BVType res, co_BVType a, co_BVType b);
 int coBVDNFIntersectionWithoutMinimization(cco psd, co arg1, cco arg2);
+int coBVDNFIntersection(cco psd, co arg1, cco arg2);
 co coNewBVDNFByIntersectionWithoutMinimization(cco psd, cco arg1, cco arg2);
+co coNewBVDNFByIntersection(cco psd, cco arg1, cco arg2);
 co coBVDNFNewCofactor(cco psd, cco dnf, const char *attr_name, int32_t value);
 int coBVDNFCheckUniversal(cco psd, cco dnf);
 void coBVDNFMinimizeANDTermSubset(co dnf);

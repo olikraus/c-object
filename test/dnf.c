@@ -705,6 +705,12 @@ int main(int argc, char **argv) {
       coDelete(psd);
       return 0;
     } else if (is_test_isec) {
+      const char *simd_name = "Scalar uint64_t";
+      if (co_bv_base_size == 16) simd_name = "SSE2 128-bit";
+      else if (co_bv_base_size == 32) simd_name = "AVX2 256-bit";
+      else if (co_bv_base_size == 64) simd_name = "AVX-512 512-bit";
+      printf("Benchmark using Bitset Base Type: %s\n", simd_name);
+
       co psd_inner = (co)coMapGet(psd, "psd");
       if (coMapSize(psd_inner) < 2) {
         fprintf(stderr, "Error: -test-isec requires at least 2 attributes in the PSD (use -gpsd 2 3 or similar)\n");
@@ -885,6 +891,20 @@ int main(int argc, char **argv) {
       printf("  coNewDNFByIntersection(psd, arg1:%ld, arg2:%ld) -> result:%ld (%.2f ms)\n", 
              coVectorSize(arg1), coVectorSize(arg2), coVectorSize(result2), t2 - t1);
 
+      /* BV Automatic Intersection Path */
+      co bv_arg1_2 = coNewBVDNFFromDNF(psd, arg1);
+      co bv_arg2_2 = coNewBVDNFFromDNF(psd, arg2);
+      t1 = get_ms();
+      co bv_result2 = coNewBVDNFByIntersection(psd, bv_arg1_2, bv_arg2_2);
+      t2 = get_ms();
+      co dnf_bv_result2 = coNewDNFFromBVDNF(psd, bv_result2);
+      printf("  coNewBVDNFByIntersection(psd, arg1:%ld, arg2:%ld) -> result:%ld (%.2f ms)\n",
+             coVectorSize(bv_arg1_2), coVectorSize(bv_arg2_2), coVectorSize(bv_result2), t2 - t1);
+      
+      int bv_eq2 = coDNFIsEqual(psd, result2, dnf_bv_result2);
+      printf("  BVDNF vs DNF Equality (Intersection): %s\n", bv_eq2 ? "PASS" : "FAIL");
+      coDelete(dnf_bv_result2);
+
       long before_clear2 = coVectorSize(result2);
       t1 = get_ms();
       coDNFMinimizeClearFullDomain(psd, result2);
@@ -892,6 +912,19 @@ int main(int argc, char **argv) {
       t2 = get_ms();
       printf("  coDNFMinimizeClearFullDomain(result:%ld) -> result:%ld (%.2f ms)\n", 
              before_clear2, coVectorSize(result2), t2 - t1);
+
+      /* BV ClearFullDomain Path 2 */
+      long bv_before_clear2 = coVectorSize(bv_result2);
+      t1 = get_ms();
+      coBVDNFMinimizeClearFullDomain(psd, bv_result2);
+      coBVDNFMinimizeANDTermSubset(bv_result2);
+      t2 = get_ms();
+      co dnf_bv_clear2 = coNewDNFFromBVDNF(psd, bv_result2);
+      printf("  coBVDNFMinimizeClearFullDomain(result:%ld) -> result:%ld (%.2f ms)\n", 
+             bv_before_clear2, coVectorSize(bv_result2), t2 - t1);
+      int bv_clear_eq2 = coDNFIsEqual(psd, result2, dnf_bv_clear2);
+      printf("  BVDNF vs DNF Equality (ClearFullDomain 2): %s\n", bv_clear_eq2 ? "PASS" : "FAIL");
+      coDelete(dnf_bv_clear2);
 
       long before_merge2 = coVectorSize(result2);
       t1 = get_ms();
@@ -901,6 +934,19 @@ int main(int argc, char **argv) {
       printf("  coDNFMinimizeByANDTermMerge(result:%ld) -> result:%ld (%.2f ms)\n", 
              before_merge2, coVectorSize(result2), t2 - t1);
 
+      /* BV TermMerge Path 2 */
+      long bv_before_merge2 = coVectorSize(bv_result2);
+      t1 = get_ms();
+      coBVDNFMinimizeByANDTermMerge(psd, bv_result2);
+      coBVDNFMinimizeANDTermSubset(bv_result2);
+      t2 = get_ms();
+      co dnf_bv_merge2 = coNewDNFFromBVDNF(psd, bv_result2);
+      printf("  coBVDNFMinimizeByANDTermMerge(result:%ld) -> result:%ld (%.2f ms)\n", 
+             bv_before_merge2, coVectorSize(bv_result2), t2 - t1);
+      int bv_merge_eq2 = coDNFIsEqual(psd, result2, dnf_bv_merge2);
+      printf("  BVDNF vs DNF Equality (TermMerge 2): %s\n", bv_merge_eq2 ? "PASS" : "FAIL");
+      coDelete(dnf_bv_merge2);
+
       t1 = get_ms();
       int eq2 = coDNFIsEqual(psd, result, result2);
       t2 = get_ms();
@@ -908,6 +954,9 @@ int main(int argc, char **argv) {
              coVectorSize(result), coVectorSize(result2), eq2 ? "PASS" : "FAIL", t2 - t1);
       printf("  Final volume: %d\n", coDNFGetVolume(psd, result2));
 
+      coDelete(bv_arg1_2);
+      coDelete(bv_arg2_2);
+      coDelete(bv_result2);
       coDelete(result2);
       result_dnf = result;
       needs_delete = 1;

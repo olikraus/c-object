@@ -465,6 +465,9 @@ A high-performance bitset implementation that leverages SIMD instructions (SSE2,
   - `void coBVAND(co_BVType res, co_BVType a, co_BVType b)`: Computes bitwise `res = a & b`.
   - `void coBVANDNOT(co_BVType res, co_BVType a, co_BVType b)`: Computes bitwise `res = a & ~b`.
   - `int coBVIsEqual(co_BVType a, co_BVType b)`: Returns `1` if all bits in `a` and `b` are identical, `0` otherwise.
+  - `int coBVIsSubset(co_BVType a, co_BVType b)`: Returns `1` if bitset `a` is a subset of `b` ($a \subseteq b$), `0` otherwise.
+  - `int coBVSuperSubTest(co_BVType a, co_BVType b)`: Performs a simultaneous subset and superset check. Returns a bitmask: `1` for subset, `2` for superset, `3` for equal, `0` otherwise.
+  - `int coBVIsDisjoint(co_BVType a, co_BVType b)`: Returns `1` if the intersection of `a` and `b` is empty, `0` otherwise.
   - `int coBVANDTstZero(co_BVType res, co_BVType a, co_BVType b)`: Computes bitwise `res = a & b`. Returns `0` if the result (`res`) is all-zero, and `1` if at least one bit is set.
 
 - **Conversion Functions**:
@@ -473,8 +476,10 @@ A high-performance bitset implementation that leverages SIMD instructions (SSE2,
   - `co coNewANDTermFromBV(cco psd, co_BVType bv)`: Converts a bitvector back to a symbolic `coMap` AND-term.
   - `co coNewBVDNFFromDNF(cco psd, cco dnf)`: Converts a standard DNF (`Vector` of `Maps`) to a bitvector DNF (`Vector` of `co_BVType`).
   - `co coNewDNFFromBVDNF(cco psd, cco bv_dnf)`: Converts a bitvector DNF back to a standard symbolic DNF.
-  - `int coBVDNFIntersectionWithoutMinimization(cco psd, co arg1, cco arg2)`: Performs in-place set intersection of two bitvector DNFs.
-  - `co coNewBVDNFByIntersectionWithoutMinimization(cco psd, cco arg1, cco arg2)`: Returns a new bitvector DNF representing the intersection.
+  - `int coBVDNFIntersectionWithoutMinimization(cco psd, co arg1, cco arg2)`: Performs in-place set intersection of two bitvector DNFs without logical minimization.
+  - `co coNewBVDNFByIntersectionWithoutMinimization(cco psd, cco arg1, cco arg2)`: Returns a new bitvector DNF representing the intersection without logical minimization.
+  - `int coBVDNFIntersection(cco psd, co arg1, cco arg2)`: Performs in-place set intersection of two bitvector DNFs with online subset/superset minimization.
+  - `co coNewBVDNFByIntersection(cco psd, cco arg1, cco arg2)`: Returns a new bitvector DNF representing the intersection with online subset/superset minimization.
 
 ---
 

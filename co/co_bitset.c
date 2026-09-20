@@ -15,6 +15,8 @@ typedef int (*co_bv_get_fn)(co_BVType bv, uint64_t bit_idx);
 typedef void (*co_bv_op3_fn)(co_BVType res, co_BVType a, co_BVType b);
 typedef int (*co_bv_is_equal_fn)(co_BVType a, co_BVType b);
 typedef int (*co_bv_is_subset_fn)(co_BVType a, co_BVType b);
+typedef int (*co_bv_super_sub_test_fn)(co_BVType a, co_BVType b);
+typedef int (*co_bv_is_disjoint_fn)(co_BVType a, co_BVType b);
 typedef int (*co_bv_and_tst_zero_fn)(co_BVType res, co_BVType a, co_BVType b);
 
 /* Implementations forward declarations */
@@ -28,6 +30,8 @@ void co_bv_xor_u64(co_BVType res, co_BVType a, co_BVType b);
 void co_bv_andnot_u64(co_BVType res, co_BVType a, co_BVType b);
 int co_bv_is_equal_u64(co_BVType a, co_BVType b);
 int co_bv_is_subset_u64(co_BVType a, co_BVType b);
+int co_bv_super_sub_test_u64(co_BVType a, co_BVType b);
+int co_bv_is_disjoint_u64(co_BVType a, co_BVType b);
 int co_bv_and_tst_zero_u64(co_BVType res, co_BVType a, co_BVType b);
 
 /* Global function pointers, default to u64 scalar versions */
@@ -41,6 +45,8 @@ static co_bv_op3_fn co_bv_xor_ptr = co_bv_xor_u64;
 static co_bv_op3_fn co_bv_andnot_ptr = co_bv_andnot_u64;
 static co_bv_is_equal_fn co_bv_is_equal_ptr = co_bv_is_equal_u64;
 static co_bv_is_subset_fn co_bv_is_subset_ptr = co_bv_is_subset_u64;
+static co_bv_super_sub_test_fn co_bv_super_sub_test_ptr = co_bv_super_sub_test_u64;
+static co_bv_is_disjoint_fn co_bv_is_disjoint_ptr = co_bv_is_disjoint_u64;
 static co_bv_and_tst_zero_fn co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_u64;
 
 /* coBitVectorType functions */
@@ -98,6 +104,21 @@ int co_bv_is_equal_u64(co_BVType a, co_BVType b) {
 int co_bv_is_subset_u64(co_BVType a, co_BVType b) {
     for (int i = 0; i < a->cnt; i++) {
         if (a->data.u64[i] & ~b->data.u64[i]) return 0;
+    }
+    return 1;
+}
+int co_bv_super_sub_test_u64(co_BVType a, co_BVType b) {
+    int res = 3;
+    for (int i = 0; i < a->cnt; i++) {
+        if (a->data.u64[i] & ~b->data.u64[i]) res &= ~1;
+        if (b->data.u64[i] & ~a->data.u64[i]) res &= ~2;
+        if (res == 0) return 0;
+    }
+    return res;
+}
+int co_bv_is_disjoint_u64(co_BVType a, co_BVType b) {
+    for (int i = 0; i < a->cnt; i++) {
+        if (a->data.u64[i] & b->data.u64[i]) return 0;
     }
     return 1;
 }
@@ -166,6 +187,32 @@ int co_bv_is_subset_m128(co_BVType a, co_BVType b) {
     }
     return 1;
 }
+__attribute__((target("sse2")))
+int co_bv_super_sub_test_m128(co_BVType a, co_BVType b) {
+    __m128i zero = _mm_setzero_si128();
+    int res = 3;
+    for (int i = 0; i < a->cnt; i++) {
+        if (res & 1) {
+            __m128i v = _mm_andnot_si128(b->data.m128[i], a->data.m128[i]);
+            if (_mm_movemask_epi8(_mm_cmpeq_epi8(v, zero)) != 0xffff) res &= ~1;
+        }
+        if (res & 2) {
+            __m128i v = _mm_andnot_si128(a->data.m128[i], b->data.m128[i]);
+            if (_mm_movemask_epi8(_mm_cmpeq_epi8(v, zero)) != 0xffff) res &= ~2;
+        }
+        if (res == 0) return 0;
+    }
+    return res;
+}
+__attribute__((target("sse2")))
+int co_bv_is_disjoint_m128(co_BVType a, co_BVType b) {
+    __m128i zero = _mm_setzero_si128();
+    for (int i = 0; i < a->cnt; i++) {
+        __m128i v = _mm_and_si128(a->data.m128[i], b->data.m128[i]);
+        if (_mm_movemask_epi8(_mm_cmpeq_epi8(v, zero)) != 0xffff) return 0;
+    }
+    return 1;
+}
 /* 
    Computes bitwise res = a & b. 
    Returns 1 if at least one bit is set in the result, 0 if result is all zeros.
@@ -227,6 +274,27 @@ __attribute__((target("avx2")))
 int co_bv_is_subset_m256(co_BVType a, co_BVType b) {
     for (int i = 0; i < a->cnt; i++) {
         if (!_mm256_testz_si256(a->data.m256[i], _mm256_andnot_si256(b->data.m256[i], a->data.m256[i]))) return 0;
+    }
+    return 1;
+}
+__attribute__((target("avx2")))
+int co_bv_super_sub_test_m256(co_BVType a, co_BVType b) {
+    int res = 3;
+    for (int i = 0; i < a->cnt; i++) {
+        if (res & 1) {
+            if (!_mm256_testz_si256(a->data.m256[i], _mm256_andnot_si256(b->data.m256[i], a->data.m256[i]))) res &= ~1;
+        }
+        if (res & 2) {
+            if (!_mm256_testz_si256(b->data.m256[i], _mm256_andnot_si256(a->data.m256[i], b->data.m256[i]))) res &= ~2;
+        }
+        if (res == 0) return 0;
+    }
+    return res;
+}
+__attribute__((target("avx2")))
+int co_bv_is_disjoint_m256(co_BVType a, co_BVType b) {
+    for (int i = 0; i < a->cnt; i++) {
+        if (!_mm256_testz_si256(a->data.m256[i], b->data.m256[i])) return 0;
     }
     return 1;
 }
@@ -293,6 +361,27 @@ int co_bv_is_subset_m512(co_BVType a, co_BVType b) {
     }
     return 1;
 }
+__attribute__((target("avx512f")))
+int co_bv_super_sub_test_m512(co_BVType a, co_BVType b) {
+    int res = 3;
+    for (int i = 0; i < a->cnt; i++) {
+        if (res & 1) {
+            if (_mm512_test_epi64_mask(a->data.m512[i], _mm512_andnot_si512(b->data.m512[i], a->data.m512[i])) != 0) res &= ~1;
+        }
+        if (res & 2) {
+            if (_mm512_test_epi64_mask(b->data.m512[i], _mm512_andnot_si512(a->data.m512[i], b->data.m512[i])) != 0) res &= ~2;
+        }
+        if (res == 0) return 0;
+    }
+    return res;
+}
+__attribute__((target("avx512f")))
+int co_bv_is_disjoint_m512(co_BVType a, co_BVType b) {
+    for (int i = 0; i < a->cnt; i++) {
+        if (_mm512_test_epi64_mask(a->data.m512[i], b->data.m512[i]) != 0) return 0;
+    }
+    return 1;
+}
 /* 
    Computes bitwise res = a & b. 
    Returns 1 if at least one bit is set in the result, 0 if result is all zeros.
@@ -312,7 +401,16 @@ void coBVDetect(void) {
     co_bv_base_size = 8;
     co_bv_set_ptr = co_bv_set_u64;
     co_bv_clr_ptr = co_bv_clr_u64;
+    co_bv_clear_all_ptr = co_bv_clear_all_u64;
     co_bv_get_ptr = co_bv_get_u64;
+    co_bv_or_ptr = co_bv_or_u64;
+    co_bv_and_ptr = co_bv_and_u64;
+    co_bv_xor_ptr = co_bv_xor_u64;
+    co_bv_andnot_ptr = co_bv_andnot_u64;
+    co_bv_is_equal_ptr = co_bv_is_equal_u64;
+    co_bv_is_subset_ptr = co_bv_is_subset_u64;
+    co_bv_super_sub_test_ptr = co_bv_super_sub_test_u64;
+    co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_u64;
 
     if (__builtin_cpu_supports("avx512f")) {
         co_bv_base_size = 64;
@@ -326,6 +424,8 @@ void coBVDetect(void) {
         co_bv_andnot_ptr = co_bv_andnot_m512;
         co_bv_is_equal_ptr = co_bv_is_equal_m512;
         co_bv_is_subset_ptr = co_bv_is_subset_m512;
+        co_bv_super_sub_test_ptr = co_bv_super_sub_test_m512;
+        co_bv_is_disjoint_ptr = co_bv_is_disjoint_m512;
         co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_m512;
     } else if (__builtin_cpu_supports("avx2")) {
         co_bv_base_size = 32;
@@ -339,6 +439,8 @@ void coBVDetect(void) {
         co_bv_andnot_ptr = co_bv_andnot_m256;
         co_bv_is_equal_ptr = co_bv_is_equal_m256;
         co_bv_is_subset_ptr = co_bv_is_subset_m256;
+        co_bv_super_sub_test_ptr = co_bv_super_sub_test_m256;
+        co_bv_is_disjoint_ptr = co_bv_is_disjoint_m256;
         co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_m256;
     } else if (__builtin_cpu_supports("sse2")) {
         co_bv_base_size = 16;
@@ -352,6 +454,8 @@ void coBVDetect(void) {
         co_bv_andnot_ptr = co_bv_andnot_m128;
         co_bv_is_equal_ptr = co_bv_is_equal_m128;
         co_bv_is_subset_ptr = co_bv_is_subset_m128;
+        co_bv_super_sub_test_ptr = co_bv_super_sub_test_m128;
+        co_bv_is_disjoint_ptr = co_bv_is_disjoint_m128;
         co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_m128;
     }
 }
@@ -635,6 +739,120 @@ int coBVDNFIntersectionWithoutMinimization(cco psd, co arg1, cco arg2) {
     return 1;
 }
 
+co coNewBVDNFByIntersection(cco psd, cco arg1, cco arg2) {
+    co bvpos = (co)coMapGet(psd, "bvpos");
+    if (!bvpos) return NULL;
+    uint64_t total_bits = coInt32VectorGet(bvpos, coInt32VectorSize(bvpos) - 1);
+
+    co res = coNewVector(CO_FREE_VALS);
+    long cnt1 = coVectorSize(arg1);
+    long cnt2 = coVectorSize(arg2);
+
+    /* Scratch buffer for candidate terms */
+    co_BVType scratch = coNewBV(total_bits);
+
+    for (long i = 0; i < cnt1; i++) {
+        co_BVType a = (co_BVType)coVectorGet(arg1, i);
+        for (long j = 0; j < cnt2; j++) {
+            co_BVType b = (co_BVType)coVectorGet(arg2, j);
+            if (coBVANDTermIntersect(psd, scratch, a, b)) {
+                /* Online Subset Minimization */
+                int skip = 0;
+                long k;
+                for (k = 0; k < coVectorSize(res); k++) {
+                    co_BVType existing = (co_BVType)coVectorGet(res, k);
+                    if (existing == NULL) continue;
+                    
+                    int test = coBVSuperSubTest(scratch, existing);
+                    if (test & 1) { /* intersected is subset of existing */
+                        skip = 1;
+                        break;
+                    }
+                    if (test & 2) { /* intersected is superset of existing */
+                        coDelete((co)existing);
+                        res->v.list[k] = NULL;
+                    }
+                }
+                
+                if (!skip) {
+                    /* Add a clone of the scratch buffer to the result */
+                    coVectorAdd(res, coClone((cco)scratch));
+                }
+            }
+        }
+    }
+    coDeleteBV(scratch);
+
+    /* Compress */
+    long write_idx = 0;
+    long total = coVectorSize(res);
+    for (long read_idx = 0; read_idx < total; read_idx++) {
+        if (res->v.list[read_idx] != NULL) {
+            res->v.list[write_idx++] = res->v.list[read_idx];
+        }
+    }
+    res->v.cnt = write_idx;
+
+    return res;
+}
+
+int coBVDNFIntersection(cco psd, co arg1, cco arg2) {
+    co res = coNewBVDNFByIntersection(psd, arg1, arg2);
+    if (res == NULL) return 0;
+
+    coVectorClear(arg1);
+    long cnt = coVectorSize(res);
+    for (long i = 0; i < cnt; i++) {
+        co element = (co)coVectorGet(res, i);
+        coVectorAdd(arg1, coClone((cco)element));
+    }
+    coDelete(res);
+    return 1;
+}
+
+co coBVDNFNewCofactor(cco psd, cco dnf, const char *attr_name, int32_t value) {
+    co bvattributes = (co)coMapGet(psd, "bvattributes");
+    co bvvaluepos = (co)coMapGet(psd, "bvvaluepos");
+    if (!bvattributes || !bvvaluepos) return NULL;
+
+    cco attr_meta = coMapGet(bvattributes, attr_name);
+    cco val_map = coMapGet(bvvaluepos, attr_name);
+    if (!attr_meta || !val_map) return NULL;
+
+    char buf[32];
+    sprintf(buf, "%d", value);
+    cco pos_obj = coMapGet(val_map, buf);
+    if (!pos_obj) return coNewVector(CO_FREE_VALS); /* Empty result if value not in domain */
+
+    int32_t start_bit = coInt32VectorGet(attr_meta, 1);
+    int32_t local_pos = (int32_t)coDblGet(pos_obj);
+    uint64_t bit_idx = (uint64_t)start_bit + local_pos;
+
+    co res = coNewVector(CO_FREE_VALS);
+    long cnt = coVectorSize(dnf);
+    for (long i = 0; i < cnt; i++) {
+        co_BVType bv = (co_BVType)coVectorGet(dnf, i);
+        if (coBVGet(bv, bit_idx)) {
+            co_BVType cloned = (co_BVType)coClone((cco)bv);
+            /* Set entire attribute to universal in the cofactor */
+            int32_t num_values = coInt32VectorGet(attr_meta, 2);
+            for (int32_t j = 0; j < num_values; j++) {
+                coBVSet(cloned, (uint64_t)start_bit + j);
+            }
+            coVectorAdd(res, (cco)cloned);
+        }
+    }
+    return res;
+}
+
+int coBVDNFCheckUniversal(cco psd, cco dnf) {
+    /* Use symbolic engine for universal check for now. */
+    co symbolic_dnf = coNewDNFFromBVDNF(psd, dnf);
+    int res = coDNFCheckUniversal(psd, symbolic_dnf);
+    coDelete(symbolic_dnf);
+    return res;
+}
+
 void coBVDNFMinimizeANDTermSubset(co dnf) {
     long i, j;
     if (!coIsVector(dnf)) return;
@@ -773,6 +991,14 @@ int coBVIsSubset(co_BVType a, co_BVType b) {
     return co_bv_is_subset_ptr(a, b);
 }
 
+int coBVSuperSubTest(co_BVType a, co_BVType b) {
+    return co_bv_super_sub_test_ptr(a, b);
+}
+
+int coBVIsDisjoint(co_BVType a, co_BVType b) {
+    return co_bv_is_disjoint_ptr(a, b);
+}
+
 /* 
    Computes bitwise res = a & b. 
    Returns 1 if at least one bit is set in the result, 0 if result is all zeros.
@@ -783,23 +1009,18 @@ int coBVANDTstZero(co_BVType res, co_BVType a, co_BVType b) {
 
 int coBVANDTermIntersect(cco psd, co_BVType res, co_BVType a, co_BVType b) {
     co bvmask = (co)coMapGet(psd, "bvmask");
-    co bvpos = (co)coMapGet(psd, "bvpos");
-    if (!bvmask || !bvpos) return 0;
-    uint64_t total_bits = coInt32VectorGet(bvpos, coInt32VectorSize(bvpos) - 1);
+    if (!bvmask) return 0;
 
     if (coBVANDTstZero(res, a, b) == 0) return 0;
 
-    co_BVType temp = coNewBV(total_bits);
     long cnt = coVectorSize(bvmask);
     for (long i = 0; i < cnt; i++) {
         co_BVType m = (co_BVType)coVectorGet(bvmask, i);
-        if (coBVANDTstZero(temp, res, m) == 0) {
+        if (coBVIsDisjoint(res, m)) {
             /* Empty intersection for this attribute: entire term is empty */
             coBVClearAll(res);
-            coDeleteBV(temp);
             return 0;
         }
     }
-    coDeleteBV(temp);
     return 1;
 }
