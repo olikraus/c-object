@@ -38,7 +38,7 @@ release: all
 	
 gprof: all
 
-all: co_test co_dnf_test co_a2l a2l_info a2l_search csv2json csvprint hex2json elf2json json_search json_compare json_format json2utf8json outline xml_test dnf
+all: co_test co_dnf_test co_a2l a2l_info a2l_search csv2json csvprint hex2json elf2json json_search json_compare json_format json2utf8json outline xml_test dnf dnfjsonparser
 	
 co_test: $(COOBJ) ./test/co_test.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
@@ -47,6 +47,9 @@ co_dnf_test: $(COOBJ) ./test/co_dnf_test.c
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
 
 dnf: $(COOBJ) ./test/dnf.o
+	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
+
+dnfjsonparser: $(COOBJ) ./test/dnfjsonparser.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
 
 co_a2l: $(COOBJ) ./test/co_a2l.o
@@ -91,6 +94,6 @@ xml_test: $(COOBJ) $(EXPATOBJ) ./test/xml_test.o
 clean:
 	-rm $(COOBJ) 
 	-rm $(EXPAT)
-	-rm ./test/co_test.o ./test/co_a2l.o ./test/a2l_info.o ./test/a2l_search.o ./test/csv2json.o ./test/csvprint.o ./test/hex2json.o ./test/elf2json.o ./test/json_compare.o ./test/json_format.o ./test/json2utf8json.o ./test/outline.o ./test/xml_test.o ./test/dnf.o
-	-rm co_test co_a2l a2l_info csv2json csvprint hex2json elf2json json_search json_compare json2utf8json json_format outline xml_test dnf
+	-rm ./test/co_test.o ./test/co_a2l.o ./test/a2l_info.o ./test/a2l_search.o ./test/csv2json.o ./test/csvprint.o ./test/hex2json.o ./test/elf2json.o ./test/json_compare.o ./test/json_format.o ./test/json2utf8json.o ./test/outline.o ./test/xml_test.o ./test/dnf.o ./test/dnfjsonparser.o
+	-rm co_test co_a2l a2l_info csv2json csvprint hex2json elf2json json_search json_compare json2utf8json json_format outline xml_test dnf dnfjsonparser
 	
