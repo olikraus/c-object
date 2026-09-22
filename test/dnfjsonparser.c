@@ -1,9 +1,30 @@
+#include "co.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <stdint.h>
 #include <immintrin.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+/*
+  JSON Operation Format Specification:
+  {
+    "op": "intersection" | "intersection-check",
+    "arg1": [ { "dnf": <dnf> }, ... ] | { "dnf": <dnf> },
+    "arg2": [ { "dnf": <dnf> }, ... ] | { "dnf": <dnf> }
+  }
+  
+  <dnf> ::= [ <and-term>, ... ]
+  <and-term> ::= { <attr>: [ <val>, ... ], ... }
+
+  Example command for 100MB benchmark generation:
+  ./dnf -gpsd 2 20 -gdnf 2 2 3 -gic 200000 1 -o tmp.json && ls -al tmp.json
+
+  To test/run the benchmark:
+  ./dnfjsonparser -v -o r.json tmp.json
+*/
 
 static double get_ms(void) {
   struct timespec ts;
@@ -11,143 +32,636 @@ static double get_ms(void) {
   return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
 }
 
-/* Global storage for detected structural character positions */
-uint32_t *json_char_pos_array = NULL;
-size_t json_char_pos_cnt = 0;
-size_t json_char_pos_max = 0;
+typedef struct {
+    char *buffer;       /* Raw JSON content. Allocated and written by djp_read_file(). */
+    size_t size;        /* Size of the raw JSON content. Written by djp_read_file(). */
+    uint32_t *pos_array;/* Array of structural character positions. Allocated by djp_init()/djp_ensure_capacity(), written by djp_scan(). */
+    size_t pos_cnt;     /* Number of structural characters found. Written by djp_scan(). */
+    size_t pos_max;     /* Allocated size of pos_array. Written by djp_init() and djp_ensure_capacity(). */
+    size_t token_idx;   /* Current token index during recursive parsing. Reset by djp_parse(), updated by consumption functions. */
+    int verbose;        /* Output verbosity flag. Controlled by the caller (default: 0 in djp_init()). */
+    const char *out_filename; /* Output filename for operation results. Controlled by the caller. */
+    
+    /* Operation State */
+    char op_name[64];
+    co psd;             /* Problem Space Description */
+    co arg1_dnf_list;   /* Vector of BVDNFs */
+    co arg2_dnf_list;   /* Vector of BVDNFs */
+} djp_t;
 
-void json_char_pos_init(void) {
-    json_char_pos_max = 128;
-    json_char_pos_array = (uint32_t*)malloc(json_char_pos_max * sizeof(uint32_t));
-    json_char_pos_cnt = 0;
+void djp_print(djp_t *p, const char *fmt, ...) {
+    if (p->verbose) {
+        va_list args;
+        va_start(args, fmt);
+        vprintf(fmt, args);
+        va_end(args);
+    }
 }
 
-void json_char_pos_ensure_capacity(void) {
-    if (json_char_pos_cnt + 16 > json_char_pos_max) {
-        json_char_pos_max *= 2;
-        json_char_pos_array = (uint32_t*)realloc(json_char_pos_array, json_char_pos_max * sizeof(uint32_t));
-        if (!json_char_pos_array) {
+void djp_init(djp_t *p) {
+    p->buffer = NULL;
+    p->size = 0;
+    p->pos_max = 128;
+    p->pos_array = (uint32_t*)malloc(p->pos_max * sizeof(uint32_t));
+    p->pos_cnt = 0;
+    p->token_idx = 0;
+    p->verbose = 0;
+    p->out_filename = NULL;
+    
+    p->psd = NULL;
+    p->arg1_dnf_list = NULL;
+    p->arg2_dnf_list = NULL;
+    p->op_name[0] = '\0';
+}
+
+void djp_destroy(djp_t *p) {
+    if (p->buffer) free(p->buffer);
+    if (p->pos_array) free(p->pos_array);
+    if (p->psd) coDelete(p->psd);
+    if (p->arg1_dnf_list) coDelete(p->arg1_dnf_list);
+    if (p->arg2_dnf_list) coDelete(p->arg2_dnf_list);
+    memset(p, 0, sizeof(djp_t));
+}
+
+void djp_ensure_capacity(djp_t *p) {
+    if (p->pos_cnt + 16 > p->pos_max) {
+        p->pos_max *= 2;
+        p->pos_array = (uint32_t*)realloc(p->pos_array, p->pos_max * sizeof(uint32_t));
+        if (!p->pos_array) {
             fprintf(stderr, "Error: Failed to reallocate structural character array\n");
             exit(1);
         }
     }
 }
 
+void djp_error(djp_t *p, const char *msg) {
+    size_t pos = (p->token_idx < p->pos_cnt) ? p->pos_array[p->token_idx] : p->size;
+    fprintf(stderr, "Parser Error at position %zu (token %zu): %s\n", pos, p->token_idx, msg);
+    exit(1);
+}
+
+int djp_read_file(djp_t *p, const char *filename) {
+    FILE *fp = fopen(filename, "rb");
+    if (!fp) {
+        perror(filename);
+        return 0;
+    }
+
+    fseek(fp, 0, SEEK_END);
+    long size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    if (size < 0) {
+        fclose(fp);
+        return 0;
+    }
+
+    p->size = (size_t)size;
+    p->buffer = (char*)malloc(p->size + 32); 
+    if (!p->buffer) {
+        fclose(fp);
+        return 0;
+    }
+
+    djp_print(p, "Reading file...\n");
+    double t1 = get_ms();
+    size_t bytes_read = fread(p->buffer, 1, p->size, fp);
+    p->buffer[bytes_read] = '\0';
+    memset(p->buffer + bytes_read, 0, 32);
+    double t2 = get_ms();
+    djp_print(p, "Read time:  %.4f ms\n", t2 - t1);
+
+    fclose(fp);
+    return 1;
+}
+
+void djp_scan(djp_t *p) {
+    /* SIMD Tables */
+    /* 
+       Bit 0: 0x01: " (0x22)
+       Bit 1: 0x02: , (0x2C)
+       Bit 2: 0x04: [ (0x5B)
+       Bit 3: 0x08: \ (0x5C)
+       Bit 4: 0x10: ] (0x5D)
+       Bit 5: 0x20: { (0x7B)
+       Bit 6: 0x40: } (0x7D)
+       Bit 7: 0x80: : (0x3A)
+    */
+    __m128i ht = _mm_setr_epi8(
+        0x00, 0x00, 0x03, 0x80, 0x00, 0x1C, 0x00, 0x60,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    );
+    __m128i lt = _mm_setr_epi8(
+        0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x80, 0x24, 0x0A, 0x50, 0x00, 0x00
+    );
+    __m128i low_mask = _mm_set1_epi8(0x0F);
+    __m128i zero = _mm_setzero_si128();
+
+    djp_print(p, "Scanning for structural characters (SSE4.2 Optimized)...\n");
+    double t1 = get_ms();
+
+    int in_string = 0;
+    int skip_next_byte = 0;
+    long pos = 0;
+    size_t bytes_read = p->size;
+    char *buffer = p->buffer;
+
+    while (pos < (long)bytes_read) {
+        __m128i data = _mm_loadu_si128((__m128i*)(buffer + pos));
+        
+        __m128i low_nibbles = _mm_and_si128(data, low_mask);
+        __m128i high_nibbles = _mm_and_si128(_mm_srli_epi16(data, 4), low_mask);
+
+        __m128i low_lookup = _mm_shuffle_epi8(lt, low_nibbles);
+        __m128i high_lookup = _mm_shuffle_epi8(ht, high_nibbles);
+
+        __m128i result = _mm_and_si128(low_lookup, high_lookup);
+
+        if (!_mm_testz_si128(result, result)) {
+            uint32_t found_mask = (uint32_t)~_mm_movemask_epi8(_mm_cmpeq_epi8(result, zero)) & 0xFFFF;
+            
+            if (skip_next_byte) {
+                found_mask &= ~1U;
+                skip_next_byte = 0;
+            }
+
+            if (found_mask != 0) {
+                djp_ensure_capacity(p);
+                
+                while (found_mask != 0) {
+                    int i = __builtin_ctz(found_mask);
+                    found_mask &= (found_mask - 1); 
+                    
+                    char c = buffer[pos + i];
+                    if (!in_string) {
+                        p->pos_array[p->pos_cnt++] = (uint32_t)(pos + i);
+                        if (c == '\"') in_string = 1;
+                    } else {
+                        if (c == '\\') {
+                            if (i < 15) {
+                                found_mask &= ~(1U << (i + 1));
+                            } else {
+                                skip_next_byte = 1;
+                            }
+                        } else if (c == '\"') {
+                            in_string = 0;
+                            p->pos_array[p->pos_cnt++] = (uint32_t)(pos + i);
+                        }
+                    }
+                }
+            }
+        } else {
+            skip_next_byte = 0;
+        }
+        pos += 16;
+    }
+
+    double t2 = get_ms();
+    djp_print(p, "Scan time:  %.4f ms\n", t2 - t1);
+    djp_print(p, "Structural characters found: %zu\n", p->pos_cnt);
+}
+
+char djp_peek_token_char(djp_t *p) {
+    if (p->token_idx >= p->pos_cnt) return '\0';
+    return p->buffer[p->pos_array[p->token_idx]];
+}
+
+char djp_consume_token_char(djp_t *p) {
+    if (p->token_idx >= p->pos_cnt) return '\0';
+    return p->buffer[p->pos_array[p->token_idx++]];
+}
+
+int djp_has_content_between_tokens(djp_t *p) {
+    if (p->token_idx == 0 || p->token_idx >= p->pos_cnt) return 0;
+    size_t start = p->pos_array[p->token_idx - 1] + 1;
+    size_t end = p->pos_array[p->token_idx];
+    for (size_t i = start; i < end; i++) {
+        if (!isspace((unsigned char)p->buffer[i])) return 1;
+    }
+    return 0;
+}
+
+/* Low-level parsing helpers */
+
+char *djp_alloc_string(djp_t *p) {
+    if (djp_peek_token_char(p) != '\"') djp_error(p, "Expected '\"'");
+    uint32_t start = p->pos_array[p->token_idx++] + 1;
+    if (djp_peek_token_char(p) != '\"') djp_error(p, "Expected closing '\"'");
+    uint32_t end = p->pos_array[p->token_idx++];
+    size_t len = end - start;
+    char *s = (char*)malloc(len + 1);
+    memcpy(s, p->buffer + start, len);
+    s[len] = '\0';
+    return s;
+}
+
+void djp_skip_string(djp_t *p) {
+    if (djp_peek_token_char(p) != '\"') djp_error(p, "Expected '\"'");
+    p->token_idx++;
+    if (djp_peek_token_char(p) != '\"') djp_error(p, "Expected closing '\"'");
+    p->token_idx++;
+}
+
+int32_t djp_parse_int(djp_t *p) {
+    size_t start = (p->token_idx == 0) ? 0 : p->pos_array[p->token_idx-1] + 1;
+    size_t end = (p->token_idx < p->pos_cnt) ? p->pos_array[p->token_idx] : p->size;
+    while (start < end && isspace((unsigned char)p->buffer[start])) start++;
+    if (start == end) djp_error(p, "Expected integer");
+    char *endptr;
+    long val = strtol(p->buffer + start, &endptr, 10);
+    return (int32_t)val;
+}
+
+/* Phase 1: PSD Collection */
+
+void djp_collect_psd_dnf(djp_t *p) {
+    if (djp_consume_token_char(p) != '[') djp_error(p, "Expected '[' for DNF");
+    if (djp_peek_token_char(p) == ']') {
+        djp_consume_token_char(p);
+        return;
+    }
+    for (;;) {
+        if (djp_consume_token_char(p) != '{') djp_error(p, "Expected '{' for AND-term");
+        if (djp_peek_token_char(p) != '}') {
+            for (;;) {
+                char *attr_name = djp_alloc_string(p);
+                if (djp_consume_token_char(p) != ':') djp_error(p, "Expected ':'");
+                if (djp_consume_token_char(p) != '[') djp_error(p, "Expected '['");
+                co val_vec = coNewVector(CO_FREE_VALS);
+                if (djp_has_content_between_tokens(p) || djp_peek_token_char(p) != ']') {
+                    for (;;) {
+                        coVectorAdd(val_vec, coNewDbl((double)djp_parse_int(p)));
+                        char c = djp_consume_token_char(p);
+                        if (c == ']') break;
+                        if (c != ',') djp_error(p, "Expected ',' or ']'");
+                    }
+                } else {
+                    djp_consume_token_char(p);
+                }
+                co temp_dnf = coNewVector(CO_FREE_VALS);
+                co term = coNewMap(CO_STRDUP | CO_FREE_VALS);
+                coMapAdd(term, attr_name, val_vec);
+                coVectorAdd(temp_dnf, term);
+                coPSDExtendByDNF(p->psd, temp_dnf);
+                coDelete(temp_dnf);
+                free(attr_name);
+                char c = djp_consume_token_char(p);
+                if (c == '}') break;
+                if (c != ',') djp_error(p, "Expected ',' or '}'");
+            }
+        } else {
+            /* Empty term {}: Universal Term */
+            djp_consume_token_char(p); // consume '}'
+            co temp_dnf = coNewVector(CO_FREE_VALS);
+            co term = coNewMap(CO_STRDUP | CO_FREE_VALS);
+            coVectorAdd(temp_dnf, term);
+            coPSDExtendByDNF(p->psd, temp_dnf);
+            coDelete(temp_dnf);
+        }
+        char c = djp_consume_token_char(p);
+        if (c == ']') break;
+        if (c != ',') djp_error(p, "Expected ',' or ']'");
+        if (djp_peek_token_char(p) == ']') djp_error(p, "Trailing comma not allowed");
+    }
+}
+
+void djp_collect_psd_recursive(djp_t *p) {
+    char c = djp_peek_token_char(p);
+    if (c == '{') {
+        djp_consume_token_char(p);
+        if (djp_peek_token_char(p) == '}') {
+            djp_consume_token_char(p);
+            return;
+        }
+        for (;;) {
+            char *key = djp_alloc_string(p);
+            if (djp_consume_token_char(p) != ':') djp_error(p, "Expected ':'");
+            if (strcmp(key, "dnf") == 0) {
+                djp_collect_psd_dnf(p);
+            } else {
+                djp_collect_psd_recursive(p);
+            }
+            free(key);
+            char c2 = djp_consume_token_char(p);
+            if (c2 == '}') break;
+            if (c2 != ',') djp_error(p, "Expected ',' or '}'");
+        }
+    } else if (c == '[') {
+        djp_consume_token_char(p);
+        if (djp_peek_token_char(p) == ']') {
+            djp_consume_token_char(p);
+            return;
+        }
+        for (;;) {
+            djp_collect_psd_recursive(p);
+            char c2 = djp_consume_token_char(p);
+            if (c2 == ']') break;
+            if (c2 != ',') djp_error(p, "Expected ',' or ']'");
+        }
+    } else if (c == '\"') {
+        djp_skip_string(p);
+    } else {
+        while (p->token_idx < p->pos_cnt && p->buffer[p->pos_array[p->token_idx]] != ',' && p->buffer[p->pos_array[p->token_idx]] != ']' && p->buffer[p->pos_array[p->token_idx]] != '}') p->token_idx++;
+    }
+}
+
+/* Phase 3: Bitvector DNF Construction */
+
+co djp_parse_bvdnf(djp_t *p) {
+    co bvdnf = coNewVector(CO_FREE_VALS);
+    djp_consume_token_char(p);
+    if (djp_peek_token_char(p) == ']') {
+        djp_consume_token_char(p);
+        return bvdnf;
+    }
+    for (;;) {
+        djp_consume_token_char(p);
+        co term_map = coNewMap(CO_STRDUP | CO_FREE_VALS);
+        if (djp_peek_token_char(p) != '}') {
+            for (;;) {
+                char *attr_name = djp_alloc_string(p);
+                djp_consume_token_char(p); // :
+                djp_consume_token_char(p); // [
+                co val_vec = coNewInt32Vector(CO_NONE);
+                if (djp_has_content_between_tokens(p) || djp_peek_token_char(p) != ']') {
+                    for (;;) {
+                        coInt32VectorAddUnique(val_vec, djp_parse_int(p));
+                        char c = djp_consume_token_char(p);
+                        if (c == ']') break;
+                        if (c != ',') djp_error(p, "Expected ',' or ']'");
+                    }
+                } else {
+                    djp_consume_token_char(p);
+                }
+                coMapAdd(term_map, attr_name, val_vec);
+                free(attr_name);
+                char c = djp_consume_token_char(p);
+                if (c == '}') break;
+                if (c != ',') djp_error(p, "Expected ',' or '}'");
+            }
+        } else {
+            djp_consume_token_char(p);
+        }
+        co_BVType bv = coNewBVFromANDTerm(p->psd, term_map);
+        coVectorAdd(bvdnf, (cco)bv);
+        coDelete(term_map);
+        char c = djp_consume_token_char(p);
+        if (c == ']') break;
+        if (c != ',') djp_error(p, "Expected ',' or ']'");
+        if (djp_peek_token_char(p) == ']') djp_error(p, "Trailing comma not allowed");
+    }
+    return bvdnf;
+}
+
+void djp_build_bvdnf_recursive(djp_t *p, co *target_list) {
+    char c = djp_peek_token_char(p);
+    if (c == '{') {
+        djp_consume_token_char(p);
+        if (djp_peek_token_char(p) == '}') {
+            djp_consume_token_char(p);
+            return;
+        }
+        for (;;) {
+            char *key = djp_alloc_string(p);
+            djp_consume_token_char(p); // :
+            if (strcmp(key, "op") == 0) {
+                char *op = djp_alloc_string(p);
+                strncpy(p->op_name, op, 63);
+                free(op);
+            } else if (strcmp(key, "arg1") == 0) {
+                p->arg1_dnf_list = coNewVector(CO_FREE_VALS);
+                djp_build_bvdnf_recursive(p, &p->arg1_dnf_list);
+            } else if (strcmp(key, "arg2") == 0) {
+                p->arg2_dnf_list = coNewVector(CO_FREE_VALS);
+                djp_build_bvdnf_recursive(p, &p->arg2_dnf_list);
+            } else if (strcmp(key, "dnf") == 0) {
+                co bvdnf = djp_parse_bvdnf(p);
+                if (target_list && *target_list) coVectorAdd(*target_list, bvdnf); else coDelete(bvdnf);
+            } else {
+                djp_build_bvdnf_recursive(p, target_list);
+            }
+            free(key);
+            char c2 = djp_consume_token_char(p);
+            if (c2 == '}') break;
+        }
+    } else if (c == '[') {
+        djp_consume_token_char(p);
+        if (djp_peek_token_char(p) == ']') {
+            djp_consume_token_char(p);
+            return;
+        }
+        for (;;) {
+            djp_build_bvdnf_recursive(p, target_list);
+            char c2 = djp_consume_token_char(p);
+            if (c2 == ']') break;
+        }
+    } else if (c == '\"') {
+        djp_skip_string(p);
+    } else {
+        while (p->token_idx < p->pos_cnt && p->buffer[p->pos_array[p->token_idx]] != ',' && p->buffer[p->pos_array[p->token_idx]] != ']' && p->buffer[p->pos_array[p->token_idx]] != '}') p->token_idx++;
+    }
+}
+
+/* Phase 4: Execution */
+
+void djp_execute_op(djp_t *p) {
+    if (!p->arg1_dnf_list || !p->arg2_dnf_list) return;
+    int is_check = (strcmp(p->op_name, "intersection-check") == 0);
+    co result_list = coNewVector(CO_FREE_VALS);
+    long n = coVectorSize(p->arg1_dnf_list);
+    long m = coVectorSize(p->arg2_dnf_list);
+
+    djp_print(p, "Arg1 DNF count: %ld\n", n);
+    djp_print(p, "Arg2 DNF count: %ld\n", m);
+    djp_print(p, "Total intersections to execute: %ld\n", n * m);
+
+    double t1 = get_ms();
+    for (long i = 0; i < n; i++) {
+        co bv1 = (co)coVectorGet(p->arg1_dnf_list, i); // Vector of terms
+        for (long j = 0; j < m; j++) {
+            co bv2 = (co)coVectorGet(p->arg2_dnf_list, j); // Vector of terms
+            
+            if (is_check) {
+                coVectorAdd(result_list, coNewBool(coBVDNFIntersectionCheck(p->psd, bv1, bv2)));
+            } else {
+                co res_bv = coNewBVDNFByIntersectionWithoutMinimization(p->psd, bv1, bv2);
+                coVectorAdd(result_list, coNewDNFFromBVDNF(p->psd, res_bv));
+                coDelete(res_bv);
+            }
+        }
+    }
+    double t2 = get_ms();
+    djp_print(p, "Op execution time: %.4f ms\n", t2 - t1);
+
+    /* Output results */
+    FILE *out_f = stdout;
+    if (p->out_filename != NULL) {
+        out_f = fopen(p->out_filename, "w");
+        if (out_f == NULL) {
+            perror(p->out_filename);
+            out_f = stdout;
+        }
+    }
+
+    djp_print(p, "Operation '%s' result:\n", p->op_name);
+    double t3 = get_ms();
+    coWriteJSON(result_list, 0, 0, out_f);
+    fprintf(out_f, "\n");
+    double t4 = get_ms();
+    djp_print(p, "Write result time: %.4f ms\n", t4 - t3);
+
+    if (out_f != stdout) {
+        fclose(out_f);
+    }
+    coDelete(result_list);
+}
+
+
+void djp_process_op_json(djp_t *p) {
+    /* Phase 1: PSD Collection */
+    double t1 = get_ms();
+    p->psd = coNewPSD();
+    p->token_idx = 0;
+    djp_collect_psd_recursive(p);
+    double t2 = get_ms();
+    djp_print(p, "psd parser time: %.4f ms\n", t2 - t1);
+
+    /* Phase 2: BV Preparation */
+    double t3 = get_ms();
+    coBVPreparePSD(p->psd);
+    double t4 = get_ms();
+    djp_print(p, "psd bv prep time: %.4f ms\n", t4 - t3);
+    
+    /* Phase 3: BVDNF Construction */
+    double t5 = get_ms();
+    p->token_idx = 0;
+    djp_build_bvdnf_recursive(p, NULL);
+    double t6 = get_ms();
+    djp_print(p, "dnf parser time: %.4f ms\n", t6 - t5);
+    
+    djp_execute_op(p);
+}
+
+/* Validation Reference */
+
+void djp_validate_value(djp_t *p);
+
+void djp_validate_object(djp_t *p) {
+    djp_consume_token_char(p);
+    if (djp_peek_token_char(p) == '}') { djp_consume_token_char(p); return; }
+    for (;;) {
+        djp_skip_string(p);
+        djp_consume_token_char(p); // :
+        djp_validate_value(p);
+        char c = djp_consume_token_char(p);
+        if (c == '}') break;
+        if (djp_peek_token_char(p) == '}' && !djp_has_content_between_tokens(p)) djp_error(p, "Trailing comma");
+    }
+}
+
+void djp_validate_array(djp_t *p) {
+    djp_consume_token_char(p);
+    if (djp_peek_token_char(p) == ']') { djp_consume_token_char(p); return; }
+    for (;;) {
+        djp_validate_value(p);
+        char c = djp_consume_token_char(p);
+        if (c == ']') break;
+        if (djp_peek_token_char(p) == ']' && !djp_has_content_between_tokens(p)) djp_error(p, "Trailing comma");
+    }
+}
+
+void djp_validate_value(djp_t *p) {
+    char c = djp_peek_token_char(p);
+    if (c == '{') djp_validate_object(p);
+    else if (c == '[') djp_validate_array(p);
+    else if (c == '\"') djp_skip_string(p);
+    else {
+        if (c == ',' || c == ']' || c == '}' || c == '\0' || c == ':') return;
+        djp_error(p, "Unexpected char");
+    }
+}
+
+void djp_validate(djp_t *p) {
+    djp_print(p, "Validating JSON structure (Reference)...\n");
+    double t1 = get_ms();
+    p->token_idx = 0;
+    djp_validate_value(p);
+    double t2 = get_ms();
+    djp_print(p, "Validation time: %.4f ms\n", t2 - t1);
+}
+
 int main(int argc, char **argv) {
-  if (argc < 2) {
-    fprintf(stderr, "Usage: %s <input.json>\n", argv[0]);
+  int i;
+  int verbose = 0;
+  int force_validate = 0;
+  const char *filename = NULL;
+  const char *out_filename = NULL;
+
+  for (i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-v") == 0) verbose = 1;
+    else if (strcmp(argv[i], "-t") == 0) force_validate = 1;
+    else if (strcmp(argv[i], "-o") == 0) {
+        if (i + 1 < argc) {
+            out_filename = argv[++i];
+        } else {
+            fprintf(stderr, "Error: -o option requires a filename\n");
+            return 1;
+        }
+    }
+    else if (argv[i][0] == '-') { fprintf(stderr, "Unknown option: %s\n", argv[i]); return 1; }
+    else filename = argv[i];
+  }
+
+  if (filename == NULL) {
+    fprintf(stderr, "Usage: %s [-v] [-t] [-o <output.json>] <input.json>\n", argv[0]);
+    fprintf(stderr, "Options:\n");
+    fprintf(stderr, "  -v: Verbose output (timing and internal state)\n");
+    fprintf(stderr, "  -t: Force structural validation mode (reference implementation)\n");
+    fprintf(stderr, "  -o <file>: Write operation results to specified file\n");
     return 1;
   }
 
-  const char *filename = argv[1];
-  FILE *fp = fopen(filename, "rb");
-  if (!fp) {
-    perror(filename);
-    return 1;
-  }
+  djp_t p;
+  djp_init(&p);
+  p.verbose = verbose;
+  p.out_filename = out_filename;
 
-  fseek(fp, 0, SEEK_END);
-  long size = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
+  coBVDetect();
+  const char *simd_name = "Scalar uint64_t";
+  if (co_bv_base_size == 16) simd_name = "SSE2 128-bit";
+  else if (co_bv_base_size == 32) simd_name = "AVX2 256-bit";
+  else if (co_bv_base_size == 64) simd_name = "AVX-512 512-bit";
+  djp_print(&p, "Using Bitset Base Type: %s\n", simd_name);
 
-  if (size < 0) {
-      fclose(fp);
+  double t_start = get_ms();
+
+  if (!djp_read_file(&p, filename)) {
+      djp_destroy(&p);
       return 1;
   }
 
-  char *buffer = malloc(size + 32); /* Extra space for SIMD safety and padding */
-  if (!buffer) {
-      fclose(fp);
-      return 1;
-  }
+  djp_scan(&p);
 
-  size_t bytes_read = fread(buffer, 1, size, fp);
-  buffer[bytes_read] = '\0';
-  memset(buffer + bytes_read, 0, 32);
-
-  json_char_pos_init();
-
-  /* SIMD Tables */
-  __m128i ht = _mm_setr_epi8(
-      0x00, 0x00, 0x03, 0x00, 0x00, 0x1C, 0x00, 0x60,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-  );
-  __m128i lt = _mm_setr_epi8(
-      0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x24, 0x0A, 0x50, 0x00, 0x00
-  );
-  __m128i low_mask = _mm_set1_epi8(0x0F);
-  __m128i zero = _mm_setzero_si128();
-
-  printf("Scanning for structural characters (SSE4.2 Optimized)...\n");
-  double t1 = get_ms();
-
-  int in_string = 0;
-  int skip_next_byte = 0;
-
-  long pos = 0;
-  while (pos < (long)bytes_read) {
-      __m128i data = _mm_loadu_si128((__m128i*)(buffer + pos));
-      
-      __m128i low_nibbles = _mm_and_si128(data, low_mask);
-      __m128i high_nibbles = _mm_and_si128(_mm_srli_epi16(data, 4), low_mask);
-
-      __m128i low_lookup = _mm_shuffle_epi8(lt, low_nibbles);
-      __m128i high_lookup = _mm_shuffle_epi8(ht, high_nibbles);
-
-      __m128i result = _mm_and_si128(low_lookup, high_lookup);
-
-      /* SSE4.1 check if block has any interesting bytes */
-      if (!_mm_testz_si128(result, result)) {
-          uint32_t found_mask = (uint32_t)_mm_movemask_epi8(_mm_cmpgt_epi8(result, zero));
-          
-          if (skip_next_byte) {
-              found_mask &= ~1U;
-              skip_next_byte = 0;
-          }
-
-          if (found_mask != 0) {
-              json_char_pos_ensure_capacity();
-              
-              while (found_mask != 0) {
-                  int i = __builtin_ctz(found_mask);
-                  found_mask &= (found_mask - 1); /* Clear processed bit */
-                  
-                  char c = buffer[pos + i];
-                  if (!in_string) {
-                      json_char_pos_array[json_char_pos_cnt++] = (uint32_t)(pos + i);
-                      if (c == '\"') in_string = 1;
-                  } else {
-                      /* Inside string: only care about quotes and escapes */
-                      if (c == '\\') {
-                          /* Skip the very next byte in the stream */
-                          if (i < 15) {
-                              found_mask &= ~(1U << (i + 1));
-                          } else {
-                              skip_next_byte = 1;
-                          }
-                      } else if (c == '\"') {
-                          in_string = 0;
-                          json_char_pos_array[json_char_pos_cnt++] = (uint32_t)(pos + i);
-                      }
-                  }
-              }
-          }
-      } else {
-          /* No structural characters in this block, but might need to clear skip flag */
-          skip_next_byte = 0;
+  if (force_validate) {
+      djp_validate(&p);
+  } else {
+      /* Detect Mode: Validation or Operation */
+      p.token_idx = 0;
+      int is_op = 0;
+      if (djp_peek_token_char(&p) == '{') {
+          is_op = 1;
       }
-      pos += 16;
+      if (is_op) {
+          djp_process_op_json(&p);
+      } else {
+          djp_validate(&p);
+      }
   }
 
-  double t2 = get_ms();
-  printf("File: %s\n", filename);
-  printf("Size: %ld bytes\n", size);
-  printf("Structural characters found: %zu\n", json_char_pos_cnt);
-  printf("Scan time: %.4f ms\n", t2 - t1);
+  double t_end = get_ms();
+  djp_print(&p, "Total time: %.4f ms (including file read)\n", t_end - t_start);
 
-  free(buffer);
-  free(json_char_pos_array);
-  fclose(fp);
+  djp_destroy(&p);
   return 0;
 }

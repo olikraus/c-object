@@ -11,10 +11,10 @@
 #	release		build release version
 #
 
-debug: CFLAGS = -g -DCO_USE_ZLIB -Wall -I./co -I./co/expat
-sanitize: CFLAGS = -g -DCO_USE_ZLIB -Wall -fsanitize=address -I./co -I./co/expat
-release: CFLAGS = -O4 -DNDEBUG -DCO_USE_ZLIB -Wall -I./co -I./co/expat
-gprof: CFLAGS = -g -no-pie -fno-omit-frame-pointer -pg -DCO_USE_ZLIB -Wall -I./co
+debug: CFLAGS = -g -msse4.2 -DCO_USE_ZLIB -Wall -I./co -I./co/expat
+sanitize: CFLAGS = -g -msse4.2 -DCO_USE_ZLIB -Wall -fsanitize=address -I./co -I./co/expat
+release: CFLAGS = -O4 -msse4.2 -DNDEBUG -DCO_USE_ZLIB -Wall -I./co -I./co/expat
+gprof: CFLAGS = -g -msse4.2 -no-pie -fno-omit-frame-pointer -pg -DCO_USE_ZLIB -Wall -I./co
 
 ifeq ($(shell uname -s),Linux)
 LDFLAGS = -lelf -lm -lz -lpthread
@@ -32,9 +32,6 @@ debug: all
 sanitize: all 
 
 release: all
-	strip a2l_info.exe
-	strip a2l_search.exe
-	strip json2utf8json.exe
 	
 gprof: all
 
@@ -92,8 +89,7 @@ xml_test: $(COOBJ) $(EXPATOBJ) ./test/xml_test.o
 	$(CC) $(CFLAGS)  $^ -o $@ $(LDFLAGS)
 
 clean:
-	-rm $(COOBJ) 
-	-rm $(EXPAT)
+	-rm $(COOBJ) $(EXPATOBJ)
 	-rm ./test/co_test.o ./test/co_a2l.o ./test/a2l_info.o ./test/a2l_search.o ./test/csv2json.o ./test/csvprint.o ./test/hex2json.o ./test/elf2json.o ./test/json_compare.o ./test/json_format.o ./test/json2utf8json.o ./test/outline.o ./test/xml_test.o ./test/dnf.o ./test/dnfjsonparser.o
 	-rm co_test co_a2l a2l_info csv2json csvprint hex2json elf2json json_search json_compare json2utf8json json_format outline xml_test dnf dnfjsonparser
 	

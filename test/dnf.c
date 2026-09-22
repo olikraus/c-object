@@ -32,8 +32,97 @@ void print_help(const char *prog) {
   printf("  -opsd <file>        Write the extended PSD to a named JSON file\n");
   printf("  -gpsd <attrs> <val> Quickly generate a PSD with attributes/values\n");
   printf("  -gdnf <t> <a> <v>   Generate a random DNF as result (t: terms, a: attrs, v: values)\n");
+  printf("  -gic <n1> <n2>      Generate intersection-check input for dnfjsonparser (n1/n2: arg sizes, requires -gpsd and -gdnf)\n");
   printf("  -seed <s>           Set the seed for random operations (default: 12345)\n");
   printf("  -v                  Verbose mode (output input files and commands)\n");
+}
+
+co coNewRandomDNF(cco psd, long terms, long attrs, long vals) {
+  co psd_inner = (co)coMapGet(psd, "psd");
+  if (psd_inner == NULL || !coIsMap(psd_inner) || coMapSize(psd_inner) == 0) {
+    return NULL;
+  }
+
+  /* Collect all available attributes from psd_inner */
+  const char *avail_attrs[2048];
+  int avail_attrs_cnt = 0;
+  coMapIterator iter_a;
+  if (coMapLoopFirst(&iter_a, psd_inner)) {
+    do {
+      if (avail_attrs_cnt < 2048) {
+        avail_attrs[avail_attrs_cnt++] = coMapLoopKey(&iter_a);
+      }
+    } while (coMapLoopNext(&iter_a));
+  }
+
+  co random_dnf = coNewVector(CO_FREE_VALS);
+  if (random_dnf == NULL) return NULL;
+
+  long term_idx;
+  for (term_idx = 0; term_idx < terms; term_idx++) {
+    co and_term = coNewMap(CO_STRDUP | CO_FREE_VALS);
+    if (and_term == NULL) {
+      coDelete(random_dnf);
+      return NULL;
+    }
+
+    /* Shuffle and select attrs from avail_attrs */
+    long actual_attrs_to_select = (attrs < avail_attrs_cnt) ? attrs : avail_attrs_cnt;
+    const char *temp_attrs[2048];
+    memcpy(temp_attrs, avail_attrs, avail_attrs_cnt * sizeof(char*));
+    
+    long step;
+    for (step = 0; step < actual_attrs_to_select; step++) {
+      long r_idx = step + (rand() % (avail_attrs_cnt - step));
+      const char *swap = temp_attrs[step];
+      temp_attrs[step] = temp_attrs[r_idx];
+      temp_attrs[r_idx] = swap;
+    }
+
+    /* For each selected attribute, select vals from its available values */
+    for (step = 0; step < actual_attrs_to_select; step++) {
+      cco psd_vec = coMapGet(psd_inner, temp_attrs[step]);
+      assert(psd_vec != NULL && coIsInt32Vector(psd_vec));
+      
+      long avail_vals_cnt = coInt32VectorSize(psd_vec);
+      if (avail_vals_cnt == 0) continue;
+
+      /* Collect values */
+      int32_t *v_pool = malloc(avail_vals_cnt * sizeof(int32_t));
+      if (v_pool == NULL) { coDelete(and_term); coDelete(random_dnf); return NULL; }
+      
+      long val_v;
+      for (val_v = 0; val_v < avail_vals_cnt; val_v++) {
+        v_pool[val_v] = coInt32VectorGet(psd_vec, val_v);
+      }
+
+      long actual_vals_to_select = (vals < avail_vals_cnt) ? vals : avail_vals_cnt;
+      long val_idx;
+      for (val_idx = 0; val_idx < actual_vals_to_select; val_idx++) {
+        long r_idx = val_idx + (rand() % (avail_vals_cnt - val_idx));
+        int32_t swap = v_pool[val_idx];
+        v_pool[val_idx] = v_pool[r_idx];
+        v_pool[r_idx] = swap;
+      }
+
+      co val_vec_new = coNewInt32Vector(CO_NONE);
+      if (val_vec_new == NULL) { free(v_pool); coDelete(and_term); coDelete(random_dnf); return NULL; }
+
+      for (val_idx = 0; val_idx < actual_vals_to_select; val_idx++) {
+        coInt32VectorAddUnique(val_vec_new, v_pool[val_idx]);
+      }
+      free(v_pool);
+
+      if (coMapAdd(and_term, temp_attrs[step], val_vec_new) == NULL) {
+        coDelete(val_vec_new); coDelete(and_term); coDelete(random_dnf); return NULL;
+      }
+    }
+
+    if (coVectorAdd(random_dnf, and_term) < 0) {
+      coDelete(and_term); coDelete(random_dnf); return NULL;
+    }
+  }
+  return random_dnf;
 }
 
 int main(int argc, char **argv) {
@@ -67,6 +156,9 @@ int main(int argc, char **argv) {
   long gdnf_attrs = 0;
   long gdnf_vals = 0;
   int has_gdnf = 0;
+  int is_gic = 0;
+  long gic_n1 = 0;
+  long gic_n2 = 0;
   unsigned int seed = 12345;
 
   if (argc == 1) {
@@ -163,6 +255,16 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Error: -gdnf option requires three arguments: <terms> <attributes> <values>\n");
         return 1;
       }
+    } else if (strcmp(argv[i], "-gic") == 0) {
+      if (i + 2 < argc) {
+        gic_n1 = atol(argv[i + 1]);
+        gic_n2 = atol(argv[i + 2]);
+        is_gic = 1;
+        i += 2;
+      } else {
+        fprintf(stderr, "Error: -gic option requires two arguments: <n1> <n2>\n");
+        return 1;
+      }
     } else if (strcmp(argv[i], "-ipsd") == 0) {
       if (i + 1 < argc) {
         ipsd_path = argv[i + 1];
@@ -208,6 +310,11 @@ int main(int argc, char **argv) {
   /* Validate constraints */
   if (ipsd_path != NULL && has_gpsd) {
     fprintf(stderr, "Error: -ipsd and -gpsd are mutually exclusive\n");
+    return 1;
+  }
+
+  if (is_gic && (!has_gpsd || !has_gdnf)) {
+    fprintf(stderr, "Error: -gic requires -gpsd and -gdnf\n");
     return 1;
   }
 
@@ -390,147 +497,14 @@ int main(int argc, char **argv) {
   }
 
   /* Generate random DNF if requested and add to loaded_files */
-  if (has_gdnf) {
-    co psd_inner = (co)coMapGet(psd, "psd");
-    if (psd_inner == NULL || !coIsMap(psd_inner) || coMapSize(psd_inner) == 0) {
-      fprintf(stderr, "Error: No attributes found in the PSD space. Cannot generate random DNF.\n");
-      int k;
-      for (k = 0; k < file_cnt; k++) {
-        coDelete(loaded_files[k]);
-      }
-      coDelete(psd);
-      return 1;
-    }
-
-    /* Collect all available attributes from psd_inner */
-    const char *avail_attrs[2048];
-    int avail_attrs_cnt = 0;
-    coMapIterator iter_a;
-    if (coMapLoopFirst(&iter_a, psd_inner)) {
-      do {
-        if (avail_attrs_cnt < 2048) {
-          avail_attrs[avail_attrs_cnt++] = coMapLoopKey(&iter_a);
-        }
-      } while (coMapLoopNext(&iter_a));
-    }
-
-    co random_dnf = coNewVector(CO_FREE_VALS);
+  if (has_gdnf && !is_gic) {
+    co random_dnf = coNewRandomDNF(psd, gdnf_terms, gdnf_attrs, gdnf_vals);
     if (random_dnf == NULL) {
-      fprintf(stderr, "Error: Failed to create result DNF vector\n");
+      fprintf(stderr, "Error: Failed to generate random DNF.\n");
       int k;
-      for (k = 0; k < file_cnt; k++) {
-        coDelete(loaded_files[k]);
-      }
+      for (k = 0; k < file_cnt; k++) coDelete(loaded_files[k]);
       coDelete(psd);
       return 1;
-    }
-
-
-    long term_idx;
-    for (term_idx = 0; term_idx < gdnf_terms; term_idx++) {
-      co and_term = coNewMap(CO_STRDUP | CO_FREE_VALS);
-      if (and_term == NULL) {
-        int k;
-        for (k = 0; k < file_cnt; k++) {
-          coDelete(loaded_files[k]);
-        }
-        coDelete(psd);
-        coDelete(random_dnf);
-        return 1;
-      }
-
-      /* Shuffle and select gdnf_attrs from avail_attrs */
-      long actual_attrs_to_select = (gdnf_attrs < avail_attrs_cnt) ? gdnf_attrs : avail_attrs_cnt;
-      const char *temp_attrs[2048];
-      memcpy(temp_attrs, avail_attrs, avail_attrs_cnt * sizeof(char*));
-      
-      long step;
-      for (step = 0; step < actual_attrs_to_select; step++) {
-        long r_idx = step + (rand() % (avail_attrs_cnt - step));
-        const char *swap = temp_attrs[step];
-        temp_attrs[step] = temp_attrs[r_idx];
-        temp_attrs[r_idx] = swap;
-      }
-
-      /* For each selected attribute, select gdnf_vals from its available values */
-      for (step = 0; step < actual_attrs_to_select; step++) {
-        cco psd_vec = coMapGet(psd_inner, temp_attrs[step]);
-        assert(psd_vec != NULL && coIsInt32Vector(psd_vec));
-        
-        long avail_vals_cnt = coInt32VectorSize(psd_vec);
-        if (avail_vals_cnt == 0) {
-          continue; /* Skip if no values are in the PSD vector */
-        }
-
-        /* Collect values */
-        int32_t *temp_vals = malloc(avail_vals_cnt * sizeof(int32_t));
-        if (temp_vals == NULL) {
-          int k;
-          for (k = 0; k < file_cnt; k++) {
-            coDelete(loaded_files[k]);
-          }
-          coDelete(psd);
-          coDelete(and_term);
-          coDelete(random_dnf);
-          return 1;
-        }
-        
-        long val_v;
-        for (val_v = 0; val_v < avail_vals_cnt; val_v++) {
-          temp_vals[val_v] = coInt32VectorGet(psd_vec, val_v);
-        }
-
-        long actual_vals_to_select = (gdnf_vals < avail_vals_cnt) ? gdnf_vals : avail_vals_cnt;
-        long val_idx;
-        for (val_idx = 0; val_idx < actual_vals_to_select; val_idx++) {
-          long r_idx = val_idx + (rand() % (avail_vals_cnt - val_idx));
-          int32_t swap = temp_vals[val_idx];
-          temp_vals[val_idx] = temp_vals[r_idx];
-          temp_vals[r_idx] = swap;
-        }
-
-        co val_vec_new = coNewInt32Vector(CO_NONE);
-        if (val_vec_new == NULL) {
-          free(temp_vals);
-          int k;
-          for (k = 0; k < file_cnt; k++) {
-            coDelete(loaded_files[k]);
-          }
-          coDelete(psd);
-          coDelete(and_term);
-          coDelete(random_dnf);
-          return 1;
-        }
-
-        for (val_idx = 0; val_idx < actual_vals_to_select; val_idx++) {
-          coInt32VectorAddUnique(val_vec_new, temp_vals[val_idx]);
-        }
-
-        free(temp_vals);
-
-        if (coMapAdd(and_term, temp_attrs[step], val_vec_new) == NULL) {
-          coDelete(val_vec_new);
-          int k;
-          for (k = 0; k < file_cnt; k++) {
-            coDelete(loaded_files[k]);
-          }
-          coDelete(psd);
-          coDelete(and_term);
-          coDelete(random_dnf);
-          return 1;
-        }
-      }
-
-      if (coVectorAdd(random_dnf, and_term) < 0) {
-        coDelete(and_term);
-        int k;
-        for (k = 0; k < file_cnt; k++) {
-          coDelete(loaded_files[k]);
-        }
-        coDelete(psd);
-        coDelete(random_dnf);
-        return 1;
-      }
     }
     
     if (file_cnt < 128) {
@@ -539,12 +513,46 @@ int main(int argc, char **argv) {
       fprintf(stderr, "Error: Cannot add generated DNF, max file limit reached\n");
       coDelete(random_dnf);
       int k;
-      for (k = 0; k < file_cnt; k++) {
-        coDelete(loaded_files[k]);
-      }
+      for (k = 0; k < file_cnt; k++) coDelete(loaded_files[k]);
       coDelete(psd);
       return 1;
     }
+  }
+
+  /* Handle -gic generation */
+  if (is_gic) {
+    long gic_i;
+    co root = coNewMap(CO_STRDUP | CO_FREE_VALS);
+    coMapAdd(root, "op", coNewStr(CO_NONE, "intersection-check"));
+    
+    co arg1_list = coNewVector(CO_FREE_VALS);
+    for (gic_i = 0; gic_i < gic_n1; gic_i++) {
+        co wrap = coNewMap(CO_STRDUP | CO_FREE_VALS);
+        coMapAdd(wrap, "dnf", coNewRandomDNF(psd, gdnf_terms, gdnf_attrs, gdnf_vals));
+        coVectorAdd(arg1_list, wrap);
+    }
+    coMapAdd(root, "arg1", arg1_list);
+
+    co arg2_list = coNewVector(CO_FREE_VALS);
+    for (gic_i = 0; gic_i < gic_n2; gic_i++) {
+        co wrap = coNewMap(CO_STRDUP | CO_FREE_VALS);
+        coMapAdd(wrap, "dnf", coNewRandomDNF(psd, gdnf_terms, gdnf_attrs, gdnf_vals));
+        coVectorAdd(arg2_list, wrap);
+    }
+    coMapAdd(root, "arg2", arg2_list);
+
+    FILE *out_f = stdout;
+    if (o_path != NULL) {
+        out_f = fopen(o_path, "w");
+        if (out_f == NULL) perror(o_path), out_f = stdout;
+    }
+    coWriteJSON(root, 0, 0, out_f);
+    fprintf(out_f, "\n");
+    if (out_f != stdout) fclose(out_f);
+    
+    coDelete(root);
+    coDelete(psd);
+    return 0;
   }
 
   /* Verbose output of input files and commands */

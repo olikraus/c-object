@@ -18,6 +18,7 @@ typedef int (*co_bv_is_subset_fn)(co_BVType a, co_BVType b);
 typedef int (*co_bv_super_sub_test_fn)(co_BVType a, co_BVType b);
 typedef int (*co_bv_is_disjoint_fn)(co_BVType a, co_BVType b);
 typedef int (*co_bv_and_tst_zero_fn)(co_BVType res, co_BVType a, co_BVType b);
+typedef int (*co_bv_and3_tst_nonzero_fn)(co_BVType a, co_BVType b, co_BVType c);
 
 /* Implementations forward declarations */
 void co_bv_set_u64(co_BVType bv, uint64_t bit_idx);
@@ -33,6 +34,7 @@ int co_bv_is_subset_u64(co_BVType a, co_BVType b);
 int co_bv_super_sub_test_u64(co_BVType a, co_BVType b);
 int co_bv_is_disjoint_u64(co_BVType a, co_BVType b);
 int co_bv_and_tst_zero_u64(co_BVType res, co_BVType a, co_BVType b);
+int co_bv_and3_tst_nonzero_u64(co_BVType a, co_BVType b, co_BVType c);
 
 /* Global function pointers, default to u64 scalar versions */
 static co_bv_set_fn co_bv_set_ptr = co_bv_set_u64;
@@ -48,6 +50,7 @@ static co_bv_is_subset_fn co_bv_is_subset_ptr = co_bv_is_subset_u64;
 static co_bv_super_sub_test_fn co_bv_super_sub_test_ptr = co_bv_super_sub_test_u64;
 static co_bv_is_disjoint_fn co_bv_is_disjoint_ptr = co_bv_is_disjoint_u64;
 static co_bv_and_tst_zero_fn co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_u64;
+static co_bv_and3_tst_nonzero_fn co_bv_and3_tst_nonzero_ptr = co_bv_and3_tst_nonzero_u64;
 
 /* coBitVectorType functions */
 static int coBVInit(co o, void *data) { return 1; }
@@ -133,6 +136,12 @@ int co_bv_and_tst_zero_u64(co_BVType res, co_BVType a, co_BVType b) {
         nz |= res->data.u64[i];
     }
     return nz ? 1 : 0;
+}
+int co_bv_and3_tst_nonzero_u64(co_BVType a, co_BVType b, co_BVType c) {
+    for (int i = 0; i < a->cnt; i++) {
+        if (a->data.u64[i] & b->data.u64[i] & c->data.u64[i]) return 1;
+    }
+    return 0;
 }
 
 // m128
@@ -227,6 +236,15 @@ int co_bv_and_tst_zero_m128(co_BVType res, co_BVType a, co_BVType b) {
     }
     return nz;
 }
+__attribute__((target("sse2")))
+int co_bv_and3_tst_nonzero_m128(co_BVType a, co_BVType b, co_BVType c) {
+    __m128i zero = _mm_setzero_si128();
+    for (int i = 0; i < a->cnt; i++) {
+        __m128i v = _mm_and_si128(a->data.m128[i], _mm_and_si128(b->data.m128[i], c->data.m128[i]));
+        if (_mm_movemask_epi8(_mm_cmpeq_epi8(v, zero)) != 0xffff) return 1;
+    }
+    return 0;
+}
 
 // m256
 __attribute__((target("avx2")))
@@ -310,6 +328,14 @@ int co_bv_and_tst_zero_m256(co_BVType res, co_BVType a, co_BVType b) {
         if (!_mm256_testz_si256(res->data.m256[i], res->data.m256[i])) nz = 1;
     }
     return nz;
+}
+__attribute__((target("avx2")))
+int co_bv_and3_tst_nonzero_m256(co_BVType a, co_BVType b, co_BVType c) {
+    for (int i = 0; i < a->cnt; i++) {
+        __m256i v = _mm256_and_si256(a->data.m256[i], _mm256_and_si256(b->data.m256[i], c->data.m256[i]));
+        if (!_mm256_testz_si256(v, v)) return 1;
+    }
+    return 0;
 }
 
 // m512
@@ -395,6 +421,14 @@ int co_bv_and_tst_zero_m512(co_BVType res, co_BVType a, co_BVType b) {
     }
     return nz;
 }
+__attribute__((target("avx512f")))
+int co_bv_and3_tst_nonzero_m512(co_BVType a, co_BVType b, co_BVType c) {
+    for (int i = 0; i < a->cnt; i++) {
+        __m512i v = _mm512_and_si512(a->data.m512[i], _mm512_and_si512(b->data.m512[i], c->data.m512[i]));
+        if (_mm512_test_epi64_mask(v, v) != 0) return 1;
+    }
+    return 0;
+}
 
 void coBVDetect(void) {
     // Default (already set by static initialization, but re-assert here)
@@ -427,6 +461,7 @@ void coBVDetect(void) {
         co_bv_super_sub_test_ptr = co_bv_super_sub_test_m512;
         co_bv_is_disjoint_ptr = co_bv_is_disjoint_m512;
         co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_m512;
+        co_bv_and3_tst_nonzero_ptr = co_bv_and3_tst_nonzero_m512;
     } else if (__builtin_cpu_supports("avx2")) {
         co_bv_base_size = 32;
         co_bv_set_ptr = co_bv_set_m256;
@@ -442,6 +477,7 @@ void coBVDetect(void) {
         co_bv_super_sub_test_ptr = co_bv_super_sub_test_m256;
         co_bv_is_disjoint_ptr = co_bv_is_disjoint_m256;
         co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_m256;
+        co_bv_and3_tst_nonzero_ptr = co_bv_and3_tst_nonzero_m256;
     } else if (__builtin_cpu_supports("sse2")) {
         co_bv_base_size = 16;
         co_bv_set_ptr = co_bv_set_m128;
@@ -457,6 +493,7 @@ void coBVDetect(void) {
         co_bv_super_sub_test_ptr = co_bv_super_sub_test_m128;
         co_bv_is_disjoint_ptr = co_bv_is_disjoint_m128;
         co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_m128;
+        co_bv_and3_tst_nonzero_ptr = co_bv_and3_tst_nonzero_m128;
     }
 }
 
@@ -1005,6 +1042,34 @@ int coBVIsDisjoint(co_BVType a, co_BVType b) {
 */
 int coBVANDTstZero(co_BVType res, co_BVType a, co_BVType b) {
     return co_bv_and_tst_zero_ptr(res, a, b);
+}
+
+int coBVAND3TstNonZero(co_BVType a, co_BVType b, co_BVType c) {
+    return co_bv_and3_tst_nonzero_ptr(a, b, c);
+}
+
+int coBVANDTermIntersectionCheck(cco psd, co_BVType a, co_BVType b) {
+    co bvmask = (co)coMapGet(psd, "bvmask");
+    if (!bvmask) return 0;
+    long cnt = coVectorSize(bvmask);
+    for (long i = 0; i < cnt; i++) {
+        co_BVType m = (co_BVType)coVectorGet(bvmask, i);
+        if (!coBVAND3TstNonZero(a, b, m)) return 0;
+    }
+    return 1;
+}
+
+int coBVDNFIntersectionCheck(cco psd, cco arg1, cco arg2) {
+    long cnt1 = coVectorSize(arg1);
+    long cnt2 = coVectorSize(arg2);
+    for (long i = 0; i < cnt1; i++) {
+        co_BVType a = (co_BVType)coVectorGet(arg1, i);
+        for (long j = 0; j < cnt2; j++) {
+            co_BVType b = (co_BVType)coVectorGet(arg2, j);
+            if (coBVANDTermIntersectionCheck(psd, a, b)) return 1;
+        }
+    }
+    return 0;
 }
 
 int coBVANDTermIntersect(cco psd, co_BVType res, co_BVType a, co_BVType b) {

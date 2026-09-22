@@ -320,23 +320,67 @@ The library offers out-of-the-box parsers converting various file types directly
 
 The library provides a specialized module (`co_dnf.c`) for working with structures representing boolean/set theory expressions in **Disjunctive Normal Form (DNF)**.
 
-### Mathematical Representation of DNF in JSON
-Under this module, a DNF expression is represented using a specific JSON structure:
-- **Outer container**: A `coVector` representing a Union (OR) of individual clauses.
-- **Middle container**: A `coMap` representing an Intersection (AND) within each clause.
-- **Inner container**: A `coInt32Vector` representing a set of integer values for each variable/key.
+### DNF JSON Format Specification
 
-#### JSON Structure Example
+A DNF expression is represented by a nested JSON structure that maps directly to the `co` object hierarchy.
+
+#### 1. Symbolic DNF Representation
+This is the standard human-readable format for representing sets of variants.
+
+- **Outer container (Union/OR)**: A JSON Array (`coVector`) containing one or more AND-terms.
+- **Middle container (Intersection/AND)**: A JSON Object (`coMap`) where keys are attribute names (strings) and values are the allowed selections for that attribute.
+- **Inner container (Value Set)**: A JSON Array (`coInt32Vector`) of unique integers representing the selected values for the attribute.
+
+**Example**:
 ```json
 [
-  {"1": [1, 2, 3], "2": [4, 5, 6]},
-  {"3": [4, 8, 2], "2": [2, 5, 9]}
+  {"color": [1, 2, 3], "size": [10, 20]},
+  {"color": [4, 5], "material": [30]}
 ]
 ```
+- **Empty DNF**: `[]` (Matches nothing).
+- **Universal DNF**: `[{}]` (Matches everything).
 
-#### Special Sets
-- **Empty Set**: Represented as `[]` (an empty outer `coVector`).
-- **Universal/Overall Set**: Represented as `[{}]` (a `coVector` with a single, empty `coMap`).
+#### 2. Problem Space Description (PSD)
+To perform domain-aware operations (like complement or universal checks), the library requires a **PSD**, which defines the full domain for every relevant attribute. A PSD is stored as a JSON Object with a mandatory `"psd"` member.
+
+**Example**:
+```json
+{
+  "psd": {
+    "color": [1, 2, 3, 4, 5],
+    "size": [10, 20, 30],
+    "material": [10, 20, 30]
+  }
+}
+```
+
+#### 3. Bitvector Extension Members ("bv members")
+When bitset optimizations are enabled via `coBVPreparePSD()`, additional metadata is added to the PSD object to map symbolic attributes to bit positions in a global bitvector. These members are critical for high-performance SIMD operations.
+
+- **`bvattributes`**: A map from attribute name to an metadata vector `[index, start_bit, num_values]`.
+  - `index`: Zero-based index of the attribute.
+  - `start_bit`: The first bit position assigned to this attribute in the global bitvector.
+  - `num_values`: The number of possible values in this attribute's domain.
+- **`bvpos`**: An `Int32Vector` containing cumulative bit offsets. The last entry is the total number of bits required for one AND term.
+- **`bvvaluepos`**: A nested map where `bvvaluepos[attr_name][value_as_string]` returns the local bit offset (as a double) of a specific value within its attribute's bit range.
+- **`bvmask`**: A `coVector` of BitVectors (`co_BVType`). Each bitvector is a mask where only the bits belonging to the corresponding attribute are set. (Note: These are internal SIMD objects and are not typically serialized to standard JSON).
+
+**Example of Extended PSD (Logical View)**:
+```json
+{
+  "psd": { "color": [1, 2], "size": [10] },
+  "bvattributes": {
+    "color": [0, 0, 2],
+    "size": [1, 2, 1]
+  },
+  "bvpos": [0, 2, 3],
+  "bvvaluepos": {
+    "color": { "1": 0, "2": 1 },
+    "size": { "10": 0 }
+  }
+}
+```
 
 ---
 
