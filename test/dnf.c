@@ -60,8 +60,11 @@ co coNewRandomDNF(cco psd, long terms, long attrs, long vals) {
 
   long term_idx;
   for (term_idx = 0; term_idx < terms; term_idx++) {
+    co dnf_obj = coNewMap(CO_STRDUP | CO_FREE_VALS);
     co and_term = coNewMap(CO_STRDUP | CO_FREE_VALS);
-    if (and_term == NULL) {
+    if (and_term == NULL || dnf_obj == NULL) {
+      if (and_term) coDelete(and_term);
+      if (dnf_obj) coDelete(dnf_obj);
       coDelete(random_dnf);
       return NULL;
     }
@@ -89,7 +92,7 @@ co coNewRandomDNF(cco psd, long terms, long attrs, long vals) {
 
       /* Collect values */
       int32_t *v_pool = malloc(avail_vals_cnt * sizeof(int32_t));
-      if (v_pool == NULL) { coDelete(and_term); coDelete(random_dnf); return NULL; }
+      if (v_pool == NULL) { coDelete(and_term); coDelete(dnf_obj); coDelete(random_dnf); return NULL; }
       
       long val_v;
       for (val_v = 0; val_v < avail_vals_cnt; val_v++) {
@@ -106,7 +109,7 @@ co coNewRandomDNF(cco psd, long terms, long attrs, long vals) {
       }
 
       co val_vec_new = coNewInt32Vector(CO_NONE);
-      if (val_vec_new == NULL) { free(v_pool); coDelete(and_term); coDelete(random_dnf); return NULL; }
+      if (val_vec_new == NULL) { free(v_pool); coDelete(and_term); coDelete(dnf_obj); coDelete(random_dnf); return NULL; }
 
       for (val_idx = 0; val_idx < actual_vals_to_select; val_idx++) {
         coInt32VectorAddUnique(val_vec_new, v_pool[val_idx]);
@@ -114,12 +117,16 @@ co coNewRandomDNF(cco psd, long terms, long attrs, long vals) {
       free(v_pool);
 
       if (coMapAdd(and_term, temp_attrs[step], val_vec_new) == NULL) {
-        coDelete(val_vec_new); coDelete(and_term); coDelete(random_dnf); return NULL;
+        coDelete(val_vec_new); coDelete(and_term); coDelete(dnf_obj); coDelete(random_dnf); return NULL;
       }
     }
 
-    if (coVectorAdd(random_dnf, and_term) < 0) {
-      coDelete(and_term); coDelete(random_dnf); return NULL;
+    coMapAdd(dnf_obj, "dnf", (cco)coNewVector(CO_FREE_VALS)); // Put into a DNF vector as expected by parser
+    coVectorAdd((co)coMapGet(dnf_obj, "dnf"), (cco)and_term);
+    coMapAdd(dnf_obj, "id", (cco)coNewDbl((double)term_idx)); // Index as ID
+
+    if (coVectorAdd(random_dnf, (cco)dnf_obj) < 0) {
+      coDelete(dnf_obj); coDelete(random_dnf); return NULL;
     }
   }
   return random_dnf;
@@ -527,17 +534,21 @@ int main(int argc, char **argv) {
     
     co arg1_list = coNewVector(CO_FREE_VALS);
     for (gic_i = 0; gic_i < gic_n1; gic_i++) {
-        co wrap = coNewMap(CO_STRDUP | CO_FREE_VALS);
-        coMapAdd(wrap, "dnf", coNewRandomDNF(psd, gdnf_terms, gdnf_attrs, gdnf_vals));
-        coVectorAdd(arg1_list, wrap);
+        co random_dnf = coNewRandomDNF(psd, gdnf_terms, gdnf_attrs, gdnf_vals);
+        co dnf_obj = (co)coVectorGet(random_dnf, 0); // Take first
+        coMapAdd(dnf_obj, "id", (cco)coNewDbl((double)gic_i)); // Explicitly set index as ID
+        coVectorAdd(arg1_list, coClone((cco)dnf_obj));
+        coDelete(random_dnf);
     }
     coMapAdd(root, "arg1", arg1_list);
 
     co arg2_list = coNewVector(CO_FREE_VALS);
     for (gic_i = 0; gic_i < gic_n2; gic_i++) {
-        co wrap = coNewMap(CO_STRDUP | CO_FREE_VALS);
-        coMapAdd(wrap, "dnf", coNewRandomDNF(psd, gdnf_terms, gdnf_attrs, gdnf_vals));
-        coVectorAdd(arg2_list, wrap);
+        co random_dnf = coNewRandomDNF(psd, gdnf_terms, gdnf_attrs, gdnf_vals);
+        co dnf_obj = (co)coVectorGet(random_dnf, 0); // Take first
+        coMapAdd(dnf_obj, "id", (cco)coNewDbl((double)gic_i)); // Explicitly set index as ID
+        coVectorAdd(arg2_list, coClone((cco)dnf_obj));
+        coDelete(random_dnf);
     }
     coMapAdd(root, "arg2", arg2_list);
 

@@ -478,6 +478,7 @@ int32_t coDNFGetVolumeANDTerm(cco psd, cco term);
 int32_t coDNFGetVolume(cco psd, cco dnf);
 co coNewPSD(void);
 int coPSDExtendByDNF(co psd, cco dnf);
+int coPSDExtendByValue(co psd, const char* attribute, int32_t value);
 
 /* co_bitset.c */
 extern int co_bv_base_size;

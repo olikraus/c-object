@@ -227,7 +227,7 @@ char djp_peek_token_char(djp_t *p) {
     return p->buffer[p->pos_array[p->token_idx]];
 }
 
-char djp_consume_token_char(djp_t *p) {
+static char djp_consume_token_char(djp_t *p) {
     if (p->token_idx >= p->pos_cnt) return '\0';
     return p->buffer[p->pos_array[p->token_idx++]];
 }
@@ -264,13 +264,17 @@ void djp_skip_string(djp_t *p) {
 }
 
 int32_t djp_parse_int(djp_t *p) {
-    size_t start = (p->token_idx == 0) ? 0 : p->pos_array[p->token_idx-1] + 1;
-    size_t end = (p->token_idx < p->pos_cnt) ? p->pos_array[p->token_idx] : p->size;
-    while (start < end && isspace((unsigned char)p->buffer[start])) start++;
-    if (start == end) djp_error(p, "Expected integer");
-    char *endptr;
-    long val = strtol(p->buffer + start, &endptr, 10);
-    return (int32_t)val;
+    if (p->token_idx == 0 || p->token_idx + 1 >= p->pos_cnt) return 0;
+    
+    size_t start = p->pos_array[p->token_idx - 1] + 1;
+    while (isspace((unsigned char)p->buffer[start])) start++;
+    
+    int32_t val = 0;
+    while (p->buffer[start] >= '0' && p->buffer[start] <= '9') {
+        val = val * 10 + (p->buffer[start] - '0');
+        start++;
+    }
+    return val;
 }
 
 /* Phase 1: PSD Collection */
@@ -288,36 +292,25 @@ void djp_collect_psd_dnf(djp_t *p) {
                 char *attr_name = djp_alloc_string(p);
                 if (djp_consume_token_char(p) != ':') djp_error(p, "Expected ':'");
                 if (djp_consume_token_char(p) != '[') djp_error(p, "Expected '['");
-                co val_vec = coNewVector(CO_FREE_VALS);
-                if (djp_has_content_between_tokens(p) || djp_peek_token_char(p) != ']') {
+                
+                if (djp_peek_token_char(p) != ']') {
                     for (;;) {
-                        coVectorAdd(val_vec, coNewDbl((double)djp_parse_int(p)));
+                        int32_t val = djp_parse_int(p);
+                        coPSDExtendByValue(p->psd, attr_name, val);
                         char c = djp_consume_token_char(p);
                         if (c == ']') break;
                         if (c != ',') djp_error(p, "Expected ',' or ']'");
                     }
                 } else {
-                    djp_consume_token_char(p);
+                    djp_consume_token_char(p); // consume ']'
                 }
-                co temp_dnf = coNewVector(CO_FREE_VALS);
-                co term = coNewMap(CO_STRDUP | CO_FREE_VALS);
-                coMapAdd(term, attr_name, val_vec);
-                coVectorAdd(temp_dnf, term);
-                coPSDExtendByDNF(p->psd, temp_dnf);
-                coDelete(temp_dnf);
                 free(attr_name);
                 char c = djp_consume_token_char(p);
                 if (c == '}') break;
                 if (c != ',') djp_error(p, "Expected ',' or '}'");
             }
         } else {
-            /* Empty term {}: Universal Term */
             djp_consume_token_char(p); // consume '}'
-            co temp_dnf = coNewVector(CO_FREE_VALS);
-            co term = coNewMap(CO_STRDUP | CO_FREE_VALS);
-            coVectorAdd(temp_dnf, term);
-            coPSDExtendByDNF(p->psd, temp_dnf);
-            coDelete(temp_dnf);
         }
         char c = djp_consume_token_char(p);
         if (c == ']') break;
@@ -384,7 +377,7 @@ co djp_parse_bvdnf(djp_t *p) {
                 djp_consume_token_char(p); // :
                 djp_consume_token_char(p); // [
                 co val_vec = coNewInt32Vector(CO_NONE);
-                if (djp_has_content_between_tokens(p) || djp_peek_token_char(p) != ']') {
+                if (djp_peek_token_char(p) != ']') {
                     for (;;) {
                         coInt32VectorAddUnique(val_vec, djp_parse_int(p));
                         char c = djp_consume_token_char(p);
@@ -436,8 +429,28 @@ void djp_build_bvdnf_recursive(djp_t *p, co *target_list) {
                 p->arg2_dnf_list = coNewVector(CO_FREE_VALS);
                 djp_build_bvdnf_recursive(p, &p->arg2_dnf_list);
             } else if (strcmp(key, "dnf") == 0) {
+                /* Expect { "dnf": [...], "id": 123 } */
                 co bvdnf = djp_parse_bvdnf(p);
-                if (target_list && *target_list) coVectorAdd(*target_list, bvdnf); else coDelete(bvdnf);
+                
+                // Parse optional ID
+                int32_t id = 0;
+                // Peek next char. If it's a comma, there might be an "id" field
+                char c_peek = djp_peek_token_char(p);
+                if (c_peek == ',') {
+                    djp_consume_token_char(p); // ,
+                    char *key2 = djp_alloc_string(p);
+                    djp_consume_token_char(p); // :
+                    if (strcmp(key2, "id") == 0) {
+                        id = djp_parse_int(p);
+                    }
+                    free(key2);
+                }
+
+                co dnf_obj = coNewMap(CO_STRDUP | CO_FREE_VALS);
+                coMapAdd(dnf_obj, "dnf", (cco)bvdnf);
+                coMapAdd(dnf_obj, "id", (cco)coNewDbl((double)id)); // Store ID as Dbl
+                
+                if (target_list && *target_list) coVectorAdd(*target_list, dnf_obj); else coDelete(dnf_obj);
             } else {
                 djp_build_bvdnf_recursive(p, target_list);
             }
@@ -478,15 +491,28 @@ void djp_execute_op(djp_t *p) {
 
     double t1 = get_ms();
     for (long i = 0; i < n; i++) {
-        co bv1 = (co)coVectorGet(p->arg1_dnf_list, i); // Vector of terms
+        co dnf_obj1 = (co)coVectorGet(p->arg1_dnf_list, i);
+        co bv1 = (co)coMapGet(dnf_obj1, "dnf");
+        int32_t id1 = (int32_t)coDblGet(coMapGet(dnf_obj1, "id"));
+
         for (long j = 0; j < m; j++) {
-            co bv2 = (co)coVectorGet(p->arg2_dnf_list, j); // Vector of terms
+            co dnf_obj2 = (co)coVectorGet(p->arg2_dnf_list, j);
+            co bv2 = (co)coMapGet(dnf_obj2, "dnf");
+            int32_t id2 = (int32_t)coDblGet(coMapGet(dnf_obj2, "id"));
             
             if (is_check) {
-                coVectorAdd(result_list, coNewBool(coBVDNFIntersectionCheck(p->psd, bv1, bv2)));
+                int is_not_empty = coBVDNFIntersectionCheck(p->psd, (cco)bv1, (cco)bv2);
+                
+                co res_obj = coNewMap(CO_STRDUP | CO_FREE_VALS);
+                co id_vec = coNewInt32Vector(CO_NONE);
+                coInt32VectorAdd(id_vec, id1);
+                coInt32VectorAdd(id_vec, id2);
+                coMapAdd(res_obj, "id", (cco)id_vec);
+                coMapAdd(res_obj, "isEmpty", (cco)coNewBool(!is_not_empty));
+                coVectorAdd(result_list, (cco)res_obj);
             } else {
-                co res_bv = coNewBVDNFByIntersectionWithoutMinimization(p->psd, bv1, bv2);
-                coVectorAdd(result_list, coNewDNFFromBVDNF(p->psd, res_bv));
+                co res_bv = coNewBVDNFByIntersectionWithoutMinimization(p->psd, (cco)bv1, (cco)bv2);
+                coVectorAdd(result_list, (cco)coNewDNFFromBVDNF(p->psd, (cco)res_bv));
                 coDelete(res_bv);
             }
         }

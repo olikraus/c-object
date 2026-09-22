@@ -239,19 +239,34 @@ co coNewPSD(void) {
   return wrapper;
 }
 
+int coPSDExtendByValue(co psd, const char* attribute, int32_t value) {
+  co psd_inner = (co)coMapGet(psd, "psd");
+  if (psd_inner == NULL || !coIsMap(psd_inner))
+    return 0;
+
+  psd_inner->flags |= CO_STRDUP | CO_STRFREE;
+
+  co psd_vec = (co)coMapGet(psd_inner, attribute);
+  if (psd_vec == NULL) {
+    psd_vec = coNewInt32Vector(CO_NONE);
+    if (psd_vec == NULL)
+      return 0;
+    if (coMapAdd(psd_inner, attribute, psd_vec) == NULL) {
+      coDelete(psd_vec);
+      return 0;
+    }
+  }
+  
+  assert(coIsInt32Vector(psd_vec));
+  return coInt32VectorAddUnique(psd_vec, value) >= 0;
+}
+
 int coPSDExtendByDNF(co psd, cco dnf) {
   if (psd == NULL || dnf == NULL)
     return 0;
   
   assert(coIsMap(psd));
   assert(coIsVector(dnf));
-
-  co psd_inner = (co)coMapGet(psd, "psd");
-  if (psd_inner == NULL || !coIsMap(psd_inner))
-    return 0;
-
-  /* Force CO_STRDUP and CO_STRFREE to prevent key pointer sharing and double-frees */
-  psd_inner->flags |= CO_STRDUP | CO_STRFREE;
 
   long i;
   long cnt = coVectorSize(dnf);
@@ -268,27 +283,12 @@ int coPSDExtendByDNF(co psd, cco dnf) {
         if (payload == NULL)
           continue;
 
-        /* Get or create the Int32Vector in PSD for this attribute */
-        co psd_vec = (co)coMapGet(psd_inner, attr);
-        if (psd_vec == NULL) {
-          psd_vec = coNewInt32Vector(CO_NONE);
-          if (psd_vec == NULL)
-            return 0; /* Memory error */
-          if (coMapAdd(psd_inner, attr, psd_vec) == NULL) {
-            coDelete(psd_vec);
-            return 0;
-          }
-        }
-        
-        assert(coIsInt32Vector(psd_vec));
-
         /* Add all values from payload to psd_vec if they don't exist yet */
         if (coIsInt32Vector(payload)) {
           long p_i;
           long p_cnt = coInt32VectorSize(payload);
           for (p_i = 0; p_i < p_cnt; p_i++) {
-            int32_t val = coInt32VectorGet(payload, p_i);
-            if (coInt32VectorAddUnique(psd_vec, val) < 0)
+            if (!coPSDExtendByValue(psd, attr, coInt32VectorGet(payload, p_i)))
               return 0;
           }
         } else if (coIsVector(payload)) {
@@ -308,7 +308,7 @@ int coPSDExtendByDNF(co psd, cco dnf) {
                 is_num = 1;
               }
               if (is_num) {
-                if (coInt32VectorAddUnique(psd_vec, val) < 0)
+                if (!coPSDExtendByValue(psd, attr, val))
                   return 0;
               }
             }
