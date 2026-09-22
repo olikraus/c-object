@@ -85,7 +85,9 @@ void co_bv_clr_u64(co_BVType bv, uint64_t bit_idx) {
 void co_bv_clear_all_u64(co_BVType bv) {
     for (int i = 0; i < bv->cnt; i++) bv->data.u64[i] = 0;
 }
+
 int co_bv_get_u64(co_BVType bv, uint64_t bit_idx) {
+
     return (bv->data.u64[bit_idx >> 6] >> (bit_idx & 0x3f)) & 1;
 }
 void co_bv_or_u64(co_BVType res, co_BVType a, co_BVType b) {
@@ -998,6 +1000,26 @@ void coBVClr(co_BVType bv, uint64_t bit_idx) {
 
 void coBVClearAll(co_BVType bv) {
     co_bv_clear_all_ptr(bv);
+}
+
+void coBVSetToUniversal(cco psd, co_BVType bv) {
+    coBVClearAll(bv);
+    
+    co bvattributes = (co)coMapGet(psd, "bvattributes");
+    co bvmask = (co)coMapGet(psd, "bvmask");
+    
+    if (bvattributes == NULL || bvmask == NULL) return;
+
+    coMapIterator iter;
+    if (coMapLoopFirst(&iter, bvattributes)) {
+        do {
+            cco attr_meta = coMapLoopValue(&iter);
+            int32_t attr_idx = coInt32VectorGet(attr_meta, 0);
+            
+            co_BVType mask = (co_BVType)coVectorGet(bvmask, attr_idx);
+            coBVOR(bv, bv, mask);
+        } while (coMapLoopNext(&iter));
+    }
 }
 
 int coBVGet(co_BVType bv, uint64_t bit_idx) {

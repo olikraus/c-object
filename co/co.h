@@ -488,6 +488,7 @@ void coDeleteBV(co_BVType bv);
 void coBVSet(co_BVType bv, uint64_t bit_idx);
 void coBVClr(co_BVType bv, uint64_t bit_idx);
 void coBVClearAll(co_BVType bv);
+void coBVSetToUniversal(cco psd, co_BVType bv);
 int coBVGet(co_BVType bv, uint64_t bit_idx);
 void coBVOR(co_BVType res, co_BVType a, co_BVType b);
 void coBVAND(co_BVType res, co_BVType a, co_BVType b);

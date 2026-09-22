@@ -1,0 +1,15 @@
+{
+  "op": "intersection-check",
+  "arg1": [
+    { "dnf": [ {"color":[1,2]} ], "id": 1 },
+    { "dnf": [ {"size":[3,4]} ], "id": 2 },
+    { "dnf": [ {} ], "id": 3 },
+    { "dnf": [ {"color":[5], "size":[5]} ], "id": 4 }
+  ],
+  "arg2": [
+    { "dnf": [ {"color":[2,3]} ], "id": 10 },
+    { "dnf": [ {} ], "id": 11 },
+    { "dnf": [ {"size":[1]} ], "id": 12 },
+    { "dnf": [ {"color":[4]} ], "id": 13 }
+  ]
+}

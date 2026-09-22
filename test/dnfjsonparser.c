@@ -47,6 +47,11 @@ typedef struct {
     co psd;             /* Problem Space Description */
     co arg1_dnf_list;   /* Vector of BVDNFs */
     co arg2_dnf_list;   /* Vector of BVDNFs */
+    co bvpos;           /* PSD: bvpos vector */
+    uint64_t total_bits;/* PSD: total bits */
+    co bvmask;          /* PSD: bvmask vector */
+    co bvattributes;    /* PSD: bvattributes map */
+    co bvvaluepos;      /* PSD: bvvaluepos map */
 } djp_t;
 
 void djp_print(djp_t *p, const char *fmt, ...) {
@@ -71,6 +76,11 @@ void djp_init(djp_t *p) {
     p->psd = NULL;
     p->arg1_dnf_list = NULL;
     p->arg2_dnf_list = NULL;
+    p->bvpos = NULL;
+    p->total_bits = 0;
+    p->bvmask = NULL;
+    p->bvattributes = NULL;
+    p->bvvaluepos = NULL;
     p->op_name[0] = '\0';
 }
 
@@ -368,18 +378,36 @@ co djp_parse_bvdnf(djp_t *p) {
         djp_consume_token_char(p);
         return bvdnf;
     }
+
     for (;;) {
         djp_consume_token_char(p);
-        co term_map = coNewMap(CO_STRDUP | CO_FREE_VALS);
+        co_BVType bv = coNewBV(p->total_bits);
+        
         if (djp_peek_token_char(p) != '}') {
+            coBVSetToUniversal(p->psd, bv);
             for (;;) {
                 char *attr_name = djp_alloc_string(p);
+                cco attr_meta = coMapGet(p->bvattributes, attr_name);
+                int32_t attr_idx = coInt32VectorGet(attr_meta, 0);
+                int32_t start_bit = coInt32VectorGet(attr_meta, 1);
+                co val_map = (co)coMapGet(p->bvvaluepos, attr_name);
+                
+                co_BVType mask = (co_BVType)coVectorGet(p->bvmask, attr_idx);
+                coBVANDNOT(bv, bv, mask); // Clear attribute bits
+
                 djp_consume_token_char(p); // :
                 djp_consume_token_char(p); // [
-                co val_vec = coNewInt32Vector(CO_NONE);
+                
                 if (djp_peek_token_char(p) != ']') {
                     for (;;) {
-                        coInt32VectorAddUnique(val_vec, djp_parse_int(p));
+                        int32_t val = djp_parse_int(p);
+                        char buf[32]; sprintf(buf, "%d", val);
+                        cco pos_obj = coMapGet(val_map, buf);
+                        if (pos_obj) {
+                            int32_t local_pos = (int32_t)coDblGet(pos_obj);
+                            coBVSet(bv, start_bit + local_pos);
+                        }
+                        
                         char c = djp_consume_token_char(p);
                         if (c == ']') break;
                         if (c != ',') djp_error(p, "Expected ',' or ']'");
@@ -387,7 +415,6 @@ co djp_parse_bvdnf(djp_t *p) {
                 } else {
                     djp_consume_token_char(p);
                 }
-                coMapAdd(term_map, attr_name, val_vec);
                 free(attr_name);
                 char c = djp_consume_token_char(p);
                 if (c == '}') break;
@@ -395,10 +422,9 @@ co djp_parse_bvdnf(djp_t *p) {
             }
         } else {
             djp_consume_token_char(p);
+            coBVSetToUniversal(p->psd, bv);
         }
-        co_BVType bv = coNewBVFromANDTerm(p->psd, term_map);
         coVectorAdd(bvdnf, (cco)bv);
-        coDelete(term_map);
         char c = djp_consume_token_char(p);
         if (c == ']') break;
         if (c != ',') djp_error(p, "Expected ',' or ']'");
@@ -556,6 +582,13 @@ void djp_process_op_json(djp_t *p) {
     /* Phase 2: BV Preparation */
     double t3 = get_ms();
     coBVPreparePSD(p->psd);
+    
+    p->bvpos = (co)coMapGet(p->psd, "bvpos");
+    p->total_bits = coInt32VectorGet(p->bvpos, coInt32VectorSize(p->bvpos) - 1);
+    p->bvmask = (co)coMapGet(p->psd, "bvmask");
+    p->bvattributes = (co)coMapGet(p->psd, "bvattributes");
+    p->bvvaluepos = (co)coMapGet(p->psd, "bvvaluepos");
+
     double t4 = get_ms();
     djp_print(p, "psd bv prep time: %.4f ms\n", t4 - t3);
     
