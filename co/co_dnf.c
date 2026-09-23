@@ -3,52 +3,6 @@
 #include <assert.h>
 #include <string.h>
 
-static int compareANDTerms(const void *a, const void *b) {
-  cco t1 = *(cco *)a;
-  cco t2 = *(cco *)b;
-
-  /* 1. Sort by map size (number of attributes) */
-  long s1 = coMapSize(t1);
-  long s2 = coMapSize(t2);
-  if (s1 != s2)
-    return (int)(s1 - s2);
-
-  /* 2. Compare keys and values */
-  coMapIterator it1, it2;
-  int res1 = coMapLoopFirst(&it1, t1);
-  int res2 = coMapLoopFirst(&it2, t2);
-
-  while (res1 && res2) {
-    const char *k1 = coMapLoopKey(&it1);
-    const char *k2 = coMapLoopKey(&it2);
-    int cmp = strcmp(k1, k2);
-    if (cmp != 0)
-      return cmp;
-    
-    /* Keys match, compare values (Int32Vectors) */
-    cco v1 = coMapLoopValue(&it1);
-    cco v2 = coMapLoopValue(&it2);
-    long vs1 = coInt32VectorSize(v1);
-    long vs2 = coInt32VectorSize(v2);
-    if (vs1 != vs2)
-      return (int)(vs1 - vs2);
-    
-    /* Sizes match, compare elements */
-    long i;
-    for (i = 0; i < vs1; i++) {
-      int32_t val1 = coInt32VectorGet(v1, i);
-      int32_t val2 = coInt32VectorGet(v2, i);
-      if (val1 != val2)
-        return (int)(val1 - val2);
-    }
-
-    res1 = coMapLoopNext(&it1);
-    res2 = coMapLoopNext(&it2);
-  }
-
-  return 0;
-}
-
 co coConvertToInt32Vector(co o) {
   if (o == NULL)
     return NULL;

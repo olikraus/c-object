@@ -308,6 +308,8 @@ co coReadS19ByFP(FILE *fp) {
   int i, c;
   struct co_reader_struct reader_struct;
   coReader r = &reader_struct;
+  if (fp == NULL)
+    return NULL;
   coReaderInitByFP(r, fp);
 
   co mo = NULL; // memory object

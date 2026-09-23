@@ -322,6 +322,7 @@ int coInt32VectorEmpty(cco o);
 long coInt32VectorSize(cco o); 
 
 int coInt32VectorExists(co o, int32_t n);
+int coInt32VectorEquals(cco v1, cco v2);
 long coInt32VectorFind(co o, int32_t n);
 void coInt32VectorEraseByValue(co o, int32_t n);
 co coNewInt32VectorByVector(cco o);
