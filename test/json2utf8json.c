@@ -32,7 +32,6 @@ int main(int argc, char **argv)
     if ( outfp == NULL )
     {
             perror(argv[2]);
-            fclose(outfp);
             return 3;
     }
     

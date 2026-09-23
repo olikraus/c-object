@@ -95,10 +95,12 @@ void test_dnf(void) {
   /* Convert */
   co converted = coConvertToInt32Vector(dnf);
   assert(converted == dnf); /* Should be the same root pointer */
+  (void)converted;
 
   /* Check converted types */
   cco first_map = coVectorGet(dnf, 0);
   assert(coIsInt32Vector(coMapGet(first_map, "color")));
+  (void)first_map;
 
   /* Verify DNF is now valid */
   assert(coDNFIsValid(dnf) == 1);
@@ -124,15 +126,18 @@ void test_dnf(void) {
 
   long initial_size = coVectorSize(dnf); /* Should be 2 */
   assert(initial_size == 2);
+  (void)initial_size;
 
   int union_res = coDNFUnion(NULL, dnf, dnf2);
   assert(union_res == 1);
+  (void)union_res;
   assert(coVectorSize(dnf) == 3);
   assert(coDNFIsValid(dnf) == 1);
 
   /* Check that elements from dnf2 are present in dnf */
   cco last_item = coVectorGet(dnf, 2);
   assert(coMapGet(last_item, "4") != NULL);
+  (void)last_item;
 
   /* 5. Test coInt32VectorEquals helper */
   co v1 = coNewInt32Vector(CO_NONE);
@@ -164,6 +169,7 @@ void test_dnf(void) {
   assert(coVectorSize(isec_arg1) == 1);
   cco m = coVectorGet(isec_arg1, 0);
   assert(coInt32VectorSize(coMapGet(m, "color")) == 2);
+  (void)m;
   coDelete(isec_arg1);
   coDelete(isec_arg2);
 
@@ -177,6 +183,7 @@ void test_dnf(void) {
   assert(coVectorSize(isec_arg1) == 1);
   m = coVectorGet(isec_arg1, 0);
   assert(coInt32VectorSize(coMapGet(m, "color")) == 2);
+  (void)m;
   assert(coMapGet(m, "material") != NULL);
   assert(coMapGet(m, "size") != NULL);
   coDelete(isec_arg1);
@@ -190,6 +197,7 @@ void test_dnf(void) {
   assert(coDNFIntersection(NULL, isec_arg1, isec_arg2) == 1);
   assert(coDNFIsValid(isec_arg1) == 1);
   m = coVectorGet(isec_arg1, 0);
+  (void)m;
   assert(coMapGet(m, "color") != NULL);
   assert(coMapGet(m, "size") != NULL);
   coDelete(isec_arg1);
@@ -216,6 +224,7 @@ void test_dnf(void) {
   cco new_clause = coVectorGet(isec_new, 0);
   assert(coMapGet(new_clause, "color") != NULL);
   assert(coMapGet(new_clause, "size") != NULL);
+  (void)new_clause;
   coDelete(arg1);
   coDelete(arg2);
   coDelete(isec_new);
@@ -254,6 +263,8 @@ void test_dnf_subset_and_term(void) {
     cco m2 = coVectorGet(t2, 0);
     assert(coDNFIsSubsetANDTermANDTerm(m1, m2) == 1);
     assert(coDNFIsSubsetANDTermANDTerm(m2, m1) == 0);
+    (void)m1;
+    (void)m2;
     coDelete(t1);
     coDelete(t2);
   }
@@ -342,6 +353,7 @@ void test_dnf_merge(void) {
   assert(coVectorSize(dnf) == 1);
   cco m = coVectorGet(dnf, 0);
   assert(coInt32VectorSize(coMapGet(m, "color")) == 3);
+  (void)m;
   coDelete(dnf);
 
   /* 2. Merge with multiple attributes */
@@ -353,6 +365,7 @@ void test_dnf_merge(void) {
   m = coVectorGet(dnf, 0);
   assert(coInt32VectorSize(coMapGet(m, "color")) == 2);
   assert(coInt32VectorSize(coMapGet(m, "size")) == 1);
+  (void)m;
   coDelete(dnf);
 
   /* 3. Partial merge: only some terms can be merged */
@@ -373,6 +386,7 @@ void test_dnf_merge(void) {
   m = coVectorGet(dnf, 0);
   assert(coInt32VectorSize(coMapGet(m, "a")) == 1);
   assert(coInt32VectorSize(coMapGet(m, "b")) == 2);
+  (void)m;
   coDelete(dnf);
 
   printf("All DNF term merge tests passed successfully!\n");
@@ -449,6 +463,7 @@ void test_dnf_complement(void) {
   assert(coVectorSize(cdnf) == 1);
   cco m = coVectorGet(cdnf, 0);
   assert(coInt32VectorSize(coMapGet(m, "color")) == 2);
+  (void)m;
   coDelete(dnf); coDelete(cdnf);
 
   /* 4. Complement of a multi-valued attribute term */
@@ -458,6 +473,7 @@ void test_dnf_complement(void) {
   assert(coVectorSize(cdnf) == 1);
   m = coVectorGet(cdnf, 0);
   assert(coInt32VectorSize(coMapGet(m, "color")) == 1);
+  (void)m;
   coDelete(dnf); coDelete(cdnf);
 
   /* 5. Double complement should be equal to original (size-wise here) */
@@ -474,6 +490,7 @@ void test_dnf_complement(void) {
   assert(coVectorSize(dnf) == 1);
   m = coVectorGet(dnf, 0);
   assert(coInt32VectorSize(coMapGet(m, "color")) == 2);
+  (void)m;
   
   /* Complement again in-place */
   coDNFComplement(psd, dnf);
@@ -481,6 +498,7 @@ void test_dnf_complement(void) {
   assert(coVectorSize(dnf) == 1);
   m = coVectorGet(dnf, 0);
   assert(coInt32VectorSize(coMapGet(m, "color")) == 1);
+  (void)m;
   coDelete(dnf);
 
   coDelete(psd);
@@ -529,6 +547,7 @@ void test_dnf_cofactor(void) {
   cco m = coVectorGet(cofact, 0);
   assert(coMapGet(m, "a") == NULL);
   assert(coMapGet(m, "b") != NULL);
+  (void)m;
   coDelete(dnf); coDelete(cofact);
 
   /* 2. Cofactor resulting in empty set */
@@ -556,6 +575,7 @@ void test_dnf_best_attr(void) {
   co dnf = coConvertToInt32Vector(coReadJSONByString("[{\"a\":[1], \"b\":[1]}, {\"a\":[2]}]"));
   const char *best = coDNFGetBestCofactorAttribute(psd, dnf);
   assert(strcmp(best, "a") == 0);
+  (void)best;
   coDelete(dnf);
 
   coDelete(psd);
