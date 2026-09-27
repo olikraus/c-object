@@ -11,10 +11,22 @@
 #	release		build release version
 #
 
-debug: CFLAGS = -g -msse4.2 -DCO_USE_ZLIB -Wall -I./co -I./co/expat
-sanitize: CFLAGS = -g -msse4.2 -DCO_USE_ZLIB -Wall -fsanitize=address -I./co -I./co/expat
-release: CFLAGS = -O4 -msse4.2 -DNDEBUG -DCO_USE_ZLIB -Wall -I./co -I./co/expat
-gprof: CFLAGS = -g -msse4.2 -no-pie -fno-omit-frame-pointer -pg -DCO_USE_ZLIB -Wall -I./co
+ARCH ?= $(shell uname -m)
+
+ifneq ($(filter arm% aarch64,$(ARCH)),)
+# ARM: NEON SIMD (enabled by default, no flag required)
+SIMD_CFLAGS =
+else ifneq ($(filter x86_64 amd64 %86,$(ARCH)),)
+# Intel / AMD: SSE 4.2
+SIMD_CFLAGS = -msse4.2
+else
+SIMD_CFLAGS =
+endif
+
+debug: CFLAGS = -g $(SIMD_CFLAGS) -DCO_USE_ZLIB -Wall -I./co -I./co/expat
+sanitize: CFLAGS = -g $(SIMD_CFLAGS) -DCO_USE_ZLIB -Wall -fsanitize=address -I./co -I./co/expat
+release: CFLAGS = -O4 $(SIMD_CFLAGS) -DNDEBUG -DCO_USE_ZLIB -Wall -I./co -I./co/expat
+gprof: CFLAGS = -g $(SIMD_CFLAGS) -no-pie -fno-omit-frame-pointer -pg -DCO_USE_ZLIB -Wall -I./co
 
 ifeq ($(shell uname -s),Linux)
 LDFLAGS = -lelf -lm -lz -lpthread
