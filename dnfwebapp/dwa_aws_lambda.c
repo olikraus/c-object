@@ -50,10 +50,7 @@ static char *http_get(lambda_api_t *api, const char *path, char *request_id, siz
     int fd = connect_to_api(api);
     if (fd < 0) return NULL;
     
-    if (write(fd, request, req_len) < 0) {
-        close(fd);
-        return NULL;
-    }
+    write(fd, request, req_len);
 
     size_t buf_size = INITIAL_BUF_SIZE;
     char *response = malloc(buf_size);
@@ -132,11 +129,7 @@ static int http_post(lambda_api_t *api, const char *path, const char *body) {
         return -1;
     }
     
-    if (write(fd, full_request, header_len + body_len) < 0) {
-        close(fd);
-        free(full_request);
-        return -1;
-    }
+    write(fd, full_request, header_len + body_len);
     
     /* Signal end of request */
     shutdown(fd, SHUT_WR);
@@ -150,32 +143,74 @@ static int http_post(lambda_api_t *api, const char *path, const char *body) {
     return 0;
 }
 
-static char* dwa_output_to_str(dwa_t *p, co result_list) {
+static char* dwa_execute_op_to_str(dwa_t *p) {
+    if (!p->arg1_dnf_list || !p->arg2_dnf_list) {
+        dwa_print(p, "Error: Missing arguments for operation.\n");
+        return strdup("{}");
+    }
+    
+    int is_check = (p->op_name[0] != '\0' && strcmp(p->op_name, "intersection-check") == 0);
+    co result_list = coNewVector(CO_FREE_VALS);
+    long n = coVectorSize(p->arg1_dnf_list);
+    long m = coVectorSize(p->arg2_dnf_list);
+
+    dwa_print(p, "Arg1 DNF count: %ld\n", n);
+    dwa_print(p, "Arg2 DNF count: %ld\n", m);
+    dwa_print(p, "Total intersections to execute: %ld\n", n * m);
+
+    double t1 = get_ms();
+    for (long i = 0; i < n; i++) {
+        co dnf_obj1 = (co)coVectorGet(p->arg1_dnf_list, i);
+        co bv1 = (co)coMapGet(dnf_obj1, "dnf");
+        int32_t id1 = (int32_t)coDblGet(coMapGet(dnf_obj1, "id"));
+
+        for (long j = 0; j < m; j++) {
+            co dnf_obj2 = (co)coVectorGet(p->arg2_dnf_list, j);
+            co bv2 = (co)coMapGet(dnf_obj2, "dnf");
+            int32_t id2 = (int32_t)coDblGet(coMapGet(dnf_obj2, "id"));
+            
+            if (is_check) {
+                int is_not_empty = coBVDNFIntersectionCheck(p->psd, (cco)bv1, (cco)bv2);
+                co res_obj = coNewMap(CO_STRDUP | CO_FREE_VALS);
+                co id_vec = coNewInt32Vector(CO_NONE);
+                coInt32VectorAdd(id_vec, id1);
+                coInt32VectorAdd(id_vec, id2);
+                coMapAdd(res_obj, "id", (cco)id_vec);
+                coMapAdd(res_obj, "isEmpty", (cco)coNewBool(!is_not_empty));
+                coVectorAdd(result_list, (cco)res_obj);
+            } else {
+                co res_bv = coNewBVDNFByIntersectionWithoutMinimization(p->psd, (cco)bv1, (cco)bv2);
+                coVectorAdd(result_list, (cco)coNewDNFFromBVDNF(p->psd, (cco)res_bv));
+                coDelete(res_bv);
+            }
+        }
+    }
+    double t2 = get_ms();
+    dwa_print(p, "Op execution time: %.4f ms\n", t2 - t1);
+    dwa_print(p, "Total time (excluding JSON write): %.4f ms\n", t2 - p->start_time);
+    dwa_print(p, "Operation '%s' result: %ld items generated.\n", p->op_name, coVectorSize(result_list));
+
+    co wrapper = coNewMap(CO_STRDUP | CO_FREE_VALS);
+    coMapAdd(wrapper, "result", (cco)result_list);
+    coMapAdd(wrapper, "log", (cco)coNewStr(CO_STRDUP, p->log_buffer));
+
     char *buf = NULL;
     size_t size = 0;
     FILE *mem_fp = open_memstream(&buf, &size);
-    if (!mem_fp) return strdup("{}");
-
-    co wrapper = coNewMap(CO_STRDUP | CO_FREE_VALS);
-    if (result_list) {
-        coMapAdd(wrapper, "result", (cco)result_list);
+    if (mem_fp) {
+        coWriteJSON(wrapper, 0, 0, mem_fp);
+        fclose(mem_fp);
     } else {
-        coMapAdd(wrapper, "status", (cco)coNewStr(CO_STRDUP, "valid"));
+        buf = strdup("{}");
     }
-    coMapAdd(wrapper, "log", (cco)coNewStr(CO_STRDUP, p->log_buffer));
-
-    coWriteJSON(wrapper, 0, 0, mem_fp);
-    fclose(mem_fp);
+    
     coDelete(wrapper);
     return buf;
 }
 
 int main() {
     char *runtime_api = getenv("AWS_LAMBDA_RUNTIME_API");
-    if (!runtime_api) {
-        fprintf(stderr, "ERROR: AWS_LAMBDA_RUNTIME_API not set\n");
-        return 1;
-    }
+    if (!runtime_api) return 1;
 
     lambda_api_t api;
     char *colon = strchr(runtime_api, ':');
@@ -191,29 +226,11 @@ int main() {
 
     coBVDetect();
 
-    fprintf(stderr, "INFO: Lambda C Runtime starting, API at %s:%d\n", api.host, api.port);
-
-    /* Wait for API to be ready */
-    for (int i = 0; i < 100; i++) {
-        int fd = connect_to_api(&api);
-        if (fd >= 0) {
-            close(fd);
-            fprintf(stderr, "INFO: Runtime API is ready\n");
-            break;
-        }
-        if (i == 99) {
-            fprintf(stderr, "ERROR: Runtime API did not become ready\n");
-            return 1;
-        }
-        usleep(100000);
-    }
-
     while (1) {
         char request_id[256] = {0};
         size_t body_len = 0;
         char *body = http_get(&api, "/2018-06-01/runtime/invocation/next", request_id, &body_len);
         if (!body) {
-            fprintf(stderr, "WARNING: Failed to get next invocation, retrying...\n");
             usleep(100000);
             continue;
         }
@@ -230,64 +247,51 @@ int main() {
         
         char *response_json = NULL;
         if (dwa_peek_token_char(&p) == '{') {
+            /* Full Operation Cycle: mirrors dwa_process_op_json but captures to string */
+            double t1 = get_ms();
             p.psd = coNewPSD();
+            p.token_idx = 0;
             dwa_collect_psd_recursive(&p);
+            double t2 = get_ms();
+            dwa_print(&p, "psd parser time: %.4f ms\n", t2 - t1);
+
+            double t3 = get_ms();
             coBVPreparePSD(p.psd);
             p.bvpos = (co)coMapGet(p.psd, "bvpos");
             p.total_bits = coInt32VectorGet(p.bvpos, coInt32VectorSize(p.bvpos) - 1);
             p.bvmask = (co)coMapGet(p.psd, "bvmask");
             p.bvattributes = (co)coMapGet(p.psd, "bvattributes");
             p.bvvaluepos = (co)coMapGet(p.psd, "bvvaluepos");
-
+            double t4 = get_ms();
+            dwa_print(&p, "psd bv prep time: %.4f ms\n", t4 - t3);
+            
+            double t5 = get_ms();
             p.token_idx = 0;
             dwa_build_bvdnf_recursive(&p, NULL);
-
-            co result_list = coNewVector(CO_FREE_VALS);
-            long n = coVectorSize(p.arg1_dnf_list);
-            long m = coVectorSize(p.arg2_dnf_list);
-            int is_check = (p.op_name[0] != '\0' && strcmp(p.op_name, "intersection-check") == 0);
-
-            for (long i = 0; i < n; i++) {
-                co dnf_obj1 = (co)coVectorGet(p.arg1_dnf_list, i);
-                co bv1 = (co)coMapGet(dnf_obj1, "dnf");
-                int32_t id1 = (int32_t)coDblGet(coMapGet(dnf_obj1, "id"));
-                for (long j = 0; j < m; j++) {
-                    co dnf_obj2 = (co)coVectorGet(p.arg2_dnf_list, j);
-                    co bv2 = (co)coMapGet(dnf_obj2, "dnf");
-                    int32_t id2 = (int32_t)coDblGet(coMapGet(dnf_obj2, "id"));
-                    if (is_check) {
-                        int is_not_empty = coBVDNFIntersectionCheck(p.psd, (cco)bv1, (cco)bv2);
-                        co res_obj = coNewMap(CO_STRDUP | CO_FREE_VALS);
-                        co id_vec = coNewInt32Vector(CO_NONE);
-                        coInt32VectorAdd(id_vec, id1);
-                        coInt32VectorAdd(id_vec, id2);
-                        coMapAdd(res_obj, "id", (cco)id_vec);
-                        coMapAdd(res_obj, "isEmpty", (cco)coNewBool(!is_not_empty));
-                        coVectorAdd(result_list, (cco)res_obj);
-                    } else {
-                        co res_bv = coNewBVDNFByIntersectionWithoutMinimization(p.psd, (cco)bv1, (cco)bv2);
-                        coVectorAdd(result_list, (cco)coNewDNFFromBVDNF(p.psd, (cco)res_bv));
-                        coDelete(res_bv);
-                    }
-                }
-            }
-            double t_end = get_ms();
-            dwa_print(&p, "Total time (excluding JSON write): %.4f ms\n", t_end - p.start_time);
-            response_json = dwa_output_to_str(&p, result_list);
+            double t6 = get_ms();
+            dwa_print(&p, "dnf parser time: %.4f ms\n", t6 - t5);
+            
+            response_json = dwa_execute_op_to_str(&p);
         } else {
             dwa_validate(&p);
-            response_json = dwa_output_to_str(&p, NULL);
+            co wrapper = coNewMap(CO_STRDUP | CO_FREE_VALS);
+            coMapAdd(wrapper, "status", (cco)coNewStr(CO_STRDUP, "valid"));
+            coMapAdd(wrapper, "log", (cco)coNewStr(CO_STRDUP, p.log_buffer));
+            
+            size_t size = 0;
+            FILE *mem_fp = open_memstream(&response_json, &size);
+            if (mem_fp) {
+                coWriteJSON(wrapper, 0, 0, mem_fp);
+                fclose(mem_fp);
+            }
+            coDelete(wrapper);
         }
 
         char path[512];
         snprintf(path, sizeof(path), "/2018-06-01/runtime/invocation/%s/response", request_id);
         
         fprintf(stderr, "INFO: Posting response for %s (size: %zu)\n", request_id, strlen(response_json));
-        if (http_post(&api, path, response_json) < 0) {
-            fprintf(stderr, "ERROR: Failed to post response for %s\n", request_id);
-        } else {
-            fprintf(stderr, "INFO: Successfully sent response for %s\n", request_id);
-        }
+        http_post(&api, path, response_json);
 
         free(response_json);
         dwa_destroy(&p);

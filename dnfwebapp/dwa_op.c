@@ -268,7 +268,7 @@ void dwa_execute_op(dwa_t *p) {
         }
     }
 
-    dwa_print(p, "Operation '%s' result:\n", p->op_name);
+    dwa_print(p, "Operation '%s' result: %ld items generated.\n", p->op_name, coVectorSize(result_list));
     double t3 = get_ms();
     
     co wrapper = coNewMap(CO_STRDUP | CO_FREE_VALS);
