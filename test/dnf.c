@@ -725,7 +725,11 @@ int main(int argc, char **argv) {
       return 0;
     } else if (is_test_isec) {
       const char *simd_name = "Scalar uint64_t";
+#if defined(CO_HAS_ARM_SIMD)
+      if (co_bv_base_size == 16) simd_name = "ARM NEON 128-bit";
+#else
       if (co_bv_base_size == 16) simd_name = "SSE2 128-bit";
+#endif
       else if (co_bv_base_size == 32) simd_name = "AVX2 256-bit";
       else if (co_bv_base_size == 64) simd_name = "AVX-512 512-bit";
       printf("Benchmark using Bitset Base Type: %s\n", simd_name);

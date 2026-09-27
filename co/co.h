@@ -98,7 +98,16 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <immintrin.h>
+
+#ifndef CO_NO_SIMD
+#  if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#    include <immintrin.h>
+#    define CO_HAS_INTEL_SIMD
+#  elif defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON)
+#    include <arm_neon.h>
+#    define CO_HAS_ARM_SIMD
+#  endif
+#endif
 #ifdef CO_USE_ZLIB
 #include "zlib.h"
 #endif /* CO_USE_ZLIB */
@@ -187,9 +196,14 @@ typedef struct coBVStruct {
   unsigned flags;
   union {
     uint64_t *u64;
+#ifdef CO_HAS_INTEL_SIMD
     __m128i *m128;
     __m256i *m256;
     __m512i *m512;
+#endif
+#ifdef CO_HAS_ARM_SIMD
+    uint64x2_t *neon128;
+#endif
   } data;
   int cnt;
 } *co_BVType;

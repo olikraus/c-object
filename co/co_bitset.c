@@ -146,6 +146,8 @@ int co_bv_and3_tst_nonzero_u64(co_BVType a, co_BVType b, co_BVType c) {
     return 0;
 }
 
+#ifdef CO_HAS_INTEL_SIMD
+
 // m128
 __attribute__((target("sse2")))
 void co_bv_set_m128(co_BVType bv, uint64_t bit_idx) {
@@ -432,6 +434,115 @@ int co_bv_and3_tst_nonzero_m512(co_BVType a, co_BVType b, co_BVType c) {
     return 0;
 }
 
+#endif /* CO_HAS_INTEL_SIMD */
+
+#ifdef CO_HAS_ARM_SIMD
+
+void co_bv_set_neon(co_BVType bv, uint64_t bit_idx) {
+    uint64_t *p = (uint64_t *)bv->data.neon128;
+    p[bit_idx >> 6] |= (1ULL << (bit_idx & 0x3f));
+}
+
+void co_bv_clr_neon(co_BVType bv, uint64_t bit_idx) {
+    uint64_t *p = (uint64_t *)bv->data.neon128;
+    p[bit_idx >> 6] &= ~(1ULL << (bit_idx & 0x3f));
+}
+
+void co_bv_clear_all_neon(co_BVType bv) {
+    uint64x2_t zero = vdupq_n_u64(0);
+    for (int i = 0; i < bv->cnt; i++) bv->data.neon128[i] = zero;
+}
+
+int co_bv_get_neon(co_BVType bv, uint64_t bit_idx) {
+    uint64_t *p = (uint64_t *)bv->data.neon128;
+    return (p[bit_idx >> 6] >> (bit_idx & 0x3f)) & 1;
+}
+
+void co_bv_or_neon(co_BVType res, co_BVType a, co_BVType b) {
+    for (int i = 0; i < res->cnt; i++) {
+        res->data.neon128[i] = vorrq_u64(a->data.neon128[i], b->data.neon128[i]);
+    }
+}
+
+void co_bv_and_neon(co_BVType res, co_BVType a, co_BVType b) {
+    for (int i = 0; i < res->cnt; i++) {
+        res->data.neon128[i] = vandq_u64(a->data.neon128[i], b->data.neon128[i]);
+    }
+}
+
+void co_bv_xor_neon(co_BVType res, co_BVType a, co_BVType b) {
+    for (int i = 0; i < res->cnt; i++) {
+        res->data.neon128[i] = veorq_u64(a->data.neon128[i], b->data.neon128[i]);
+    }
+}
+
+void co_bv_andnot_neon(co_BVType res, co_BVType a, co_BVType b) {
+    /* computes (~b & a), equivalent to vbicq_u64(a, b) */
+    for (int i = 0; i < res->cnt; i++) {
+        res->data.neon128[i] = vbicq_u64(a->data.neon128[i], b->data.neon128[i]);
+    }
+}
+
+int co_bv_is_equal_neon(co_BVType a, co_BVType b) {
+    if (a->cnt != b->cnt) return 0;
+    return memcmp(a->data.neon128, b->data.neon128, (size_t)a->cnt * co_bv_base_size) == 0;
+}
+
+static inline int neon_is_not_zero(uint64x2_t v) {
+    return (vgetq_lane_u64(v, 0) | vgetq_lane_u64(v, 1)) != 0;
+}
+
+int co_bv_is_subset_neon(co_BVType a, co_BVType b) {
+    for (int i = 0; i < a->cnt; i++) {
+        uint64x2_t v = vbicq_u64(a->data.neon128[i], b->data.neon128[i]);
+        if (neon_is_not_zero(v)) return 0;
+    }
+    return 1;
+}
+
+int co_bv_super_sub_test_neon(co_BVType a, co_BVType b) {
+    int res = 3;
+    for (int i = 0; i < a->cnt; i++) {
+        if (res & 1) {
+            uint64x2_t v = vbicq_u64(a->data.neon128[i], b->data.neon128[i]);
+            if (neon_is_not_zero(v)) res &= ~1;
+        }
+        if (res & 2) {
+            uint64x2_t v = vbicq_u64(b->data.neon128[i], a->data.neon128[i]);
+            if (neon_is_not_zero(v)) res &= ~2;
+        }
+        if (res == 0) return 0;
+    }
+    return res;
+}
+
+int co_bv_is_disjoint_neon(co_BVType a, co_BVType b) {
+    for (int i = 0; i < a->cnt; i++) {
+        uint64x2_t v = vandq_u64(a->data.neon128[i], b->data.neon128[i]);
+        if (neon_is_not_zero(v)) return 0;
+    }
+    return 1;
+}
+
+int co_bv_and_tst_zero_neon(co_BVType res, co_BVType a, co_BVType b) {
+    int nz = 0;
+    for (int i = 0; i < res->cnt; i++) {
+        res->data.neon128[i] = vandq_u64(a->data.neon128[i], b->data.neon128[i]);
+        if (neon_is_not_zero(res->data.neon128[i])) nz = 1;
+    }
+    return nz;
+}
+
+int co_bv_and3_tst_nonzero_neon(co_BVType a, co_BVType b, co_BVType c) {
+    for (int i = 0; i < a->cnt; i++) {
+        uint64x2_t v = vandq_u64(a->data.neon128[i], vandq_u64(b->data.neon128[i], c->data.neon128[i]));
+        if (neon_is_not_zero(v)) return 1;
+    }
+    return 0;
+}
+
+#endif /* CO_HAS_ARM_SIMD */
+
 void coBVDetect(void) {
     // Default (already set by static initialization, but re-assert here)
     co_bv_base_size = 8;
@@ -446,8 +557,11 @@ void coBVDetect(void) {
     co_bv_is_equal_ptr = co_bv_is_equal_u64;
     co_bv_is_subset_ptr = co_bv_is_subset_u64;
     co_bv_super_sub_test_ptr = co_bv_super_sub_test_u64;
+    co_bv_is_disjoint_ptr = co_bv_is_disjoint_u64;
     co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_u64;
+    co_bv_and3_tst_nonzero_ptr = co_bv_and3_tst_nonzero_u64;
 
+#ifdef CO_HAS_INTEL_SIMD
     if (__builtin_cpu_supports("avx512f")) {
         co_bv_base_size = 64;
         co_bv_set_ptr = co_bv_set_m512;
@@ -497,6 +611,23 @@ void coBVDetect(void) {
         co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_m128;
         co_bv_and3_tst_nonzero_ptr = co_bv_and3_tst_nonzero_m128;
     }
+#elif defined(CO_HAS_ARM_SIMD)
+    co_bv_base_size = 16;
+    co_bv_set_ptr = co_bv_set_neon;
+    co_bv_clr_ptr = co_bv_clr_neon;
+    co_bv_clear_all_ptr = co_bv_clear_all_neon;
+    co_bv_get_ptr = co_bv_get_neon;
+    co_bv_or_ptr = co_bv_or_neon;
+    co_bv_and_ptr = co_bv_and_neon;
+    co_bv_xor_ptr = co_bv_xor_neon;
+    co_bv_andnot_ptr = co_bv_andnot_neon;
+    co_bv_is_equal_ptr = co_bv_is_equal_neon;
+    co_bv_is_subset_ptr = co_bv_is_subset_neon;
+    co_bv_super_sub_test_ptr = co_bv_super_sub_test_neon;
+    co_bv_is_disjoint_ptr = co_bv_is_disjoint_neon;
+    co_bv_and_tst_zero_ptr = co_bv_and_tst_zero_neon;
+    co_bv_and3_tst_nonzero_ptr = co_bv_and3_tst_nonzero_neon;
+#endif
 }
 
 co_BVType coNewBV(uint64_t bits) {
