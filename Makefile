@@ -23,10 +23,11 @@ else
 SIMD_CFLAGS =
 endif
 
-debug: CFLAGS = -g $(SIMD_CFLAGS) -DCO_USE_ZLIB -Wall -I./co -I./co/expat
-sanitize: CFLAGS = -g $(SIMD_CFLAGS) -DCO_USE_ZLIB -Wall -fsanitize=address -I./co -I./co/expat
-release: CFLAGS = -O4 $(SIMD_CFLAGS) -DNDEBUG -DCO_USE_ZLIB -Wall -I./co -I./co/expat
-gprof: CFLAGS = -g $(SIMD_CFLAGS) -no-pie -fno-omit-frame-pointer -pg -DCO_USE_ZLIB -Wall -I./co
+CFLAGS ?= -g $(SIMD_CFLAGS) -DCO_USE_ZLIB -DXML_GE=1 -Wall -I./co -I./co/expat
+debug: CFLAGS = -g $(SIMD_CFLAGS) -DCO_USE_ZLIB -DXML_GE=1 -Wall -I./co -I./co/expat
+sanitize: CFLAGS = -g $(SIMD_CFLAGS) -DCO_USE_ZLIB -DXML_GE=1 -Wall -fsanitize=address -I./co -I./co/expat
+release: CFLAGS = -O4 $(SIMD_CFLAGS) -DNDEBUG -DCO_USE_ZLIB -DXML_GE=1 -Wall -I./co -I./co/expat
+gprof: CFLAGS = -g $(SIMD_CFLAGS) -no-pie -fno-omit-frame-pointer -pg -DCO_USE_ZLIB -DXML_GE=1 -Wall -I./co -I./co/expat
 
 ifeq ($(shell uname -s),Linux)
 LDFLAGS = -lelf -lm -lz -lpthread

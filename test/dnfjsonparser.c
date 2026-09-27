@@ -4,7 +4,6 @@
 #include <string.h>
 #include <time.h>
 #include <stdint.h>
-#include <immintrin.h>
 #include <ctype.h>
 #include <stdarg.h>
 
@@ -146,6 +145,7 @@ int djp_read_file(djp_t *p, const char *filename) {
 }
 
 void djp_scan(djp_t *p) {
+#if defined(CO_HAS_INTEL_SIMD)
     /* SIMD Tables */
     /* 
        Bit 0: 0x01: " (0x22)
@@ -230,6 +230,123 @@ void djp_scan(djp_t *p) {
     double t2 = get_ms();
     djp_print(p, "Scan time:  %.4f ms\n", t2 - t1);
     djp_print(p, "Structural characters found: %zu\n", p->pos_cnt);
+#elif defined(CO_HAS_ARM_SIMD)
+    /* NEON Tables */
+    static const uint8_t ht_data[16] = {
+        0x00, 0x00, 0x03, 0x80, 0x00, 0x1C, 0x00, 0x60,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    static const uint8_t lt_data[16] = {
+        0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x80, 0x24, 0x0A, 0x50, 0x00, 0x00
+    };
+    static const uint8_t powers[16] = {
+        1, 2, 4, 8, 16, 32, 64, 128,
+        1, 2, 4, 8, 16, 32, 64, 128
+    };
+    uint8x16_t ht = vld1q_u8(ht_data);
+    uint8x16_t lt = vld1q_u8(lt_data);
+    uint8x16_t bit_mask = vld1q_u8(powers);
+    uint8x16_t low_mask = vdupq_n_u8(0x0F);
+
+    djp_print(p, "Scanning for structural characters (ARM NEON Optimized)...\n");
+    double t1 = get_ms();
+
+    int in_string = 0;
+    int skip_next_byte = 0;
+    long pos = 0;
+    size_t bytes_read = p->size;
+    char *buffer = p->buffer;
+
+    while (pos < (long)bytes_read) {
+        uint8x16_t data = vld1q_u8((const uint8_t *)(buffer + pos));
+        
+        uint8x16_t low_nibbles = vandq_u8(data, low_mask);
+        uint8x16_t high_nibbles = vandq_u8(vshrq_n_u8(data, 4), low_mask);
+
+        uint8x16_t low_lookup = vqtbl1q_u8(lt, low_nibbles);
+        uint8x16_t high_lookup = vqtbl1q_u8(ht, high_nibbles);
+
+        uint8x16_t result = vandq_u8(low_lookup, high_lookup);
+
+        if (vmaxvq_u8(result) != 0) {
+            uint8x16_t cmp = vtstq_u8(result, result);
+            uint8x16_t masked = vandq_u8(cmp, bit_mask);
+            uint32_t found_mask = (uint32_t)vaddv_u8(vget_low_u8(masked)) |
+                                 ((uint32_t)vaddv_u8(vget_high_u8(masked)) << 8);
+
+            if (skip_next_byte) {
+                found_mask &= ~1U;
+                skip_next_byte = 0;
+            }
+
+            if (found_mask != 0) {
+                djp_ensure_capacity(p);
+                
+                while (found_mask != 0) {
+                    int i = __builtin_ctz(found_mask);
+                    found_mask &= (found_mask - 1); 
+                    
+                    char c = buffer[pos + i];
+                    if (!in_string) {
+                        p->pos_array[p->pos_cnt++] = (uint32_t)(pos + i);
+                        if (c == '\"') in_string = 1;
+                    } else {
+                        if (c == '\\') {
+                            if (i < 15) {
+                                found_mask &= ~(1U << (i + 1));
+                            } else {
+                                skip_next_byte = 1;
+                            }
+                        } else if (c == '\"') {
+                            in_string = 0;
+                            p->pos_array[p->pos_cnt++] = (uint32_t)(pos + i);
+                        }
+                    }
+                }
+            }
+        } else {
+            skip_next_byte = 0;
+        }
+        pos += 16;
+    }
+
+    double t2 = get_ms();
+    djp_print(p, "Scan time:  %.4f ms\n", t2 - t1);
+    djp_print(p, "Structural characters found: %zu\n", p->pos_cnt);
+#else
+    djp_print(p, "Scanning for structural characters (Scalar)...\n");
+    double t1 = get_ms();
+
+    int in_string = 0;
+    int escape = 0;
+    for (size_t pos = 0; pos < p->size; pos++) {
+        char c = p->buffer[pos];
+        if (escape) {
+            escape = 0;
+            continue;
+        }
+        if (!in_string) {
+            if (c == '\"' || c == ',' || c == '[' || c == ']' || c == '{' || c == '}' || c == ':') {
+                djp_ensure_capacity(p);
+                p->pos_array[p->pos_cnt++] = (uint32_t)pos;
+                if (c == '\"') in_string = 1;
+            }
+        } else {
+            if (c == '\\') {
+                escape = 1;
+            } else if (c == '\"') {
+                djp_ensure_capacity(p);
+                in_string = 0;
+                p->pos_array[p->pos_cnt++] = (uint32_t)pos;
+            }
+        }
+    }
+
+    double t2 = get_ms();
+    djp_print(p, "Scan time:  %.4f ms\n", t2 - t1);
+    djp_print(p, "Structural characters found: %zu\n", p->pos_cnt);
+#endif
 }
 
 char djp_peek_token_char(djp_t *p) {
@@ -688,7 +805,11 @@ int main(int argc, char **argv) {
 
   coBVDetect();
   const char *simd_name = "Scalar uint64_t";
+#if defined(CO_HAS_ARM_SIMD)
+  if (co_bv_base_size == 16) simd_name = "ARM NEON 128-bit";
+#else
   if (co_bv_base_size == 16) simd_name = "SSE2 128-bit";
+#endif
   else if (co_bv_base_size == 32) simd_name = "AVX2 256-bit";
   else if (co_bv_base_size == 64) simd_name = "AVX-512 512-bit";
   djp_print(&p, "Using Bitset Base Type: %s\n", simd_name);
