@@ -28,13 +28,13 @@ LDFLAGS_COMMON = -pie -Wl,--as-needed -static-libgcc -Wl,-Bstatic -lm -lpthread 
 COSRC = ../co/co.c ../co/co_dnf.c ../co/co_bitset.c
 COMMON_SRC = dwa.c dwa_json.c dwa_op.c dwa_validate.c
 
-# --- Binary Names for Tests/Aliases ---
-BIN_CLI_AMD64 = dnfwebapp_amd64.cli
-BIN_CGI_AMD64 = dnfwebapp_amd64.cgi
-BIN_AWS_AMD64 = dnfwebapp_amd64.aws
-
 # --- Targets ---
-.PHONY: all cli cli_amd64 cli_arm64 cgi cgi_amd64 cgi_arm64 aws aws_amd64 aws_arm64 clean help-install-amd64 help-install-arm64
+.PHONY: all cli cli_amd64 cli_arm64 cli_default cgi cgi_amd64 cgi_arm64 cgi_default aws aws_amd64 aws_arm64 aws_default \
+        cli-test cli-perf-test cli_amd64-test cli_amd64-perf-test cli_arm64-test cli_arm64-perf-test \
+        cgi-test cgi-perf-test cgi_amd64-test cgi_amd64-perf-test cgi_arm64-test cgi_arm64-perf-test \
+        aws-test aws-perf-test aws_amd64-test aws_amd64-perf-test aws_arm64-test aws_arm64-perf-test \
+        cli_default-test cli_default-perf-test cgi_default-test cgi_default-perf-test aws_default-test aws_default-perf-test \
+        perf-test cgi-install aws-install clean
 
 all: cli cli_amd64 cli_arm64 cgi cgi_amd64 cgi_arm64 aws aws_amd64 aws_arm64
 
@@ -81,33 +81,108 @@ dnfwebapp$(SUFFIX_$(1)).aws: $$(OBJS_$(1)) $$(OBJDIR_$(1))/dwa_aws_lambda.o
 	fi
 	$$(CC_$(1)) $$(CFLAGS_COMMON) $$(SIMD_$(1)) $$^ -o $$@ $$(LDFLAGS_COMMON)
 	chmod a+rwx $$@
+
+cli$(SUFFIX_$(1))-test: cli$(SUFFIX_$(1))
+	./dnfwebapp$(SUFFIX_$(1)).cli ../test/dwa_test_input.json -o tmp_test_res_$(1).json
+	jq .result tmp_test_res_$(1).json > tmp_test_res_filtered_$(1).json
+	jq .result ../test/dwa_expected_output.json > tmp_expected_filtered_$(1).json
+	diff tmp_test_res_filtered_$(1).json tmp_expected_filtered_$(1).json
+	rm tmp_test_res_$(1).json tmp_test_res_filtered_$(1).json tmp_expected_filtered_$(1).json
+
+cli$(SUFFIX_$(1))-perf-test: cli$(SUFFIX_$(1)) perf_input.json
+	@echo "--- CLI Performance Test ($(1)) ---"
+	@/usr/bin/time -f "Total Time: %es" ./dnfwebapp$(SUFFIX_$(1)).cli perf_input.json -o perf_res_cli_$(1).json > /dev/null
+	@echo "Internal Log:"
+	@jq -r .log perf_res_cli_$(1).json
+	@rm perf_res_cli_$(1).json
+
+cgi$(SUFFIX_$(1))-test: cgi$(SUFFIX_$(1))
+	@echo "Testing CGI ($(1)) with curl..."
+	curl -X POST -H "Content-Type: application/json" --data-binary @../test/dwa_test_input.json http://localhost/cgi-bin/dnfwebapp$(SUFFIX_$(1)).cgi > tmp_cgi_res_$(1).json
+	@echo "Comparing results..."
+	jq .result tmp_cgi_res_$(1).json > tmp_cgi_res_filtered_$(1).json
+	jq .result ../test/dwa_expected_output.json > tmp_expected_filtered_$(1).json
+	diff tmp_cgi_res_filtered_$(1).json tmp_expected_filtered_$(1).json
+	rm tmp_cgi_res_$(1).json tmp_cgi_res_filtered_$(1).json tmp_expected_filtered_$(1).json
+
+cgi$(SUFFIX_$(1))-perf-test: cgi$(SUFFIX_$(1)) perf_input.json
+	@echo "--- CGI Performance Test ($(1)) ---"
+	@curl -s -X POST -H "Content-Type: application/json" \
+		--data-binary @perf_input.json \
+		-o perf_res_cgi_$(1).json \
+		-w "Upload/Connect: %{time_pretransfer}s\nProcessing (TTFB): %{time_starttransfer}s\nTotal Time: %{time_total}s\n" \
+		http://localhost/cgi-bin/dnfwebapp$(SUFFIX_$(1)).cgi
+	@echo "Internal Log:"
+	@jq -r .log perf_res_cgi_$(1).json
+	@rm perf_res_cgi_$(1).json
+
+aws$(SUFFIX_$(1))-test: aws$(SUFFIX_$(1)) perf_input.json venv
+	@echo "Starting Flask Lambda Emulator ($(1))..."
+	@fuser -k 8080/tcp || true
+	@./venv/bin/python3 lambda_runtime_emulator.py > flask_emulator_$(1).log 2>&1 & \
+	FLASK_PID=$$!; \
+	sleep 2; \
+	echo "Starting AWS Lambda Runtime binary ($(1))..."; \
+	AWS_LAMBDA_RUNTIME_API=127.0.0.1:8080 ./dnfwebapp$(SUFFIX_$(1)).aws > aws_runtime_$(1).log 2>&1 & \
+	RUNTIME_PID=$$!; \
+	sleep 2; \
+	echo "Triggering invocation..."; \
+	curl -s -X POST "http://localhost:8080/2015-03-31/functions/function/invocations" -d @../test/dwa_test_input.json > tmp_aws_res_$(1).json; \
+	kill $$RUNTIME_PID 2>/dev/null || true; \
+	kill $$FLASK_PID 2>/dev/null || true; \
+	echo "Comparing AWS results..."; \
+	jq .result tmp_aws_res_$(1).json > tmp_aws_res_filtered_$(1).json; \
+	jq .result ../test/dwa_expected_output.json > tmp_expected_filtered_$(1).json; \
+	diff tmp_aws_res_filtered_$(1).json tmp_expected_filtered_$(1).json; \
+	rm tmp_aws_res_$(1).json tmp_aws_res_filtered_$(1).json tmp_expected_filtered_$(1).json
+
+aws$(SUFFIX_$(1))-perf-test: aws$(SUFFIX_$(1)) perf_input.json venv
+	@echo "--- AWS Performance Test ($(1)) ---"
+	@echo "Starting Flask Lambda Emulator..."
+	@fuser -k 8080/tcp || true
+	@./venv/bin/python3 lambda_runtime_emulator.py > flask_emulator_$(1).log 2>&1 & \
+	FLASK_PID=$$!; \
+	sleep 2; \
+	echo "Starting AWS Lambda Runtime binary..."; \
+	AWS_LAMBDA_RUNTIME_API=127.0.0.1:8080 ./dnfwebapp$(SUFFIX_$(1)).aws > aws_runtime_$(1).log 2>&1 & \
+	RUNTIME_PID=$$!; \
+	sleep 2; \
+	echo "Triggering performance invocation..."; \
+	curl -s -X POST "http://localhost:8080/2015-03-31/functions/function/invocations" -d @perf_input.json -o tmp_aws_perf_$(1).json \
+		-w "Upload/Connect: %{time_pretransfer}s\nProcessing (TTFB): %{time_starttransfer}s\nTotal Time: %{time_total}s\n"; \
+	kill $$RUNTIME_PID 2>/dev/null || true; \
+	kill $$FLASK_PID 2>/dev/null || true; \
+	echo "Internal Log:"; \
+	jq -r .log tmp_aws_perf_$(1).json; \
+	rm tmp_aws_perf_$(1).json
 endef
 
 $(eval $(call HOST_RULES,default))
 $(eval $(call HOST_RULES,amd64))
 $(eval $(call HOST_RULES,arm64))
 
-# --- Testing ---
+# --- Aliases ---
+cli_default: cli
+cgi_default: cgi
+aws_default: aws
 
-cli-test: cli_amd64
-	./$(BIN_CLI_AMD64) ../test/dwa_test_input.json -o tmp_test_res.json
-	jq .result tmp_test_res.json > tmp_test_res_filtered.json
-	jq .result ../test/dwa_expected_output.json > tmp_expected_filtered.json
-	diff tmp_test_res_filtered.json tmp_expected_filtered.json
-	rm tmp_test_res.json tmp_test_res_filtered.json tmp_expected_filtered.json
+cli_default-test: cli-test
+cli_default-perf-test: cli-perf-test
 
-cgi-test: cgi_amd64
-	@echo "Testing CGI with curl..."
-	curl -X POST -H "Content-Type: application/json" --data-binary @../test/dwa_test_input.json http://localhost/cgi-bin/$(BIN_CGI_AMD64) > tmp_cgi_res.json
-	@echo "Comparing results..."
-	jq .result tmp_cgi_res.json > tmp_cgi_res_filtered.json
-	jq .result ../test/dwa_expected_output.json > tmp_expected_filtered.json
-	diff tmp_cgi_res_filtered.json tmp_expected_filtered.json
-	rm tmp_cgi_res.json tmp_cgi_res_filtered.json tmp_expected_filtered.json
+cgi_default-test: cgi-test
+cgi_default-perf-test: cgi-perf-test
 
-cgi-install: cgi_amd64
-	cp $(BIN_CGI_AMD64) /usr/lib/cgi-bin/$(BIN_CGI_AMD64)
-	chmod a+rwx /usr/lib/cgi-bin/$(BIN_CGI_AMD64)
+aws_default-test: aws-test
+aws_default-perf-test: aws-perf-test
+
+perf-test: cli-perf-test cgi-perf-test aws-perf-test
+
+perf_input.json:
+	../dnf -gpsd 2 20 -gdnf 2 2 3 -gic 200000 1 -o perf_input.json
+
+cgi-install: cgi
+	cp dnfwebapp.cgi /usr/lib/cgi-bin/dnfwebapp.cgi
+	chmod a+rwx /usr/lib/cgi-bin/dnfwebapp.cgi
 
 aws-install: venv
 	chmod a+rwx lambda_runtime_emulator.py
@@ -115,69 +190,6 @@ aws-install: venv
 venv:
 	python3 -m venv venv
 	./venv/bin/pip install flask
-
-aws-test: aws_amd64 perf_input.json venv
-	@echo "Starting Flask Lambda Emulator..."
-	@fuser -k 8080/tcp || true
-	@./venv/bin/python3 lambda_runtime_emulator.py > flask_emulator.log 2>&1 & \
-	FLASK_PID=$$!; \
-	sleep 2; \
-	echo "Starting AWS Lambda Runtime binary..."; \
-	AWS_LAMBDA_RUNTIME_API=127.0.0.1:8080 ./$(BIN_AWS_AMD64) > aws_runtime.log 2>&1 & \
-	RUNTIME_PID=$$!; \
-	sleep 2; \
-	echo "Triggering invocation..."; \
-	curl -s -X POST "http://localhost:8080/2015-03-31/functions/function/invocations" -d @../test/dwa_test_input.json > tmp_aws_res.json; \
-	kill $$RUNTIME_PID 2>/dev/null || true; \
-	kill $$FLASK_PID 2>/dev/null || true; \
-	echo "Comparing AWS results..."; \
-	jq .result tmp_aws_res.json > tmp_aws_res_filtered.json; \
-	jq .result ../test/dwa_expected_output.json > tmp_expected_filtered.json; \
-	diff tmp_aws_res_filtered.json tmp_expected_filtered.json; \
-	rm tmp_aws_res.json tmp_aws_res_filtered.json tmp_expected_filtered.json
-
-aws-perf-test: aws_amd64 perf_input.json venv
-	@echo "--- AWS Performance Test ---"
-	@echo "Starting Flask Lambda Emulator..."
-	@fuser -k 8080/tcp || true
-	@./venv/bin/python3 lambda_runtime_emulator.py > flask_emulator.log 2>&1 & \
-	FLASK_PID=$$!; \
-	sleep 2; \
-	echo "Starting AWS Lambda Runtime binary..."; \
-	AWS_LAMBDA_RUNTIME_API=127.0.0.1:8080 ./$(BIN_AWS_AMD64) > aws_runtime.log 2>&1 & \
-	RUNTIME_PID=$$!; \
-	sleep 2; \
-	echo "Triggering performance invocation..."; \
-	curl -s -X POST "http://localhost:8080/2015-03-31/functions/function/invocations" -d @perf_input.json -o tmp_aws_perf.json \
-		-w "Upload/Connect: %{time_pretransfer}s\nProcessing (TTFB): %{time_starttransfer}s\nTotal Time: %{time_total}s\n"; \
-	kill $$RUNTIME_PID 2>/dev/null || true; \
-	kill $$FLASK_PID 2>/dev/null || true; \
-	echo "Internal Log:"; \
-	jq -r .log tmp_aws_perf.json; \
-	rm tmp_aws_perf.json
-
-perf_input.json:
-	../dnf -gpsd 2 20 -gdnf 2 2 3 -gic 200000 1 -o perf_input.json
-
-cli-perf-test: cli_amd64 perf_input.json
-	@echo "--- CLI Performance Test ---"
-	@/usr/bin/time -f "Total Time: %es" ./$(BIN_CLI_AMD64) perf_input.json -o perf_res_cli.json > /dev/null
-	@echo "Internal Log:"
-	@jq -r .log perf_res_cli.json
-	@rm perf_res_cli.json
-
-cgi-perf-test: cgi_amd64 perf_input.json
-	@echo "--- CGI Performance Test ---"
-	@curl -s -X POST -H "Content-Type: application/json" \
-		--data-binary @perf_input.json \
-		-o perf_res_cgi.json \
-		-w "Upload/Connect: %{time_pretransfer}s\nProcessing (TTFB): %{time_starttransfer}s\nTotal Time: %{time_total}s\n" \
-		http://localhost/cgi-bin/$(BIN_CGI_AMD64)
-	@echo "Internal Log:"
-	@jq -r .log perf_res_cgi.json
-	@rm perf_res_cgi.json
-
-perf-test: cli-perf-test cgi-perf-test aws-perf-test
 
 clean:
 	-rm -f dnfwebapp.cli dnfwebapp.cgi dnfwebapp.aws dnfwebapp_*.cli dnfwebapp_*.cgi dnfwebapp_*.aws
