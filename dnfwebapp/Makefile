@@ -91,7 +91,11 @@ cli$(SUFFIX_$(1))-test: cli$(SUFFIX_$(1))
 
 cli$(SUFFIX_$(1))-perf-test: cli$(SUFFIX_$(1)) perf_input.json
 	@echo "--- CLI Performance Test ($(1)) ---"
-	@/usr/bin/time -f "Total Time: %es" ./dnfwebapp$(SUFFIX_$(1)).cli perf_input.json -o perf_res_cli_$(1).json > /dev/null
+	@python3 -c 'import time, subprocess; \
+		start = time.time(); \
+		subprocess.run(["./dnfwebapp$(SUFFIX_$(1)).cli", "perf_input.json", "-o", "perf_res_cli_$(1).json"], stdout=subprocess.DEVNULL); \
+		end = time.time(); \
+		print(f"Total Time: {end - start:.2f}s");'
 	@echo "Internal Log:"
 	@jq -r .log perf_res_cli_$(1).json
 	@rm perf_res_cli_$(1).json
