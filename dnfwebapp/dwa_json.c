@@ -36,6 +36,10 @@ int dwa_read_file(dwa_t *p, const char *filename) {
 }
 
 void dwa_scan(dwa_t *p) {
+    uint32_t *pos_array = p->pos_array;
+    size_t pos_cnt = p->pos_cnt;
+    size_t pos_max = p->pos_max;
+
 #if defined(CO_HAS_INTEL_SIMD)
     __m128i ht = _mm_setr_epi8(
         0x00, 0x00, 0x03, 0x80, 0x00, 0x1C, 0x00, 0x60,
@@ -69,13 +73,18 @@ void dwa_scan(dwa_t *p) {
             uint32_t found_mask = (uint32_t)~_mm_movemask_epi8(_mm_cmpeq_epi8(result, zero)) & 0xFFFF;
             if (skip_next_byte) { found_mask &= ~1U; skip_next_byte = 0; }
             if (found_mask != 0) {
-                dwa_ensure_capacity(p);
+                if (__builtin_expect(pos_cnt + 16 > pos_max, 0)) {
+                    p->pos_cnt = pos_cnt;
+                    dwa_ensure_capacity(p);
+                    pos_array = p->pos_array;
+                    pos_max = p->pos_max;
+                }
                 while (found_mask != 0) {
                     int i = __builtin_ctz(found_mask);
                     found_mask &= (found_mask - 1); 
                     char c = buffer[pos + i];
                     if (!in_string) {
-                        p->pos_array[p->pos_cnt++] = (uint32_t)(pos + i);
+                        pos_array[pos_cnt++] = (uint32_t)(pos + i);
                         if (c == '\"') in_string = 1;
                     } else {
                         if (c == '\\') {
@@ -83,7 +92,7 @@ void dwa_scan(dwa_t *p) {
                             else skip_next_byte = 1;
                         } else if (c == '\"') {
                             in_string = 0;
-                            p->pos_array[p->pos_cnt++] = (uint32_t)(pos + i);
+                            pos_array[pos_cnt++] = (uint32_t)(pos + i);
                         }
                     }
                 }
@@ -91,6 +100,7 @@ void dwa_scan(dwa_t *p) {
         } else skip_next_byte = 0;
         pos += 16;
     }
+    p->pos_cnt = pos_cnt;
     double t2 = get_ms();
     dwa_print(p, "Scan time:  %.4f ms\n", t2 - t1);
     dwa_print(p, "Structural characters found: %zu\n", p->pos_cnt);
@@ -137,13 +147,18 @@ void dwa_scan(dwa_t *p) {
 
             if (skip_next_byte) { found_mask &= ~1U; skip_next_byte = 0; }
             if (found_mask != 0) {
-                dwa_ensure_capacity(p);
+                if (__builtin_expect(pos_cnt + 16 > pos_max, 0)) {
+                    p->pos_cnt = pos_cnt;
+                    dwa_ensure_capacity(p);
+                    pos_array = p->pos_array;
+                    pos_max = p->pos_max;
+                }
                 while (found_mask != 0) {
                     int i = __builtin_ctz(found_mask);
                     found_mask &= (found_mask - 1); 
                     char c = buffer[pos + i];
                     if (!in_string) {
-                        p->pos_array[p->pos_cnt++] = (uint32_t)(pos + i);
+                        pos_array[pos_cnt++] = (uint32_t)(pos + i);
                         if (c == '\"') in_string = 1;
                     } else {
                         if (c == '\\') {
@@ -151,7 +166,7 @@ void dwa_scan(dwa_t *p) {
                             else skip_next_byte = 1;
                         } else if (c == '\"') {
                             in_string = 0;
-                            p->pos_array[p->pos_cnt++] = (uint32_t)(pos + i);
+                            pos_array[pos_cnt++] = (uint32_t)(pos + i);
                         }
                     }
                 }
@@ -159,6 +174,7 @@ void dwa_scan(dwa_t *p) {
         } else skip_next_byte = 0;
         pos += 16;
     }
+    p->pos_cnt = pos_cnt;
     double t2 = get_ms();
     dwa_print(p, "Scan time:  %.4f ms\n", t2 - t1);
     dwa_print(p, "Structural characters found: %zu\n", p->pos_cnt);
@@ -172,19 +188,30 @@ void dwa_scan(dwa_t *p) {
         if (escape) { escape = 0; continue; }
         if (!in_string) {
             if (c == '\"' || c == ',' || c == '[' || c == ']' || c == '{' || c == '}' || c == ':') {
-                dwa_ensure_capacity(p);
-                p->pos_array[p->pos_cnt++] = (uint32_t)pos;
+                if (__builtin_expect(pos_cnt + 16 > pos_max, 0)) {
+                    p->pos_cnt = pos_cnt;
+                    dwa_ensure_capacity(p);
+                    pos_array = p->pos_array;
+                    pos_max = p->pos_max;
+                }
+                pos_array[pos_cnt++] = (uint32_t)pos;
                 if (c == '\"') in_string = 1;
             }
         } else {
             if (c == '\\') escape = 1;
             else if (c == '\"') {
-                dwa_ensure_capacity(p);
+                if (__builtin_expect(pos_cnt + 16 > pos_max, 0)) {
+                    p->pos_cnt = pos_cnt;
+                    dwa_ensure_capacity(p);
+                    pos_array = p->pos_array;
+                    pos_max = p->pos_max;
+                }
                 in_string = 0;
-                p->pos_array[p->pos_cnt++] = (uint32_t)pos;
+                pos_array[pos_cnt++] = (uint32_t)pos;
             }
         }
     }
+    p->pos_cnt = pos_cnt;
     double t2 = get_ms();
     dwa_print(p, "Scan time:  %.4f ms\n", t2 - t1);
     dwa_print(p, "Structural characters found: %zu\n", p->pos_cnt);
