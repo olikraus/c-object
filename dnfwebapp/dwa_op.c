@@ -1,11 +1,5 @@
 #include "dnfwebapp.h"
 
-/* Local helper: not in header */
-static char dwa_consume_token_char(dwa_t *p) {
-    if (p->token_idx >= p->pos_cnt) return '\0';
-    return p->buffer[p->pos_array[p->token_idx++]];
-}
-
 /* Phase 1: PSD Collection */
 
 static void dwa_collect_psd_dnf(dwa_t *p) {
@@ -18,7 +12,8 @@ static void dwa_collect_psd_dnf(dwa_t *p) {
         if (dwa_consume_token_char(p) != '{') dwa_error(p, "Expected '{' for AND-term");
         if (dwa_peek_token_char(p) != '}') {
             for (;;) {
-                char *attr_name = dwa_alloc_string(p);
+                char attr_name[DWA_STR_BUF_SIZE];
+                dwa_get_string(p, attr_name, sizeof(attr_name));
                 if (dwa_consume_token_char(p) != ':') dwa_error(p, "Expected ':'");
                 if (dwa_consume_token_char(p) != '[') dwa_error(p, "Expected '['");
                 
@@ -33,7 +28,6 @@ static void dwa_collect_psd_dnf(dwa_t *p) {
                 } else {
                     dwa_consume_token_char(p); // consume ']'
                 }
-                free(attr_name);
                 char c = dwa_consume_token_char(p);
                 if (c == '}') break;
                 if (c != ',') dwa_error(p, "Expected ',' or '}'");
@@ -57,14 +51,14 @@ void dwa_collect_psd_recursive(dwa_t *p) {
             return;
         }
         for (;;) {
-            char *key = dwa_alloc_string(p);
+            char key[DWA_STR_BUF_SIZE];
+            dwa_get_string(p, key, sizeof(key));
             if (dwa_consume_token_char(p) != ':') dwa_error(p, "Expected ':'");
             if (strcmp(key, "dnf") == 0) {
                 dwa_collect_psd_dnf(p);
             } else {
                 dwa_collect_psd_recursive(p);
             }
-            free(key);
             char c2 = dwa_consume_token_char(p);
             if (c2 == '}') break;
             if (c2 != ',') dwa_error(p, "Expected ',' or '}'");
@@ -92,20 +86,21 @@ void dwa_collect_psd_recursive(dwa_t *p) {
 
 static co dwa_parse_bvdnf(dwa_t *p) {
     co bvdnf = coNewVector(CO_FREE_VALS);
-    dwa_consume_token_char(p);
+    p->token_idx++; // consume '['
     if (dwa_peek_token_char(p) == ']') {
-        dwa_consume_token_char(p);
+        p->token_idx++; // consume ']'
         return bvdnf;
     }
 
     for (;;) {
-        dwa_consume_token_char(p);
+        p->token_idx++; // consume '{'
         co_BVType bv = coNewBV(p->total_bits);
         
         if (dwa_peek_token_char(p) != '}') {
             coBVSetToUniversal(p->psd, bv);
             for (;;) {
-                char *attr_name = dwa_alloc_string(p);
+                char attr_name[DWA_STR_BUF_SIZE];
+                dwa_fast_get_string(p, attr_name, sizeof(attr_name));
                 cco attr_meta = coMapGet(p->bvattributes, attr_name);
                 int32_t attr_idx = coInt32VectorGet(attr_meta, 0);
                 int32_t start_bit = coInt32VectorGet(attr_meta, 1);
@@ -114,40 +109,29 @@ static co dwa_parse_bvdnf(dwa_t *p) {
                 co_BVType mask = (co_BVType)coVectorGet(p->bvmask, attr_idx);
                 coBVANDNOT(bv, bv, mask); // Clear attribute bits
 
-                dwa_consume_token_char(p); // :
-                dwa_consume_token_char(p); // [
+                p->token_idx += 2; // skip ':' and '['
                 
                 if (dwa_peek_token_char(p) != ']') {
                     for (;;) {
-                        int32_t val = dwa_parse_int(p);
-                        char buf[32]; sprintf(buf, "%d", val);
+                        char buf[16];
+                        dwa_parse_int_str(p, buf);
                         cco pos_obj = coMapGet(val_map, buf);
-                        if (pos_obj) {
-                            int32_t local_pos = (int32_t)coDblGet(pos_obj);
-                            coBVSet(bv, start_bit + local_pos);
-                        }
+                        int32_t local_pos = (int32_t)coDblGet(pos_obj);
+                        coBVSet(bv, start_bit + local_pos);
                         
-                        char c = dwa_consume_token_char(p);
-                        if (c == ']') break;
-                        if (c != ',') dwa_error(p, "Expected ',' or ']'");
+                        if (dwa_consume_token_char(p) == ']') break;
                     }
                 } else {
-                    dwa_consume_token_char(p);
+                    p->token_idx++; // consume ']'
                 }
-                free(attr_name);
-                char c = dwa_consume_token_char(p);
-                if (c == '}') break;
-                if (c != ',') dwa_error(p, "Expected ',' or '}'");
+                if (dwa_consume_token_char(p) == '}') break;
             }
         } else {
-            dwa_consume_token_char(p);
+            p->token_idx++; // consume '}'
             coBVSetToUniversal(p->psd, bv);
         }
         coVectorAdd(bvdnf, (cco)bv);
-        char c = dwa_consume_token_char(p);
-        if (c == ']') break;
-        if (c != ',') dwa_error(p, "Expected ',' or ']'");
-        if (dwa_peek_token_char(p) == ']') dwa_error(p, "Trailing comma not allowed");
+        if (dwa_consume_token_char(p) == ']') break;
     }
     return bvdnf;
 }
@@ -161,12 +145,14 @@ void dwa_build_bvdnf_recursive(dwa_t *p, co *target_list) {
             return;
         }
         for (;;) {
-            char *key = dwa_alloc_string(p);
+            char key[DWA_STR_BUF_SIZE];
+            dwa_get_string(p, key, sizeof(key));
             dwa_consume_token_char(p); // :
             if (strcmp(key, "op") == 0) {
-                char *op = dwa_alloc_string(p);
-                strncpy(p->op_name, op, 63);
-                free(op);
+                char op[DWA_STR_BUF_SIZE];
+                dwa_get_string(p, op, sizeof(op));
+                strncpy(p->op_name, op, sizeof(p->op_name) - 1);
+                p->op_name[sizeof(p->op_name) - 1] = '\0';
             } else if (strcmp(key, "arg1") == 0) {
                 p->arg1_dnf_list = coNewVector(CO_FREE_VALS);
                 dwa_build_bvdnf_recursive(p, &p->arg1_dnf_list);
@@ -179,12 +165,12 @@ void dwa_build_bvdnf_recursive(dwa_t *p, co *target_list) {
                 char c_peek = dwa_peek_token_char(p);
                 if (c_peek == ',') {
                     dwa_consume_token_char(p);
-                    char *key2 = dwa_alloc_string(p);
+                    char key2[DWA_STR_BUF_SIZE];
+                    dwa_get_string(p, key2, sizeof(key2));
                     dwa_consume_token_char(p);
                     if (strcmp(key2, "id") == 0) {
                         id = dwa_parse_int(p);
                     }
-                    free(key2);
                 }
                 co dnf_obj = coNewMap(CO_STRDUP | CO_FREE_VALS);
                 coMapAdd(dnf_obj, "dnf", (cco)bvdnf);
@@ -193,7 +179,6 @@ void dwa_build_bvdnf_recursive(dwa_t *p, co *target_list) {
             } else {
                 dwa_build_bvdnf_recursive(p, target_list);
             }
-            free(key);
             char c2 = dwa_consume_token_char(p);
             if (c2 == '}') break;
         }

@@ -1,11 +1,5 @@
 #include "dnfwebapp.h"
 
-/* Local helper: not in header */
-static char dwa_consume_token_char(dwa_t *p) {
-    if (p->token_idx >= p->pos_cnt) return '\0';
-    return p->buffer[p->pos_array[p->token_idx++]];
-}
-
 static void dwa_validate_value(dwa_t *p);
 
 static void dwa_validate_object(dwa_t *p) {

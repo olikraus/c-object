@@ -17,6 +17,8 @@
 #include <arm_neon.h>
 #endif
 
+#define DWA_STR_BUF_SIZE 128
+
 typedef struct {
     char *buffer;       /* Raw JSON content. */
     size_t size;        /* Size of the raw JSON content. */
@@ -28,7 +30,7 @@ typedef struct {
     const char *out_filename; /* Output filename for operation results. */
     
     /* Operation State */
-    char op_name[64];
+    char op_name[DWA_STR_BUF_SIZE];
     co psd;             /* Problem Space Description */
     co arg1_dnf_list;   /* Vector of BVDNFs */
     co arg2_dnf_list;   /* Vector of BVDNFs */
@@ -55,11 +57,50 @@ void dwa_error(dwa_t *p, const char *msg);
 /* dwa_json.c */
 int dwa_read_file(dwa_t *p, const char *filename);
 void dwa_scan(dwa_t *p);
-char dwa_peek_token_char(dwa_t *p);
 int dwa_has_content_between_tokens(dwa_t *p);
 char *dwa_alloc_string(dwa_t *p);
 void dwa_skip_string(dwa_t *p);
 int32_t dwa_parse_int(dwa_t *p);
+
+static inline char dwa_peek_token_char(dwa_t *p) {
+    return p->buffer[p->pos_array[p->token_idx]];
+}
+
+static inline char dwa_consume_token_char(dwa_t *p) {
+    return p->buffer[p->pos_array[p->token_idx++]];
+}
+
+static inline const char *dwa_get_string(dwa_t *p, char *buf, size_t max_len) {
+    if (dwa_peek_token_char(p) != '\"') dwa_error(p, "Expected '\"'");
+    uint32_t start = p->pos_array[p->token_idx++] + 1;
+    if (dwa_peek_token_char(p) != '\"') dwa_error(p, "Expected closing '\"'");
+    uint32_t end = p->pos_array[p->token_idx++];
+    size_t len = end - start;
+    if (len >= max_len) len = max_len - 1;
+    memcpy(buf, p->buffer + start, len);
+    buf[len] = '\0';
+    return buf;
+}
+
+static inline const char *dwa_fast_get_string(dwa_t *p, char *buf, size_t max_len) {
+    uint32_t start = p->pos_array[p->token_idx++] + 1;
+    uint32_t end = p->pos_array[p->token_idx++];
+    size_t len = end - start;
+    if (len >= max_len) len = max_len - 1;
+    memcpy(buf, p->buffer + start, len);
+    buf[len] = '\0';
+    return buf;
+}
+
+static inline void dwa_parse_int_str(dwa_t *p, char *buf) {
+    size_t start = p->pos_array[p->token_idx - 1] + 1;
+    while (isspace((unsigned char)p->buffer[start])) start++;
+    int len = 0;
+    while (p->buffer[start] >= '0' && p->buffer[start] <= '9' && len < 15) {
+        buf[len++] = p->buffer[start++];
+    }
+    buf[len] = '\0';
+}
 
 /* dwa_op.c */
 void dwa_collect_psd_recursive(dwa_t *p);

@@ -1,6 +1,39 @@
 # dnfwebapp Makefile
 
-# --- Build Configuration ---
+# --- Build Modes (default: release) ---
+MODE ?= release
+
+# Detect mode keywords anywhere on the command line (e.g. "make cli-perf-test release")
+ifneq ($(filter debug,$(MAKECMDGOALS)),)
+    MODE := debug
+endif
+ifneq ($(filter release,$(MAKECMDGOALS)),)
+    MODE := release
+endif
+ifneq ($(filter sanitize,$(MAKECMDGOALS)),)
+    MODE := sanitize
+endif
+ifneq ($(filter profile,$(MAKECMDGOALS)),)
+    MODE := profile
+endif
+
+ifeq ($(MODE),release)
+    OPT_CFLAGS  = -O3 -DNDEBUG
+    OPT_LDFLAGS = 
+else ifeq ($(MODE),debug)
+    OPT_CFLAGS  = -g -O0
+    OPT_LDFLAGS = 
+else ifeq ($(MODE),profile)
+    OPT_CFLAGS  = -g -pg -fno-omit-frame-pointer -O2
+    OPT_LDFLAGS = -pg
+else ifeq ($(MODE),sanitize)
+    OPT_CFLAGS  = -g -fsanitize=address,undefined -fno-omit-frame-pointer
+    OPT_LDFLAGS = -fsanitize=address,undefined
+else
+    $(error Unknown MODE '$(MODE)'. Valid modes: release, debug, profile, sanitize)
+endif
+
+# --- Compilers & Architectures ---
 CC_default = gcc
 CC_amd64   = x86_64-linux-gnu-gcc
 CC_arm64   = aarch64-linux-gnu-gcc
@@ -21,15 +54,16 @@ SIMD_amd64 = -msse4.2
 SIMD_arm64 =
 
 # --- Flags ---
-CFLAGS_COMMON = -g -fpie -DXML_GE=1 -Wall -I../co -I../co/expat
-LDFLAGS_COMMON = -pie -Wl,--as-needed -static-libgcc -Wl,-Bstatic -lm -lpthread -Wl,-Bdynamic
+CFLAGS_COMMON = $(OPT_CFLAGS) -fpie -DXML_GE=1 -Wall -I../co -I../co/expat
+LDFLAGS_COMMON = $(OPT_LDFLAGS) -pie -Wl,--as-needed -static-libgcc -Wl,-Bstatic -lm -lpthread -Wl,-Bdynamic
 
 # --- Sources ---
 COSRC = ../co/co.c ../co/co_dnf.c ../co/co_bitset.c
 COMMON_SRC = dwa.c dwa_json.c dwa_op.c dwa_validate.c
 
 # --- Targets ---
-.PHONY: all cli cli_amd64 cli_arm64 cli_default cgi cgi_amd64 cgi_arm64 cgi_default aws aws_amd64 aws_arm64 aws_default \
+.PHONY: all help release debug profile sanitize \
+        cli cli_amd64 cli_arm64 cli_default cgi cgi_amd64 cgi_arm64 cgi_default aws aws_amd64 aws_arm64 aws_default \
         cli-test cli-perf-test cli_amd64-test cli_amd64-perf-test cli_arm64-test cli_arm64-perf-test \
         cgi-test cgi-perf-test cgi_amd64-test cgi_amd64-perf-test cgi_arm64-test cgi_arm64-perf-test \
         aws-test aws-perf-test aws_amd64-test aws_amd64-perf-test aws_arm64-test aws_arm64-perf-test \
@@ -38,9 +72,13 @@ COMMON_SRC = dwa.c dwa_json.c dwa_op.c dwa_validate.c
 
 all: cli cli_amd64 cli_arm64 cgi cgi_amd64 cgi_arm64 aws aws_amd64 aws_arm64
 
+# Mode targets (dummy targets satisfied when passed as command-line goals)
+debug release sanitize profile:
+	@:
+
 # --- Rules Template ---
 define HOST_RULES
-OBJDIR_$(1) = obj$(SUFFIX_$(1))
+OBJDIR_$(1) = obj$(SUFFIX_$(1))/$(MODE)
 OBJS_$(1) = $$(addprefix $$(OBJDIR_$(1))/, $$(notdir $$(COSRC:.c=.o) $$(COMMON_SRC:.c=.o)))
 
 $$(OBJDIR_$(1))/%.o: %.c
@@ -90,7 +128,7 @@ cli$(SUFFIX_$(1))-test: cli$(SUFFIX_$(1))
 	rm tmp_test_res_$(1).json tmp_test_res_filtered_$(1).json tmp_expected_filtered_$(1).json
 
 cli$(SUFFIX_$(1))-perf-test: cli$(SUFFIX_$(1)) perf_input.json
-	@echo "--- CLI Performance Test ($(1)) ---"
+	@echo "--- CLI Performance Test ($(1), MODE=$(MODE)) ---"
 	@python3 -c 'import time, subprocess; \
 		start = time.time(); \
 		subprocess.run(["./dnfwebapp$(SUFFIX_$(1)).cli", "perf_input.json", "-o", "perf_res_cli_$(1).json"], stdout=subprocess.DEVNULL); \
@@ -110,7 +148,7 @@ cgi$(SUFFIX_$(1))-test: cgi$(SUFFIX_$(1))
 	rm tmp_cgi_res_$(1).json tmp_cgi_res_filtered_$(1).json tmp_expected_filtered_$(1).json
 
 cgi$(SUFFIX_$(1))-perf-test: cgi$(SUFFIX_$(1)) perf_input.json
-	@echo "--- CGI Performance Test ($(1)) ---"
+	@echo "--- CGI Performance Test ($(1), MODE=$(MODE)) ---"
 	@curl -s -X POST -H "Content-Type: application/json" \
 		--data-binary @perf_input.json \
 		-o perf_res_cgi_$(1).json \
@@ -137,11 +175,11 @@ aws$(SUFFIX_$(1))-test: aws$(SUFFIX_$(1)) perf_input.json venv
 	echo "Comparing AWS results..."; \
 	jq .result tmp_aws_res_$(1).json > tmp_aws_res_filtered_$(1).json; \
 	jq .result ../test/dwa_expected_output.json > tmp_expected_filtered_$(1).json; \
-	diff tmp_aws_res_filtered_$(1).json tmp_expected_filtered_$(1).json; \
+	diff tmp_aws_res_filtered_$(1).json tmp_expected_filtered_$(1).json
 	rm tmp_aws_res_$(1).json tmp_aws_res_filtered_$(1).json tmp_expected_filtered_$(1).json
 
 aws$(SUFFIX_$(1))-perf-test: aws$(SUFFIX_$(1)) perf_input.json venv
-	@echo "--- AWS Performance Test ($(1)) ---"
+	@echo "--- AWS Performance Test ($(1), MODE=$(MODE)) ---"
 	@echo "Starting Flask Lambda Emulator..."
 	@fuser -k 8080/tcp || true
 	@./venv/bin/python3 lambda_runtime_emulator.py > flask_emulator_$(1).log 2>&1 & \
@@ -200,3 +238,52 @@ clean:
 	-rm -rf obj obj_amd64 obj_arm64
 	-rm -f aws_rie.log aws_runtime.log flask_emulator.log out.json perf_input.json tmp_aws_res.json
 	-rm -rf venv tmp
+
+help:
+	@echo "================================================================================"
+	@echo " dnfwebapp Makefile Help"
+	@echo "================================================================================"
+	@echo ""
+	@echo " BUILD MODES (default: release)"
+	@echo "   You can combine any target with a mode keyword anywhere on the command line:"
+	@echo "     release     : -O3 -DNDEBUG (Optimized for maximum performance)"
+	@echo "     debug       : -g -O0 (Debug symbols, no optimization)"
+	@echo "     sanitize    : -g -fsanitize=address,undefined (Memory & bounds checking)"
+	@echo "     profile     : -g -pg -O2 (gprof execution profiling)"
+	@echo ""
+	@echo " BUILD TARGETS"
+	@echo "   all               : Build all binaries for all architectures (host, amd64, arm64)"
+	@echo "   cli               : Build CLI binary for host (dnfwebapp.cli)"
+	@echo "   cli_amd64         : Cross-compile CLI for x86_64 (dnfwebapp_amd64.cli)"
+	@echo "   cli_arm64         : Cross-compile CLI for AArch64 (dnfwebapp_arm64.cli)"
+	@echo "   cgi               : Build CGI binary for host (dnfwebapp.cgi)"
+	@echo "   cgi_amd64         : Cross-compile CGI for x86_64 (dnfwebapp_amd64.cgi)"
+	@echo "   cgi_arm64         : Cross-compile CGI for AArch64 (dnfwebapp_arm64.cgi)"
+	@echo "   aws               : Build AWS Lambda runtime binary for host (dnfwebapp.aws)"
+	@echo "   aws_amd64         : Cross-compile AWS Lambda binary for x86_64 (dnfwebapp_amd64.aws)"
+	@echo "   aws_arm64         : Cross-compile AWS Lambda binary for AArch64 (dnfwebapp_arm64.aws)"
+	@echo ""
+	@echo " TEST & BENCHMARK TARGETS"
+	@echo "   cli-test          : Run functional regression test on host CLI"
+	@echo "   cli-perf-test     : Run performance benchmark on host CLI with perf_input.json"
+	@echo "   cli_amd64-perf-test: Run performance benchmark on AMD64 cross-compiled CLI"
+	@echo "   cli_arm64-perf-test: Run performance benchmark on ARM64 cross-compiled CLI"
+	@echo "   cgi-test          : Test CGI endpoint using curl"
+	@echo "   cgi-perf-test     : Run performance benchmark on CGI endpoint"
+	@echo "   aws-test          : Test AWS Lambda emulator integration"
+	@echo "   aws-perf-test     : Benchmark AWS Lambda execution on perf_input.json"
+	@echo "   perf-test         : Run all performance benchmarks (CLI, CGI, AWS)"
+	@echo ""
+	@echo " UTILITY TARGETS"
+	@echo "   clean             : Remove build artifacts and temporary logs"
+	@echo "   cgi-install       : Install CGI binary to /usr/lib/cgi-bin/"
+	@echo "   aws-install       : Setup Python virtualenv for Lambda emulator"
+	@echo ""
+	@echo " EXAMPLES"
+	@echo "   make cli-perf-test release         # Benchmark optimized host CLI"
+	@echo "   make cli-perf-test debug           # Benchmark unoptimized debug CLI"
+	@echo "   make cli_amd64-perf-test release   # Benchmark optimized AMD64 cross-build"
+	@echo "   make cli-test sanitize             # Run tests with AddressSanitizer"
+	@echo "   make debug cli                     # Build debug CLI binary"
+	@echo "   make release                       # Build all targets with -O3"
+	@echo "================================================================================"

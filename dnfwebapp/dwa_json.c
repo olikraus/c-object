@@ -216,16 +216,11 @@ void dwa_scan(dwa_t *p) {
     dwa_print(p, "Scan time:  %.4f ms\n", t2 - t1);
     dwa_print(p, "Structural characters found: %zu\n", p->pos_cnt);
 #endif
-}
 
-char dwa_peek_token_char(dwa_t *p) {
-    if (p->token_idx >= p->pos_cnt) return '\0';
-    return p->buffer[p->pos_array[p->token_idx]];
-}
-
-char dwa_consume_token_char(dwa_t *p) {
-    if (p->token_idx >= p->pos_cnt) return '\0';
-    return p->buffer[p->pos_array[p->token_idx++]];
+    if (p->pos_array) {
+        p->pos_array[p->pos_cnt] = (uint32_t)p->size;
+        p->pos_array[p->pos_cnt + 1] = (uint32_t)p->size;
+    }
 }
 
 int dwa_has_content_between_tokens(dwa_t *p) {
