@@ -2,9 +2,10 @@ const http = require('http');
 
 let dwaNode;
 try {
-    dwaNode = require('./build/Release/dwa_node.node');
+    const addonPath = process.env.DWA_NODE_PATH || './build/Release/dwa_node.node';
+    dwaNode = require(addonPath);
 } catch (e) {
-    console.error("Failed to load native addon dwa_node.node. Please build it first using 'npx node-gyp rebuild'.");
+    console.error("Failed to load native addon from " + (process.env.DWA_NODE_PATH || './build/Release/dwa_node.node') + ". Please build it first using 'make node'.");
     process.exit(1);
 }
 

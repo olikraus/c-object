@@ -38,12 +38,20 @@ CC_default = gcc
 CC_amd64   = x86_64-linux-gnu-gcc
 CC_arm64   = aarch64-linux-gnu-gcc
 
+CXX_default = g++
+CXX_amd64   = x86_64-linux-gnu-g++
+CXX_arm64   = aarch64-linux-gnu-g++
+
+ARCH_default = x64
+ARCH_amd64   = x64
+ARCH_arm64   = arm64
+
 SUFFIX_default = 
 SUFFIX_amd64   = _amd64
 SUFFIX_arm64   = _arm64
 
-INSTALL_amd64 = sudo apt update && sudo apt install gcc-x86-64-linux-gnu
-INSTALL_arm64 = sudo apt update && sudo apt install gcc-aarch64-linux-gnu
+INSTALL_amd64 = sudo apt update && sudo apt install gcc-x86-64-linux-gnu g++-x86-64-linux-gnu
+INSTALL_arm64 = sudo apt update && sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
 # Detect local SIMD support for default host
 SIMD_default =
@@ -64,13 +72,15 @@ COMMON_SRC = dwa.c dwa_json.c dwa_op.c dwa_validate.c
 # --- Targets ---
 .PHONY: all help release debug profile sanitize \
         cli cli_amd64 cli_arm64 cli_default cgi cgi_amd64 cgi_arm64 cgi_default aws aws_amd64 aws_arm64 aws_default \
+        node node_amd64 node_arm64 node_default \
         cli-test cli-perf-test cli_amd64-test cli_amd64-perf-test cli_arm64-test cli_arm64-perf-test \
         cgi-test cgi-perf-test cgi_amd64-test cgi_amd64-perf-test cgi_arm64-test cgi_arm64-perf-test \
         aws-test aws-perf-test aws_amd64-test aws_amd64-perf-test aws_arm64-test aws_arm64-perf-test \
-        cli_default-test cli_default-perf-test cgi_default-test cgi_default-perf-test aws_default-test aws_default-perf-test \
-        cgi-install aws-install clean node node-test
+        node-test node-perf-test node_amd64-test node_amd64-perf-test node_arm64-test node_arm64-perf-test \
+        cli_default-test cli_default-perf-test cgi_default-test cgi_default-perf-test aws_default-test aws_default-perf-test node_default-test node_default-perf-test \
+        cgi-install aws-install clean
 
-all: cli cli_amd64 cli_arm64 cgi cgi_amd64 cgi_arm64 aws aws_amd64 aws_arm64
+all: cli cli_amd64 cli_arm64 cgi cgi_amd64 cgi_arm64 aws aws_amd64 aws_arm64 node node_amd64 node_arm64
 
 # Mode targets (dummy targets satisfied when passed as command-line goals)
 debug release sanitize profile:
@@ -213,11 +223,10 @@ cli_default-perf-test: cli-perf-test
 
 cgi_default-test: cgi-test
 cgi_default-perf-test: cgi-perf-test
-
-aws_default-test: aws-test
 aws_default-perf-test: aws-perf-test
+node_default-perf-test: node-perf-test
 
-perf-test: cli-perf-test cgi-perf-test aws-perf-test
+perf-test: cli-perf-test cgi-perf-test aws-perf-test node-perf-test
 
 perf_input.json:
 	../dnf -gpsd 2 20 -gdnf 2 2 3 -gic 200000 1 -o perf_input.json
@@ -233,14 +242,37 @@ venv:
 	python3 -m venv venv
 	./venv/bin/pip install flask
 
-node:
-	npx node-gyp rebuild
+# --- Node Rules Template ---
+define NODE_RULES
+node$(SUFFIX_$(1)): dwa_node$(SUFFIX_$(1)).node
 
-node-test: node
-	node test_server.js
+dwa_node$(SUFFIX_$(1)).node: dwa_node.cc dwa.c dwa_json.c dwa_op.c dwa_validate.c dnfwebapp.h $(COSRC) binding.gyp
+	@if [ "$(1)" != "default" ] && [ -z "$$(shell which $$(CXX_$(1)) 2>/dev/null)" ]; then \
+		echo "Error: $(1) cross-compiler ($$(CXX_$(1))) not found."; \
+		echo "Install with: $$(INSTALL_$(1))"; \
+		exit 1; \
+	fi
+	CC=$$(CC_$(1)) CXX=$$(CXX_$(1)) npx node-gyp rebuild --arch=$$(ARCH_$(1))
+	cp build/Release/dwa_node.node $$@
+
+node$(SUFFIX_$(1))-test: node$(SUFFIX_$(1))
+	DWA_NODE_PATH=./dwa_node$(SUFFIX_$(1)).node node test_server.js
+
+node$(SUFFIX_$(1))-perf-test: node$(SUFFIX_$(1)) perf_input.json
+	@echo "--- Node.js Addon Performance Test ($(1), MODE=$(MODE)) ---"
+	DWA_NODE_PATH=./dwa_node$(SUFFIX_$(1)).node node perf_test.js
+endef
+
+$(eval $(call NODE_RULES,default))
+$(eval $(call NODE_RULES,amd64))
+$(eval $(call NODE_RULES,arm64))
+
+node_default: node
+node_default-test: node-test
+node_default-perf-test: node-perf-test
 
 clean:
-	-rm -f dnfwebapp.cli dnfwebapp.cgi dnfwebapp.aws dnfwebapp_*.cli dnfwebapp_*.cgi dnfwebapp_*.aws
+	-rm -f dnfwebapp.cli dnfwebapp.cgi dnfwebapp.aws dnfwebapp_*.cli dnfwebapp_*.cgi dnfwebapp_*.aws dwa_node.node dwa_node_*.node
 	-rm -rf obj obj_amd64 obj_arm64 build
 	-rm -f aws_rie.log aws_runtime.log flask_emulator.log out.json perf_input.json tmp_aws_res.json
 	-rm -rf venv tmp
@@ -268,7 +300,9 @@ help:
 	@echo "   aws               : Build AWS Lambda runtime binary for host (dnfwebapp.aws)"
 	@echo "   aws_amd64         : Cross-compile AWS Lambda binary for x86_64 (dnfwebapp_amd64.aws)"
 	@echo "   aws_arm64         : Cross-compile AWS Lambda binary for AArch64 (dnfwebapp_arm64.aws)"
-	@echo "   node              : Build Node.js native addon (dwa_node.node) using node-gyp"
+	@echo "   node              : Build Node.js native addon for host (dwa_node.node)"
+	@echo "   node_amd64        : Cross-compile Node.js native addon for x86_64 (dwa_node_amd64.node)"
+	@echo "   node_arm64        : Cross-compile Node.js native addon for AArch64 (dwa_node_arm64.node)"
 	@echo ""
 	@echo " TEST & BENCHMARK TARGETS"
 	@echo "   cli-test          : Run functional regression test on host CLI"
@@ -279,8 +313,11 @@ help:
 	@echo "   cgi-perf-test     : Run performance benchmark on CGI endpoint"
 	@echo "   aws-test          : Test AWS Lambda emulator integration"
 	@echo "   aws-perf-test     : Benchmark AWS Lambda execution on perf_input.json"
-	@echo "   perf-test         : Run all performance benchmarks (CLI, CGI, AWS)"
+	@echo "   perf-test         : Run all performance benchmarks (CLI, CGI, AWS, Node)"
 	@echo "   node-test         : Run Node.js HTTP test server and execute test request"
+	@echo "   node_amd64-test   : Run Node.js test server with AMD64 native addon"
+	@echo "   node_arm64-test   : Run Node.js test server with ARM64 native addon"
+	@echo "   node-perf-test    : Run performance benchmark on Node.js native addon"
 	@echo ""
 	@echo " UTILITY TARGETS"
 	@echo "   clean             : Remove build artifacts and temporary logs"

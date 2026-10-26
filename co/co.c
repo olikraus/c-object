@@ -159,7 +159,7 @@ long coVectorAdd(co o, cco p) {
 long coVectorInsert(co o, long i, cco p) {
   void *ptr;
   assert(coIsVector(o));
-  if (i >= o->v.cnt)
+  if (i < 0 || (size_t)i >= o->v.cnt)
     return coVectorAdd(o, p);
 
   while (o->v.max <= o->v.cnt) {
@@ -170,8 +170,8 @@ long coVectorInsert(co o, long i, cco p) {
     o->v.max += COV_EXTEND;
   }
 
-  long j;
-  for (j = o->v.cnt; j > i; j--) {
+  size_t j;
+  for (j = o->v.cnt; j > (size_t)i; j--) {
     o->v.list[j] = o->v.list[j - 1];
   }
   o->v.list[i] = p;
@@ -192,20 +192,20 @@ cco coVectorGet(cco o, long idx) {
   assert(coIsVector(o));
   if (idx < 0)
     return NULL;
-  if (idx >= o->v.cnt)
+  if ((size_t)idx >= o->v.cnt)
     return NULL;
   return o->v.list[idx];
 }
 
 /* returns 1 (success) or 0 (no success) */
 int coVectorForEach(cco o, coVectorForEachCB cb, void *data) {
-  long i;
-  long cnt = o->v.cnt; // not sure what todo if v.cnt is modified...
+  size_t i;
+  size_t cnt = o->v.cnt; // not sure what todo if v.cnt is modified...
   if (o == NULL)
     return 0;
   assert(coIsVector(o));
   for (i = 0; i < cnt; i++)
-    if (cb(o, i, o->v.list[i], data) == 0)
+    if (cb(o, (long)i, o->v.list[i], data) == 0)
       return 0;
   return 1;
 }
@@ -260,10 +260,10 @@ int coVectorEmpty(cco o) {
 co coVectorMap(cco o, coVectorMapCB cb, void *data) {
   co v = coNewVector(CO_FREE_VALS);
   co e;
-  long i;
+  size_t i;
   assert(coIsVector(o));
   for (i = 0; i < o->v.cnt; i++) {
-    e = cb(o, i, o->v.list[i], data);
+    e = cb(o, (long)i, o->v.list[i], data);
     if (e == NULL) // memory error?
     {
       coVectorDestroy(v);
@@ -296,8 +296,8 @@ co coVectorClone(cco o) { return coVectorMap(o, coVectorCloneCB, NULL); }
 */
 void coVectorSet(co v, long i, cco e) {
   assert(coIsVector(v));
-  assert(i < v->v.cnt);
   assert(i >= 0);
+  assert((size_t)i < v->v.cnt);
 
   if (v->flags & CO_FREE_VALS) {
     coDelete((co)(v->v.list[i])); // delete the element, NULL is handled within
@@ -314,23 +314,24 @@ void coVectorSet(co v, long i, cco e) {
 
 /* delete an element in the vector. Size is reduced  by 1 */
 void coVectorErase(co v, long i) {
-  if (i >= v->v.cnt)
-    return; // do nothing, index is outside the vecor
+  if (i < 0 || (size_t)i >= v->v.cnt)
+    return; // do nothing, index is outside the vector
+  size_t idx = i;
   // note: v->cnt > 0 at this point
   if (v->flags & CO_FREE_VALS) {
-    coDelete((co)(v->v.list[i])); // delete the element
+    coDelete((co)(v->v.list[idx])); // delete the element
   } else if ((v->flags & CO_FREE_FIRST) != 0 &&
-             i == 0) // consider the case, where only the first element needs to
+             idx == 0) // consider the case, where only the first element needs to
                      // be deleted
   {
     coDelete((co)v->v.list[0]);
     v->flags &= ~CO_FREE_FIRST; // reset the FRE_FIRST flag, because the other
                                 // elements must not be deleted
   }
-  i++;
-  while (i < v->v.cnt) {
-    v->v.list[i - 1] = v->v.list[i];
-    i++;
+  idx++;
+  while (idx < v->v.cnt) {
+    v->v.list[idx - 1] = v->v.list[idx];
+    idx++;
   }
   v->v.cnt--;
 }
@@ -1340,7 +1341,7 @@ int32_t coInt32VectorGet(cco o, long idx) {
   if (o == NULL)
     return 0;
   assert(coIsInt32Vector(o));
-  if (idx < 0 || idx >= o->iv.cnt)
+  if (idx < 0 || (size_t)idx >= o->iv.cnt)
     return 0;
   return o->iv.list[idx];
 }
@@ -1348,18 +1349,19 @@ int32_t coInt32VectorGet(cco o, long idx) {
 void coInt32VectorSet(co v, long i, int32_t n) {
   assert(coIsInt32Vector(v));
   assert(i >= 0);
-  assert(i < v->iv.cnt);
+  assert((size_t)i < v->iv.cnt);
   v->iv.list[i] = n;
 }
 
 void coInt32VectorErase(co v, long i) {
   assert(coIsInt32Vector(v));
-  if (i < 0 || i >= v->iv.cnt)
+  if (i < 0 || (size_t)i >= v->iv.cnt)
     return;
-  i++;
-  while (i < v->iv.cnt) {
-    v->iv.list[i - 1] = v->iv.list[i];
-    i++;
+  size_t idx = i;
+  idx++;
+  while (idx < v->iv.cnt) {
+    v->iv.list[idx - 1] = v->iv.list[idx];
+    idx++;
   }
   v->iv.cnt--;
 }
@@ -1392,7 +1394,7 @@ long coInt32VectorSize(cco o) {
 
 void coInt32VectorPrint(cco o) {
   assert(coIsInt32Vector(o));
-  long i;
+  size_t i;
   printf("[");
   for (i = 0; i < o->iv.cnt; i++) {
     if (i > 0)
@@ -1424,7 +1426,7 @@ co coInt32VectorClone(cco o) {
 
 int coInt32VectorExists(co o, int32_t n) {
   assert(coIsInt32Vector(o));
-  long i;
+  size_t i;
   for (i = 0; i < o->iv.cnt; i++) {
     if (o->iv.list[i] == n)
       return 1;
@@ -1434,20 +1436,20 @@ int coInt32VectorExists(co o, int32_t n) {
 
 long coInt32VectorFind(co o, int32_t n) {
   assert(coIsInt32Vector(o));
-  long i;
+  size_t i;
   for (i = 0; i < o->iv.cnt; i++) {
     if (o->iv.list[i] == n)
-      return i;
+      return (long)i;
   }
   return -1;
 }
 
 void coInt32VectorEraseByValue(co o, int32_t n) {
   assert(coIsInt32Vector(o));
-  long i = 0;
+  size_t i = 0;
   while (i < o->iv.cnt) {
     if (o->iv.list[i] == n) {
-      coInt32VectorErase(o, i);
+      coInt32VectorErase(o, (long)i);
     } else {
       i++;
     }
