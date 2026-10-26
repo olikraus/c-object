@@ -68,7 +68,7 @@ COMMON_SRC = dwa.c dwa_json.c dwa_op.c dwa_validate.c
         cgi-test cgi-perf-test cgi_amd64-test cgi_amd64-perf-test cgi_arm64-test cgi_arm64-perf-test \
         aws-test aws-perf-test aws_amd64-test aws_amd64-perf-test aws_arm64-test aws_arm64-perf-test \
         cli_default-test cli_default-perf-test cgi_default-test cgi_default-perf-test aws_default-test aws_default-perf-test \
-        perf-test cgi-install aws-install clean
+        cgi-install aws-install clean node node-test
 
 all: cli cli_amd64 cli_arm64 cgi cgi_amd64 cgi_arm64 aws aws_amd64 aws_arm64
 
@@ -233,9 +233,15 @@ venv:
 	python3 -m venv venv
 	./venv/bin/pip install flask
 
+node:
+	npx node-gyp rebuild
+
+node-test: node
+	node test_server.js
+
 clean:
 	-rm -f dnfwebapp.cli dnfwebapp.cgi dnfwebapp.aws dnfwebapp_*.cli dnfwebapp_*.cgi dnfwebapp_*.aws
-	-rm -rf obj obj_amd64 obj_arm64
+	-rm -rf obj obj_amd64 obj_arm64 build
 	-rm -f aws_rie.log aws_runtime.log flask_emulator.log out.json perf_input.json tmp_aws_res.json
 	-rm -rf venv tmp
 
@@ -262,6 +268,7 @@ help:
 	@echo "   aws               : Build AWS Lambda runtime binary for host (dnfwebapp.aws)"
 	@echo "   aws_amd64         : Cross-compile AWS Lambda binary for x86_64 (dnfwebapp_amd64.aws)"
 	@echo "   aws_arm64         : Cross-compile AWS Lambda binary for AArch64 (dnfwebapp_arm64.aws)"
+	@echo "   node              : Build Node.js native addon (dwa_node.node) using node-gyp"
 	@echo ""
 	@echo " TEST & BENCHMARK TARGETS"
 	@echo "   cli-test          : Run functional regression test on host CLI"
@@ -273,6 +280,7 @@ help:
 	@echo "   aws-test          : Test AWS Lambda emulator integration"
 	@echo "   aws-perf-test     : Benchmark AWS Lambda execution on perf_input.json"
 	@echo "   perf-test         : Run all performance benchmarks (CLI, CGI, AWS)"
+	@echo "   node-test         : Run Node.js HTTP test server and execute test request"
 	@echo ""
 	@echo " UTILITY TARGETS"
 	@echo "   clean             : Remove build artifacts and temporary logs"

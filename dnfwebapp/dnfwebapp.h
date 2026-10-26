@@ -2,7 +2,17 @@
 #define DNFWEBAPP_H
 
 #define _GNU_SOURCE
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "co.h"
+
+#ifdef __cplusplus
+}
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,6 +56,10 @@ typedef struct {
     double start_time;
 } dwa_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* dwa.c */
 double get_ms(void);
 void dwa_print(dwa_t *p, const char *fmt, ...);
@@ -61,6 +75,23 @@ int dwa_has_content_between_tokens(dwa_t *p);
 char *dwa_alloc_string(dwa_t *p);
 void dwa_skip_string(dwa_t *p);
 int32_t dwa_parse_int(dwa_t *p);
+
+/* dwa_op.c */
+void dwa_collect_psd_recursive(dwa_t *p);
+void dwa_build_bvdnf_recursive(dwa_t *p, co *target_list);
+void dwa_process_op_json(dwa_t *p);
+void dwa_execute_op(dwa_t *p);
+char *dwa_execute_op_to_str(dwa_t *p);
+
+/* dwa_verify.c */
+void dwa_validate(dwa_t *p);
+
+/* dwa_cli.c */
+int dwa_cli(int argc, char **argv);
+
+#ifdef __cplusplus
+}
+#endif
 
 static inline char dwa_peek_token_char(dwa_t *p) {
     return p->buffer[p->pos_array[p->token_idx]];
@@ -101,17 +132,5 @@ static inline void dwa_parse_int_str(dwa_t *p, char *buf) {
     }
     buf[len] = '\0';
 }
-
-/* dwa_op.c */
-void dwa_collect_psd_recursive(dwa_t *p);
-void dwa_build_bvdnf_recursive(dwa_t *p, co *target_list);
-void dwa_process_op_json(dwa_t *p);
-void dwa_execute_op(dwa_t *p);
-
-/* dwa_verify.c */
-void dwa_validate(dwa_t *p);
-
-/* dwa_cli.c */
-int dwa_cli(int argc, char **argv);
 
 #endif

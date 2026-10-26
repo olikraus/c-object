@@ -1,0 +1,13 @@
+{
+  "name": "dnfwebapp",
+  "version": "1.0.0",
+  "description": "DNF Web App with Node Addon API",
+  "main": "server.js",
+  "scripts": {
+    "build": "npx node-gyp rebuild",
+    "test": "node test_server.js"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.2.1"
+  }
+}
