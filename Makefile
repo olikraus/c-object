@@ -2,7 +2,7 @@
 #  c-object Makefile
 #  (c) 2024 Oliver Kraus
 #  https://github.com/olikraus/c-object
-#  CC BY-SA 3.0  https://creativecommons.org/licenses/by-sa/3.0/
+#  CC BY-SA 4.0  https://creativecommons.org/licenses/by-sa/4.0/
 #
 #  targets
 #	clean		clear all objects and executables
