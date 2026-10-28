@@ -223,13 +223,64 @@ void dwa_scan(dwa_t *p) {
     }
 }
 
+static int dwa_json_space(char value) {
+    return value == ' ' || value == '\t' || value == '\r' || value == '\n';
+}
+
+static void dwa_primitive_span(dwa_t *p, size_t *start, size_t *end) {
+    if (p->token_idx > p->pos_cnt) dwa_error(p, "Unexpected end of input");
+    *start = p->token_idx == 0 ? 0 : (size_t)p->pos_array[p->token_idx - 1] + 1;
+    *end = p->token_idx < p->pos_cnt ? p->pos_array[p->token_idx] : p->size;
+    while (*start < *end && dwa_json_space(p->buffer[*start])) (*start)++;
+    while (*end > *start && dwa_json_space(p->buffer[*end - 1])) (*end)--;
+}
+
 int dwa_has_content_between_tokens(dwa_t *p) {
-    if (p->token_idx == 0 || p->token_idx >= p->pos_cnt) return 0;
-    size_t start = p->pos_array[p->token_idx - 1] + 1;
-    size_t end = p->pos_array[p->token_idx];
-    for (size_t i = start; i < end; i++) {
-        if (!isspace((unsigned char)p->buffer[i])) return 1;
+    size_t start, end;
+    dwa_primitive_span(p, &start, &end);
+    return start < end;
+}
+
+dwa_primitive_type dwa_parse_primitive(dwa_t *p) {
+    size_t start, end;
+    dwa_primitive_span(p, &start, &end);
+    size_t length = end - start;
+    const char *text = p->buffer + start;
+    if (length == 4 && memcmp(text, "true", 4) == 0) return DWA_JSON_TRUE;
+    if (length == 5 && memcmp(text, "false", 5) == 0) return DWA_JSON_FALSE;
+    if (length == 4 && memcmp(text, "null", 4) == 0) return DWA_JSON_NULL;
+
+    size_t offset = start;
+    if (offset < end && p->buffer[offset] == '-') offset++;
+    if (offset == end) dwa_error(p, "Expected JSON value");
+    if (p->buffer[offset] == '0') {
+        offset++;
+    } else {
+        if (p->buffer[offset] < '1' || p->buffer[offset] > '9')
+            dwa_error(p, "Invalid JSON primitive");
+        while (offset < end && p->buffer[offset] >= '0' && p->buffer[offset] <= '9') offset++;
     }
+    if (offset < end && p->buffer[offset] == '.') {
+        size_t digits = ++offset;
+        while (offset < end && p->buffer[offset] >= '0' && p->buffer[offset] <= '9') offset++;
+        if (offset == digits) dwa_error(p, "Invalid JSON number");
+    }
+    if (offset < end && (p->buffer[offset] == 'e' || p->buffer[offset] == 'E')) {
+        offset++;
+        if (offset < end && (p->buffer[offset] == '+' || p->buffer[offset] == '-')) offset++;
+        size_t digits = offset;
+        while (offset < end && p->buffer[offset] >= '0' && p->buffer[offset] <= '9') offset++;
+        if (offset == digits) dwa_error(p, "Invalid JSON number");
+    }
+    if (offset != end) dwa_error(p, "Invalid JSON primitive");
+    return DWA_JSON_NUMBER;
+}
+
+int dwa_parse_bool(dwa_t *p) {
+    dwa_primitive_type type = dwa_parse_primitive(p);
+    if (type == DWA_JSON_TRUE) return 1;
+    if (type == DWA_JSON_FALSE) return 0;
+    dwa_error(p, "Expected JSON boolean");
     return 0;
 }
 
@@ -265,7 +316,13 @@ int32_t dwa_parse_int(dwa_t *p) {
 }
 
 char *dwa_parse_value_string(dwa_t *p) {
-    if (dwa_peek_token_char(p) == '"') return dwa_alloc_string(p);
+    if (!dwa_has_content_between_tokens(p) && dwa_peek_token_char(p) == '"')
+        return dwa_alloc_string(p);
+
+    dwa_primitive_type type = dwa_parse_primitive(p);
+    if (type == DWA_JSON_TRUE || type == DWA_JSON_FALSE)
+        return strdup(dwa_parse_bool(p) ? "true" : "false");
+    if (type != DWA_JSON_NUMBER) dwa_error(p, "Expected string, number, or boolean value");
 
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "%d", dwa_parse_int(p));

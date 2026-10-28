@@ -71,9 +71,18 @@ void dwa_ensure_capacity(dwa_t *p);
 void dwa_error(dwa_t *p, const char *msg);
 
 /* dwa_json.c */
+typedef enum {
+    DWA_JSON_NUMBER,
+    DWA_JSON_TRUE,
+    DWA_JSON_FALSE,
+    DWA_JSON_NULL
+} dwa_primitive_type;
+
 int dwa_read_file(dwa_t *p, const char *filename);
 void dwa_scan(dwa_t *p);
 int dwa_has_content_between_tokens(dwa_t *p);
+dwa_primitive_type dwa_parse_primitive(dwa_t *p);
+int dwa_parse_bool(dwa_t *p);
 char *dwa_alloc_string(dwa_t *p);
 void dwa_skip_string(dwa_t *p);
 int32_t dwa_parse_int(dwa_t *p);

@@ -224,6 +224,10 @@ $(eval $(call HOST_RULES,amd64))
 $(eval $(call HOST_RULES,arm64))
 
 # --- Aliases ---
+.PHONY: json-test
+json-test: cli
+	python3 ../test/dwa_json_test.py ./dnfwebapp.cli
+
 cli_default: cli
 cgi_default: cgi
 aws_default: aws

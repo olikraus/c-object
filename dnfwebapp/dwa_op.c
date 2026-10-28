@@ -160,6 +160,10 @@ static void dwa_collect_psd_dnf(dwa_t *p) {
 }
 
 void dwa_collect_psd_recursive(dwa_t *p) {
+    if (dwa_has_content_between_tokens(p)) {
+        dwa_parse_primitive(p);
+        return;
+    }
     char c = dwa_peek_token_char(p);
     if (c == '{') {
         dwa_consume_token_char(p);
@@ -182,7 +186,7 @@ void dwa_collect_psd_recursive(dwa_t *p) {
         }
     } else if (c == '[') {
         dwa_consume_token_char(p);
-        if (dwa_peek_token_char(p) == ']') {
+        if (dwa_peek_token_char(p) == ']' && !dwa_has_content_between_tokens(p)) {
             dwa_consume_token_char(p);
             return;
         }
@@ -195,7 +199,7 @@ void dwa_collect_psd_recursive(dwa_t *p) {
     } else if (c == '\"') {
         dwa_skip_string(p);
     } else {
-        while (p->token_idx < p->pos_cnt && p->buffer[p->pos_array[p->token_idx]] != ',' && p->buffer[p->pos_array[p->token_idx]] != ']' && p->buffer[p->pos_array[p->token_idx]] != '}') p->token_idx++;
+        dwa_parse_primitive(p);
     }
 }
 
@@ -260,6 +264,10 @@ static co dwa_parse_bvdnf(dwa_t *p) {
 }
 
 void dwa_build_bvdnf_recursive(dwa_t *p, co *target_list) {
+    if (dwa_has_content_between_tokens(p)) {
+        dwa_parse_primitive(p);
+        return;
+    }
     char c = dwa_peek_token_char(p);
     if (c == '{') {
         dwa_consume_token_char(p);
@@ -307,7 +315,7 @@ void dwa_build_bvdnf_recursive(dwa_t *p, co *target_list) {
         }
     } else if (c == '[') {
         dwa_consume_token_char(p);
-        if (dwa_peek_token_char(p) == ']') {
+        if (dwa_peek_token_char(p) == ']' && !dwa_has_content_between_tokens(p)) {
             dwa_consume_token_char(p);
             return;
         }
@@ -319,7 +327,7 @@ void dwa_build_bvdnf_recursive(dwa_t *p, co *target_list) {
     } else if (c == '\"') {
         dwa_skip_string(p);
     } else {
-        while (p->token_idx < p->pos_cnt && p->buffer[p->pos_array[p->token_idx]] != ',' && p->buffer[p->pos_array[p->token_idx]] != ']' && p->buffer[p->pos_array[p->token_idx]] != '}') p->token_idx++;
+        dwa_parse_primitive(p);
     }
 }
 
