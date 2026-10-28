@@ -51,6 +51,8 @@ void dwa_init(dwa_t *p) {
     p->bvmask = NULL;
     p->bvattributes = NULL;
     p->bvvaluepos = NULL;
+    p->value_ids = NULL;
+    p->value_strings = NULL;
     p->op_name[0] = '\0';
 
     p->log_size = 0;
@@ -66,6 +68,8 @@ void dwa_destroy(dwa_t *p) {
     if (p->psd) coDelete(p->psd);
     if (p->arg1_dnf_list) coDelete(p->arg1_dnf_list);
     if (p->arg2_dnf_list) coDelete(p->arg2_dnf_list);
+    if (p->value_ids) coDelete(p->value_ids);
+    if (p->value_strings) coDelete(p->value_strings);
     if (p->log_buffer) free(p->log_buffer);
     memset(p, 0, sizeof(dwa_t));
 }

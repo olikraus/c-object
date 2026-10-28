@@ -1,6 +1,122 @@
 #include "dnfwebapp.h"
+#include <limits.h>
 
 /* Phase 1: PSD Collection */
+
+static int32_t dwa_intern_value(dwa_t *p, const char *attribute, const char *value, int create) {
+    if (p->value_ids == NULL) {
+        if (!create) return -1;
+        p->value_ids = coNewMap(CO_STRDUP | CO_STRFREE | CO_FREE_VALS);
+        if (p->value_ids == NULL) dwa_error(p, "Failed to allocate value map");
+    }
+
+    co attribute_values = (co)coMapGet(p->value_ids, attribute);
+    if (attribute_values == NULL) {
+        if (!create) return -1;
+        attribute_values = coNewMap(CO_STRDUP | CO_STRFREE | CO_FREE_VALS);
+        if (attribute_values == NULL || coMapAdd(p->value_ids, attribute, attribute_values) == NULL) {
+            if (attribute_values) coDelete(attribute_values);
+            dwa_error(p, "Failed to allocate attribute value map");
+        }
+        attribute_values = (co)coMapGet(p->value_ids, attribute);
+    }
+
+    if (p->value_strings == NULL) {
+        if (!create) return -1;
+        p->value_strings = coNewMap(CO_STRDUP | CO_STRFREE | CO_FREE_VALS);
+        if (p->value_strings == NULL) dwa_error(p, "Failed to allocate reverse value map");
+    }
+    co attribute_strings = (co)coMapGet(p->value_strings, attribute);
+    if (attribute_strings == NULL) {
+        if (!create) return -1;
+        attribute_strings = coNewVector(CO_FREE_VALS);
+        if (attribute_strings == NULL || coMapAdd(p->value_strings, attribute, attribute_strings) == NULL) {
+            if (attribute_strings) coDelete(attribute_strings);
+            dwa_error(p, "Failed to allocate reverse attribute value list");
+        }
+        attribute_strings = (co)coMapGet(p->value_strings, attribute);
+    }
+
+    cco value_id_object = coMapGet(attribute_values, value);
+    if (value_id_object != NULL) return (int32_t)coDblGet(value_id_object);
+    if (!create) return -1;
+
+    long next_id = coVectorSize(attribute_strings);
+    if (next_id >= INT32_MAX) dwa_error(p, "Too many distinct values for one attribute");
+    int32_t value_id = (int32_t)next_id;
+    if (!coPSDExtendByValue(p->psd, attribute, value_id))
+        dwa_error(p, "Failed to extend problem-space description");
+
+    co value_id_number = coNewDbl(value_id);
+    if (value_id_number == NULL || coMapAdd(attribute_values, value, value_id_number) == NULL) {
+        if (value_id_number) coDelete(value_id_number);
+        dwa_error(p, "Failed to record attribute value");
+    }
+    co value_string = coNewStr(CO_STRDUP, value);
+    if (value_string == NULL || coVectorAdd(attribute_strings, value_string) < 0) {
+        if (value_string) coDelete(value_string);
+        dwa_error(p, "Failed to record reverse attribute value");
+    }
+    return value_id;
+}
+
+static void dwa_restore_dnf_value_strings(dwa_t *p, co dnf) {
+    for (long term_idx = 0; term_idx < coVectorSize(dnf); term_idx++) {
+        co term = (co)coVectorGet(dnf, term_idx);
+        co attributes = coNewVector(CO_FREE_VALS);
+        if (attributes == NULL) dwa_error(p, "Failed to allocate output attribute list");
+
+        coMapIterator iter;
+        if (coMapLoopFirst(&iter, term)) {
+            do {
+                co attribute = coNewStr(CO_STRDUP, coMapLoopKey(&iter));
+                if (attribute == NULL || coVectorAdd(attributes, attribute) < 0) {
+                    if (attribute) coDelete(attribute);
+                    coDelete(attributes);
+                    dwa_error(p, "Failed to copy output attribute name");
+                }
+            } while (coMapLoopNext(&iter));
+        }
+
+        for (long attr_idx = 0; attr_idx < coVectorSize(attributes); attr_idx++) {
+            const char *attribute = coStrGet(coVectorGet(attributes, attr_idx));
+            cco value_ids = coMapGet(term, attribute);
+            cco values = coMapGet(p->value_strings, attribute);
+            if (!coIsInt32Vector(value_ids) || !coIsVector(values)) {
+                coDelete(attributes);
+                dwa_error(p, "Missing reverse value mapping for output term");
+            }
+
+            co strings = coNewVector(CO_FREE_VALS);
+            if (strings == NULL) {
+                coDelete(attributes);
+                dwa_error(p, "Failed to allocate output string values");
+            }
+            for (long value_idx = 0; value_idx < coInt32VectorSize(value_ids); value_idx++) {
+                int32_t value_id = coInt32VectorGet(value_ids, value_idx);
+                cco value = coVectorGet(values, value_id);
+                if (!coIsStr(value)) {
+                    coDelete(strings);
+                    coDelete(attributes);
+                    dwa_error(p, "Invalid reverse value ID in output term");
+                }
+                co copy = coNewStr(CO_STRDUP, coStrGet(value));
+                if (copy == NULL || coVectorAdd(strings, copy) < 0) {
+                    if (copy) coDelete(copy);
+                    coDelete(strings);
+                    coDelete(attributes);
+                    dwa_error(p, "Failed to copy output string value");
+                }
+            }
+            if (coMapAdd(term, attribute, strings) == NULL) {
+                coDelete(strings);
+                coDelete(attributes);
+                dwa_error(p, "Failed to restore output string values");
+            }
+        }
+        coDelete(attributes);
+    }
+}
 
 static void dwa_collect_psd_dnf(dwa_t *p) {
     if (dwa_consume_token_char(p) != '[') dwa_error(p, "Expected '[' for DNF");
@@ -16,11 +132,12 @@ static void dwa_collect_psd_dnf(dwa_t *p) {
                 dwa_get_string(p, attr_name, sizeof(attr_name));
                 if (dwa_consume_token_char(p) != ':') dwa_error(p, "Expected ':'");
                 if (dwa_consume_token_char(p) != '[') dwa_error(p, "Expected '['");
-                
-                if (dwa_peek_token_char(p) != ']') {
+                if (dwa_peek_token_char(p) != ']' || dwa_has_content_between_tokens(p)) {
                     for (;;) {
-                        int32_t val = dwa_parse_int(p);
-                        coPSDExtendByValue(p->psd, attr_name, val);
+                        char *value = dwa_parse_value_string(p);
+                        if (value == NULL) dwa_error(p, "Failed to parse value");
+                        dwa_intern_value(p, attr_name, value, 1);
+                        free(value);
                         char c = dwa_consume_token_char(p);
                         if (c == ']') break;
                         if (c != ',') dwa_error(p, "Expected ',' or ']'");
@@ -111,11 +228,17 @@ static co dwa_parse_bvdnf(dwa_t *p) {
 
                 p->token_idx += 2; // skip ':' and '['
                 
-                if (dwa_peek_token_char(p) != ']') {
+                if (dwa_peek_token_char(p) != ']' || dwa_has_content_between_tokens(p)) {
                     for (;;) {
-                        char buf[16];
-                        dwa_parse_int_str(p, buf);
-                        cco pos_obj = coMapGet(val_map, buf);
+                        char *value = dwa_parse_value_string(p);
+                        if (value == NULL) dwa_error(p, "Failed to parse value");
+                        int32_t value_id = dwa_intern_value(p, attr_name, value, 0);
+                        free(value);
+                        if (value_id < 0) dwa_error(p, "Value missing from problem-space description");
+                        char value_id_string[32];
+                        snprintf(value_id_string, sizeof(value_id_string), "%d", value_id);
+                        cco pos_obj = coMapGet(val_map, value_id_string);
+                        if (pos_obj == NULL) dwa_error(p, "Value missing from bitvector index");
                         int32_t local_pos = (int32_t)coDblGet(pos_obj);
                         coBVSet(bv, start_bit + local_pos);
                         
@@ -235,7 +358,9 @@ void dwa_execute_op(dwa_t *p) {
                 coVectorAdd(result_list, (cco)res_obj);
             } else {
                 co res_bv = coNewBVDNFByIntersectionWithoutMinimization(p->psd, (cco)bv1, (cco)bv2);
-                coVectorAdd(result_list, (cco)coNewDNFFromBVDNF(p->psd, (cco)res_bv));
+                co result_dnf = coNewDNFFromBVDNF(p->psd, (cco)res_bv);
+                dwa_restore_dnf_value_strings(p, result_dnf);
+                coVectorAdd(result_list, (cco)result_dnf);
                 coDelete(res_bv);
             }
         }
@@ -332,7 +457,9 @@ char *dwa_execute_op_to_str(dwa_t *p) {
                 coVectorAdd(result_list, (cco)res_obj);
             } else {
                 co res_bv = coNewBVDNFByIntersectionWithoutMinimization(p->psd, (cco)bv1, (cco)bv2);
-                coVectorAdd(result_list, (cco)coNewDNFFromBVDNF(p->psd, (cco)res_bv));
+                co result_dnf = coNewDNFFromBVDNF(p->psd, (cco)res_bv);
+                dwa_restore_dnf_value_strings(p, result_dnf);
+                coVectorAdd(result_list, (cco)result_dnf);
                 coDelete(res_bv);
             }
         }

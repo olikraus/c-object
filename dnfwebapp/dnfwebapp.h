@@ -49,6 +49,8 @@ typedef struct {
     co bvmask;          /* PSD: bvmask vector */
     co bvattributes;    /* PSD: bvattributes map */
     co bvvaluepos;      /* PSD: bvvaluepos map */
+    co value_ids;       /* Per-attribute string-to-integer value IDs */
+    co value_strings;   /* Per-attribute integer-to-string value IDs */
 
     char *log_buffer;
     size_t log_size;
@@ -75,6 +77,7 @@ int dwa_has_content_between_tokens(dwa_t *p);
 char *dwa_alloc_string(dwa_t *p);
 void dwa_skip_string(dwa_t *p);
 int32_t dwa_parse_int(dwa_t *p);
+char *dwa_parse_value_string(dwa_t *p);
 
 /* dwa_op.c */
 void dwa_collect_psd_recursive(dwa_t *p);
@@ -121,16 +124,6 @@ static inline const char *dwa_fast_get_string(dwa_t *p, char *buf, size_t max_le
     memcpy(buf, p->buffer + start, len);
     buf[len] = '\0';
     return buf;
-}
-
-static inline void dwa_parse_int_str(dwa_t *p, char *buf) {
-    size_t start = p->pos_array[p->token_idx - 1] + 1;
-    while (isspace((unsigned char)p->buffer[start])) start++;
-    int len = 0;
-    while (p->buffer[start] >= '0' && p->buffer[start] <= '9' && len < 15) {
-        buf[len++] = p->buffer[start++];
-    }
-    buf[len] = '\0';
 }
 
 #endif

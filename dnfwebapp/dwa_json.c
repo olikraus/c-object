@@ -263,3 +263,11 @@ int32_t dwa_parse_int(dwa_t *p) {
     }
     return val;
 }
+
+char *dwa_parse_value_string(dwa_t *p) {
+    if (dwa_peek_token_char(p) == '"') return dwa_alloc_string(p);
+
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "%d", dwa_parse_int(p));
+    return strdup(buffer);
+}

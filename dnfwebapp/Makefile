@@ -136,6 +136,16 @@ cli$(SUFFIX_$(1))-test: cli$(SUFFIX_$(1))
 	jq .result ../test/dwa_expected_output.json > tmp_expected_filtered_$(1).json
 	diff tmp_test_res_filtered_$(1).json tmp_expected_filtered_$(1).json
 	rm tmp_test_res_$(1).json tmp_test_res_filtered_$(1).json tmp_expected_filtered_$(1).json
+	./dnfwebapp$(SUFFIX_$(1)).cli ../test/dwa_string_test_input.json -o tmp_string_res_$(1).json
+	jq .result tmp_string_res_$(1).json > tmp_string_res_filtered_$(1).json
+	jq .result ../test/dwa_string_expected_output.json > tmp_string_expected_filtered_$(1).json
+	diff tmp_string_res_filtered_$(1).json tmp_string_expected_filtered_$(1).json
+	rm tmp_string_res_$(1).json tmp_string_res_filtered_$(1).json tmp_string_expected_filtered_$(1).json
+	./dnfwebapp$(SUFFIX_$(1)).cli ../test/dwa_string_intersection_input.json -o tmp_string_intersection_res_$(1).json
+	jq .result tmp_string_intersection_res_$(1).json > tmp_string_intersection_res_filtered_$(1).json
+	jq .result ../test/dwa_string_intersection_expected_output.json > tmp_string_intersection_expected_filtered_$(1).json
+	diff tmp_string_intersection_res_filtered_$(1).json tmp_string_intersection_expected_filtered_$(1).json
+	rm tmp_string_intersection_res_$(1).json tmp_string_intersection_res_filtered_$(1).json tmp_string_intersection_expected_filtered_$(1).json
 
 cli$(SUFFIX_$(1))-perf-test: cli$(SUFFIX_$(1)) perf_input.json
 	@echo "--- CLI Performance Test ($(1), MODE=$(MODE)) ---"
